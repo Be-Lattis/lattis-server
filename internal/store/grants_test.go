@@ -17,7 +17,7 @@ var publicAPI = []string{
 	"drop_workbook", "enable_user", "finish_publish", "grant_role", "invite", "is_server_owner",
 	"login_summary", "my_capabilities", "my_workbooks", "publish_script", "remove_provider", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "save_meta", "set_config",
-	"set_level", "sync_point", "table_ref", "tombstones_since", "trg_notify", "trg_stamp",
+	"set_level", "since_covered", "sync_point", "table_ref", "tombstones_since", "trg_notify", "trg_stamp",
 	"update_provider", "why_not", "workbook_acl",
 }
 

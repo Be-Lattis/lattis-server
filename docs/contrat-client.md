@@ -81,10 +81,14 @@ Colonnes système de chaque tableau : `lattis_id`, `lattis_pos`, `lattis_xid`, `
 
 ## 6. Synchronisation (classeur collaboratif)
 
-- `LISTEN "<channel>"` sur `rw`. Charge : identifiant du tableau modifié, `*meta` (mise en page ou structure), `*version:<n>` (republication). Jamais de données.
+- `LISTEN "<channel>"` sur `rw`. Charge : identifiant du tableau modifié, `*meta` (mise en page ou structure), `*version:<n>` (republication), `*acl` (rôles, niveaux, membres ou restrictions du classeur changés : relire `my_capabilities`). Jamais de données.
 - Lecture des deltas, dans une transaction `REPEATABLE READ` : `SELECT lattis.sync_point()` (à mémoriser comme prochain `since`), puis `SELECT row_data, deleted, xid FROM lattis.changes_since(workbook_id, table_id, since)`. `row_data` est la ligne en JSON (colonnes par leur nom) ou `{"lattis_id": …}` quand `deleted`. Une même ligne peut revenir deux fois : appliquer de façon idempotente.
+- Échos : `changes_since(workbook_id, table_id, since, skip xid8[])` écarte les lignes et suppressions dont la dernière écriture vient d'une des transactions `skip`. Le poste lit `pg_current_xact_id()` dans chacune de ses transactions d'écriture et passe ceux qui sont postérieurs à `since`. Une ligne réécrite ensuite par un autre revient (son `lattis_xid` a changé).
+- Point de reprise trop ancien : `lattis.since_covered(since) → boolean`, dans la même transaction que les deltas. Faux : des pierres tombales ont été purgées depuis `since`, recharger le tableau en entier.
 - Écriture : une transaction par étape d'annulation, `UPDATE … WHERE lattis_id = $1 AND "<col>" IS NOT DISTINCT FROM $vu`. Zéro ligne touchée → `lattis.why_not(workbook_id, table_id, row_id) → jsonb` : `{"reason": "modified", "row", "updated_by", "updated_at"}`, `{"reason": "deleted", "deleted_by", "deleted_at"}`, `{"reason": "forbidden"}` ou `{"reason": "missing"}`.
 - Un `INSERT`/`UPDATE`/`DELETE` refusé pour tout le tableau (lecteur) lève `insufficient_privilege` (42501).
+- Un `INSERT` ou un `UPDATE` refusé par un filtre d'écriture (`WITH CHECK`) lève `42501` et défait la transaction. Pour ne refuser que l'opération fautive, l'encadrer d'un point de sauvegarde (`SAVEPOINT op` … `RELEASE` / `ROLLBACK TO op`) : avec pgx, les trois ordres partent dans le même lot (`pgx.Batch`), sans aller-retour de plus.
+- Ordre : deux insertions au même endroit peuvent porter la même `lattis_pos` ; départager par `lattis_id`, comme le serveur (`ORDER BY lattis_pos, lattis_id`). `why_not` ne distingue pas un déplacement refusé : « modified » rend la ligne actuelle, `lattis_pos` compris.
 - Pierres tombales gardées 30 jours (`tombstone_retention`) : au-delà, recharger le tableau en entier.
 
 ## 7. Droits avancés (classeur collaboratif, propriétaire du classeur)
