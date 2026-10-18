@@ -164,7 +164,7 @@ Tout le reste se règle dans `/admin` (propriétaires du serveur), ou en SQL ave
 | `display_name`, `logo_url` | « Serveur Lattis », aucun | Nom et logo (https) montrés aux postes. |
 | `access_mode` | `invitation` | `invitation` : seuls les invités entrent ; `open` : entrée libre pour les identités autorisées. |
 | `default_role` | `none` | Rôle donné aux arrivants en entrée libre. |
-| `workbook_creators` | `everyone` | Qui peut publier un classeur : `everyone` ou `owners`. |
+| `workbook_creators` | `everyone` | Qui peut publier un classeur : `everyone`, ou `owners` (propriétaires du serveur et personnes qui ont le rôle « créateur de classeurs », donné depuis la page Utilisateurs de l'administration ou par `lattis.set_workbook_creator(user_id, true)`). |
 | `access_token_ttl`, `refresh_token_ttl` | 900 s, 30 j | Durée des jetons. |
 | `invitation_ttl` | 14 j | Validité d'une invitation. |
 | `password_max_failures`, `password_lock_seconds` | 5, 900 s | Verrouillage des comptes à mot de passe. |

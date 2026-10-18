@@ -50,32 +50,34 @@ func (e inputError) Error() string { return string(e) }
 
 func (s *Service) actions() map[string]actionFunc {
 	return map[string]actionFunc{
-		"server_settings":    s.saveSettings,
-		"add_provider":       addProvider,
-		"update_provider":    updateProvider,
-		"remove_provider":    exec1(`SELECT lattis.remove_provider($1::uuid)`, "Fournisseur supprimé.", true, "id"),
-		"allow_tenant":       allowTenant,
-		"disallow_tenant":    exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", false, "id"),
-		"add_user":           s.addUser,
-		"reset_password":     s.resetPassword,
-		"disable_user":       s.disableUser,
-		"enable_user":        exec1(`SELECT lattis.enable_user($1::uuid)`, "Compte réactivé.", false, "id"),
-		"revoke_invitation":  exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
-		"drop_workbook":      exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
-		"create_team":        exec1(`SELECT lattis.create_team($1)`, "Équipe créée.", false, "name"),
-		"rename_team":        exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
-		"drop_team":          exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
-		"add_team_member":    addTeamMember,
-		"remove_team_member": exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
-		"grant_team":         exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
-		"invite_workbook":    inviteWorkbook,
-		"create_role":        createRole,
-		"drop_role":          exec1(`SELECT lattis.drop_role($1::uuid)`, "Rôle supprimé.", true, "id"),
-		"set_level":          setLevel,
-		"grant_role":         grantRole,
-		"revoke_role":        exec1(`SELECT lattis.revoke_role($1::uuid, $2::uuid)`, "Membre retiré.", false, "role_id", "user_id"),
-		"add_restriction":    addRestriction,
-		"drop_restriction":   exec1(`SELECT lattis.drop_restriction($1::uuid)`, "Restriction supprimée.", false, "id"),
+		"server_settings":      s.saveSettings,
+		"add_provider":         addProvider,
+		"update_provider":      updateProvider,
+		"remove_provider":      exec1(`SELECT lattis.remove_provider($1::uuid)`, "Fournisseur supprimé.", true, "id"),
+		"allow_tenant":         allowTenant,
+		"disallow_tenant":      exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", false, "id"),
+		"add_user":             s.addUser,
+		"reset_password":       s.resetPassword,
+		"disable_user":         s.disableUser,
+		"workbook_creator_on":  exec1(`SELECT lattis.set_workbook_creator($1::uuid, true)`, "Cette personne peut maintenant créer des classeurs.", false, "id"),
+		"workbook_creator_off": exec1(`SELECT lattis.set_workbook_creator($1::uuid, false)`, "Rôle de créateur de classeurs retiré.", false, "id"),
+		"enable_user":          exec1(`SELECT lattis.enable_user($1::uuid)`, "Compte réactivé.", false, "id"),
+		"revoke_invitation":    exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
+		"drop_workbook":        exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
+		"create_team":          exec1(`SELECT lattis.create_team($1)`, "Équipe créée.", false, "name"),
+		"rename_team":          exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
+		"drop_team":            exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
+		"add_team_member":      addTeamMember,
+		"remove_team_member":   exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
+		"grant_team":           exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
+		"invite_workbook":      inviteWorkbook,
+		"create_role":          createRole,
+		"drop_role":            exec1(`SELECT lattis.drop_role($1::uuid)`, "Rôle supprimé.", true, "id"),
+		"set_level":            setLevel,
+		"grant_role":           grantRole,
+		"revoke_role":          exec1(`SELECT lattis.revoke_role($1::uuid, $2::uuid)`, "Membre retiré.", false, "role_id", "user_id"),
+		"add_restriction":      addRestriction,
+		"drop_restriction":     exec1(`SELECT lattis.drop_restriction($1::uuid)`, "Restriction supprimée.", false, "id"),
 	}
 }
 
@@ -252,6 +254,13 @@ func (s *Service) addUser(ctx context.Context, tx pgx.Tx, f form) (string, error
 	}
 	if f.checked("server_owner") {
 		if _, err := tx.Exec(ctx, `SELECT lattis.invite($1, NULL, '{server_owner}')`, f.s("email")); err != nil {
+			return "", err
+		}
+	}
+	if f.checked("workbook_creator") {
+		if _, err := tx.Exec(ctx, `SELECT lattis.set_workbook_creator(u.id, true) FROM lattis.users u
+			JOIN lattis.identity_providers p ON p.id = u.provider_id AND p.kind = 'password'
+			WHERE u.email = lower(trim($1))`, f.s("email")); err != nil {
 			return "", err
 		}
 	}

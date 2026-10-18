@@ -236,3 +236,52 @@ func TestCreateTableValidation(t *testing.T) {
 		}
 	}
 }
+
+// Création réservée : le rôle « créateur de classeurs » suffit, sans être
+// propriétaire du serveur.
+func TestWorkbookCreatorRole(t *testing.T) {
+	ctx := context.Background()
+	db := testpg.New(t)
+	us := openUsers(t, db, "createur", "autre")
+	creator, other := us[0], us[1]
+	if err := db.Store.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT lattis.set_config('workbook_creators', '"owners"')`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `SELECT lattis.set_workbook_creator($1::uuid, true)`, creator.UserID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	create := func(u store.Enrollment, title string) error {
+		return db.AsUser(t, u.PGRole, func(tx pgx.Tx) error {
+			var can bool
+			if err := tx.QueryRow(ctx, `SELECT (lattis.login_summary() ->> 'can_create_workbooks')::boolean`).Scan(&can); err != nil {
+				return err
+			}
+			if can != (u.UserID == creator.UserID) {
+				t.Errorf("can_create_workbooks de %s : %v", u.PGRole, can)
+			}
+			_, err := tx.Exec(ctx, `SELECT lattis.create_workbook($1, 'frozen')`, title)
+			return err
+		})
+	}
+	if err := create(creator, "Créé par le créateur"); err != nil {
+		t.Fatalf("créateur : %v", err)
+	}
+	if err := create(other, "Refusé"); pgCode(err) != "42501" {
+		t.Fatalf("sans le rôle : %v", err)
+	}
+	if err := db.Store.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.set_workbook_creator($1::uuid, false)`, creator.UserID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AsUser(t, creator.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.create_workbook('Après retrait', 'frozen')`)
+		return err
+	}); pgCode(err) != "42501" {
+		t.Fatalf("rôle retiré : %v", err)
+	}
+}

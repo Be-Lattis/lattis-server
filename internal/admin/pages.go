@@ -73,7 +73,8 @@ var settings = []setting{
 		Options: [][2]string{{"none", "Aucun"}, {"reader", "Lecteur"}, {"participant", "Participant"}, {"editor", "Éditeur"}},
 		Help:    "Rôle donné sur les classeurs ouverts aux arrivants."},
 	{Key: "workbook_creators", Label: "Qui publie des classeurs", Kind: "select",
-		Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires du serveur"}}},
+		Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs de classeurs"}},
+		Help:    "Le rôle « créateur de classeurs » se donne sur la page Utilisateurs."},
 	{Key: "web_scripting", Label: "Scripts dans l'application web", Kind: "bool", Help: "Édition web seulement."},
 	{Key: "access_token_ttl", Label: "Durée des jetons d'accès (s)", Kind: "number"},
 	{Key: "refresh_token_ttl", Label: "Durée des sessions (s)", Kind: "number"},
@@ -174,7 +175,8 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 			'id', u.id, 'email', u.email, 'display_name', u.display_name, 'provider', p.label, 'kind', p.kind,
 			'created_at', u.created_at, 'last_login_at', u.last_login_at, 'disabled', u.disabled,
 			'pending', u.subject IS NULL AND u.last_login_at IS NULL,
-			'server_owner', pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER'))
+			'server_owner', pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER'),
+			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'))
 			ORDER BY u.email), '[]')
 		FROM (SELECT * FROM lattis.users
 		      WHERE $1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'

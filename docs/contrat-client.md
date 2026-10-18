@@ -61,7 +61,8 @@ Ce que l'application de bureau (`lattis-app`) doit savoir pour se connecter à u
 
 ## 4. Après connexion
 
-- `SELECT lattis.login_summary()` : utilisateur, propriétaire du serveur ou non, classeurs (vide tant que les classeurs ne sont pas livrés).
+- `SELECT lattis.login_summary()` : utilisateur, propriétaire du serveur ou non (`server_owner`), rôle « créateur de classeurs » (`workbook_creator`), droit de créer un classeur (`can_create_workbooks`), classeurs (vide tant que les classeurs ne sont pas livrés).
+- `can_create_workbooks` décide si l'application propose « Publier sur le serveur » : vrai si le serveur laisse tout le monde publier (`workbook_creators = everyone`), ou si la personne est propriétaire du serveur ou créateur de classeurs. Sinon `create_workbook` répond `42501`.
 - Un propriétaire du serveur administre avec les fonctions `lattis.*` sous sa propre identité (journalisées dans `lattis.audit`).
 
 ## 5. Classeurs
