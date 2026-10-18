@@ -121,6 +121,14 @@ func TestDatasets(t *testing.T) {
 		}
 	}
 
+	// Audience par adresse : adresse inconnue refusée.
+	if err := as(pub.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.add_data_audience_by_email($1::uuid, NULL, 'inconnu@example.test', NULL)`, ds)
+		return err
+	}); pgCode(err) != "P0002" && pgCode(err) != "02000" {
+		t.Fatalf("adresse inconnue : %v", err)
+	}
+
 	// Bruno, hors audience : pas de lecture, catalogue vide.
 	if err := as(bruno.PGRole, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM `+view).Scan(new(int))
