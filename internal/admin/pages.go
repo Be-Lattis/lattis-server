@@ -223,7 +223,8 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 			'created_at', u.created_at, 'last_login_at', u.last_login_at, 'disabled', u.disabled,
 			'pending', u.subject IS NULL AND u.last_login_at IS NULL,
 			'server_owner', pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER'),
-			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'))
+			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'),
+			'data_publisher', pg_has_role(u.pg_role, 'lattis_data_publishers', 'MEMBER'))
 			ORDER BY u.email), '[]')
 		FROM (SELECT * FROM lattis.users
 		      WHERE $1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'
@@ -248,6 +249,49 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 func loadTeams(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
 	teams, err := queryJSON(ctx, tx, `SELECT lattis.list_teams()`)
 	return map[string]any{"Teams": teams}, err
+}
+
+// --- Données d'entreprise -------------------------------------------------------------------
+
+type dataEntry struct {
+	Folder  map[string]any
+	Dataset map[string]any
+	Depth   int
+}
+
+// loadData : catalogue en arbre, chaque donnée sous son dossier.
+func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
+	var cat struct {
+		Folders  []map[string]any `json:"folders"`
+		Datasets []map[string]any `json:"datasets"`
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.data_catalog()`).Scan(&cat); err != nil {
+		return nil, err
+	}
+	teams, err := queryJSON(ctx, tx, `SELECT lattis.list_teams()`)
+	if err != nil {
+		return nil, err
+	}
+	byFolder := map[string][]map[string]any{}
+	for _, d := range cat.Datasets {
+		f, _ := d["folder_id"].(string)
+		byFolder[f] = append(byFolder[f], d)
+	}
+	var tree []dataEntry
+	for _, f := range cat.Folders {
+		depth := 0
+		if n, ok := f["depth"].(float64); ok {
+			depth = int(n)
+		}
+		tree = append(tree, dataEntry{Folder: f, Depth: depth})
+		for _, d := range byFolder[f["id"].(string)] {
+			tree = append(tree, dataEntry{Dataset: d, Depth: depth + 1})
+		}
+	}
+	for _, d := range byFolder[""] {
+		tree = append(tree, dataEntry{Dataset: d})
+	}
+	return map[string]any{"Catalog": map[string]any{"folders": cat.Folders}, "Tree": tree, "Teams": teams}, nil
 }
 
 // --- Classeurs -----------------------------------------------------------------------------

@@ -311,6 +311,30 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatal("aperçu")
 	}
 
+	// Données d'entreprise : dossier, donnée partagée, audience, retrait.
+	if _, body = b.post("/admin/do/create_data_folder", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "name": {"Commercial"}}); !strings.Contains(body, "Dossier créé.") {
+		t.Fatal("création de dossier")
+	}
+	var folder, ds string
+	if err := e.db.Super.QueryRow(ctx, `SELECT id::text FROM lattis.data_folders WHERE name = 'Commercial'`).Scan(&folder); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.AsUser(t, ownerEmail, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT lattis.create_dataset($1::uuid, $2::uuid, $3::uuid, 'Commandes', 'Toutes les commandes', NULL, NULL)::text`, wb, tid, folder).Scan(&ds)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body = b.get("/admin/data"); !strings.Contains(body, "donnees.commandes") || !strings.Contains(body, "Commercial") {
+		t.Fatal("catalogue")
+	}
+	if _, body = b.post("/admin/do/add_data_audience", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "dataset_id": {ds},
+		"kind": {"user"}, "email": {ownerEmail}, "predicate": {`"Région" = 'Nord'`}}); !strings.Contains(body, "Ajouté à l'audience.") {
+		t.Fatalf("audience : %s", body)
+	}
+	if _, body = b.post("/admin/do/drop_dataset", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "id": {ds}, "confirm": {"on"}}); !strings.Contains(body, "Partage retiré.") {
+		t.Fatal("retrait du partage")
+	}
+
 	// Équipes : création, membre, rôle donné à l'équipe.
 	if _, body = b.post("/admin/do/create_team", url.Values{"csrf": {csrf}, "back": {"/admin/teams"}, "name": {"Nord"}}); !strings.Contains(body, "Équipe créée.") {
 		t.Fatal("création d'équipe")

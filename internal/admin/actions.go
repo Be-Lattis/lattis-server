@@ -66,6 +66,15 @@ func (s *Service) actions() map[string]actionFunc {
 		"revoke_invitation":    exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
 		"drop_workbook":        exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
 		"create_team":          exec1(`SELECT lattis.create_team($1, $2::uuid)`, "Équipe créée.", false, "name", "parent_id"),
+		"data_publisher_on":    exec1(`SELECT lattis.set_data_publisher($1::uuid, true)`, "Cette personne peut maintenant partager des données.", false, "id"),
+		"data_publisher_off":   exec1(`SELECT lattis.set_data_publisher($1::uuid, false)`, "Rôle de publieur de données retiré.", false, "id"),
+		"create_data_folder":   exec1(`SELECT lattis.create_data_folder($1, $2::uuid)`, "Dossier créé.", false, "name", "parent_id"),
+		"rename_data_folder":   exec1(`SELECT lattis.rename_data_folder($1::uuid, $2)`, "Dossier renommé.", false, "id", "name"),
+		"move_data_folder":     exec1(`SELECT lattis.move_data_folder($1::uuid, $2::uuid)`, "Dossier déplacé.", false, "id", "parent_id"),
+		"drop_data_folder":     exec1(`SELECT lattis.drop_data_folder($1::uuid)`, "Dossier supprimé.", true, "id"),
+		"drop_dataset":         exec1(`SELECT lattis.drop_dataset($1::uuid)`, "Partage retiré.", true, "id"),
+		"remove_data_audience": exec1(`SELECT lattis.remove_data_audience($1::uuid)`, "Retiré de l'audience.", false, "id"),
+		"add_data_audience":    addDataAudience,
 		"set_team_parent":      exec1(`SELECT lattis.set_team_parent($1::uuid, $2::uuid)`, "Équipe déplacée.", false, "id", "parent_id"),
 		"rename_team":          exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
 		"drop_team":            exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
@@ -355,4 +364,18 @@ func addRestriction(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	_, err := tx.Exec(ctx, `SELECT lattis.add_restriction($1::uuid, $2::uuid, $3, $4::uuid[], $5, $6)`,
 		f.s("workbook_id"), f.s("table_id"), f.s("command"), f.list("roles"), f.s("predicate"), f.s("label"))
 	return "Restriction ajoutée.", err
+}
+
+func addDataAudience(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	principal := f.s("team_id")
+	if f.s("kind") != "team" {
+		uid, err := userByEmail(ctx, tx, strings.ToLower(f.s("email")))
+		if err != nil {
+			return "", err
+		}
+		principal = uid
+	}
+	_, err := tx.Exec(ctx, `SELECT lattis.add_data_audience($1::uuid, $2::uuid, $3::uuid, $4)`,
+		f.n("dataset_id"), f.n("folder_id"), principal, f.s("predicate"))
+	return "Ajouté à l'audience.", err
 }

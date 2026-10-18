@@ -1,0 +1,62 @@
+{{define "audience"}}{{$c := .}}
+{{if .Entries}}<table class="compact"><tbody>{{range .Entries}}<tr><td>{{if eq (str .kind) "team"}}Équipe {{end}}{{.label}}</td><td>{{with .predicate}}<code>{{.}}</code>{{else}}<span class="muted">toutes les lignes</span>{{end}}</td>
+<td><form method="post" action="/admin/do/remove_data_audience">{{template "csrf" $c.Page}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}</tbody></table>
+{{else}}<p class="muted">Aucune audience{{if .Inherit}} propre{{end}}.</p>{{end}}
+<form method="post" action="/admin/do/add_data_audience" class="row">{{template "csrf" .Page}}
+{{if .Dataset}}<input type="hidden" name="dataset_id" value="{{.Dataset}}">{{else}}<input type="hidden" name="folder_id" value="{{.Folder}}">{{end}}
+<select name="kind" aria-label="Personne ou équipe"><option value="user">Personne</option><option value="team">Équipe</option></select>
+<input type="email" name="email" placeholder="adresse@exemple.fr" aria-label="Adresse" data-show-if="kind=user">
+<select name="team_id" aria-label="Équipe" data-show-if="kind=team">{{range .Teams}}<option value="{{.id}}">{{.path}}</option>{{end}}</select>
+<input name="predicate" placeholder="Filtre facultatif : &quot;Région&quot; = 'Nord'" aria-label="Filtre">
+<button>Ajouter</button></form>
+{{end}}
+
+{{define "body"}}{{$d := .Data}}{{$p := .}}
+<p class="lead">Tableaux partagés depuis les classeurs, lisibles dans tout classeur selon leur audience. On partage un tableau depuis l'application (clic droit sur le tableau). Dans l'onglet SQL et les outils externes, chaque donnée est la vue <code>donnees.&lt;nom SQL&gt;</code>.</p>
+
+<details class="panel">
+<summary><h2>Nouveau dossier</h2></summary>
+<form method="post" action="/admin/do/create_data_folder" class="row">{{template "csrf" $}}<input name="name" required placeholder="Nom du dossier" aria-label="Nom du dossier">
+<select name="parent_id" aria-label="Dossier parent"><option value="">— Premier niveau —</option>{{range $d.Catalog.folders}}<option value="{{.id}}">{{.path}}</option>{{end}}</select>
+<button class="ok">Créer</button></form>
+</details>
+
+{{range $d.Tree}}
+{{if .Folder}}{{$f := .Folder}}
+<section class="panel team depth{{str $f.depth}}">
+<h2>📁 {{$f.path}}</h2>
+<div class="grid">
+<form method="post" action="/admin/do/rename_data_folder" class="row editform">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$f.id}}">
+<div class="field grow"><span class="flabel">Nom</span><div class="control"><input name="name" required value="{{$f.name}}" aria-label="Nom du dossier">{{template "pen" "nom du dossier"}}</div></div>
+<span class="actions save"><button class="ok">Renommer</button></span></form>
+<form method="post" action="/admin/do/move_data_folder" class="row editform">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$f.id}}">
+<div class="field grow"><span class="flabel">Dossier parent</span><div class="control select"><select name="parent_id" aria-label="Dossier parent"><option value="">— Premier niveau —</option>{{$par := str $f.parent_id}}{{range $d.Catalog.folders}}{{if ne (str .id) (str $f.id)}}<option value="{{.id}}"{{if eq (str .id) $par}} selected{{end}}>{{.path}}</option>{{end}}{{end}}</select>{{template "pen" "dossier parent"}}</div></div>
+<span class="actions save"><button class="ok">Déplacer</button></span></form>
+</div>
+<h3>Audience du dossier</h3>
+<p class="muted">Les données rangées dans ce dossier (et ses sous-dossiers) en héritent, sauf si on le désactive pour une donnée.</p>
+{{template "audience" (audienceCtx $p $f.audience "" (str $f.id) $d.Teams false)}}
+<form method="post" action="/admin/do/drop_data_folder" class="row danger">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$f.id}}">{{template "confirm"}}<button>Supprimer le dossier</button></form>
+</section>
+{{else}}{{$s := .Dataset}}
+<section class="panel dataset team depth{{str .Depth}}">
+<h2>{{$s.name}} <span class="tag"><code>donnees.{{$s.sql_name}}</code></span>{{if not $s.available}} <span class="tag off">source indisponible</span>{{end}}</h2>
+{{with $s.description}}<p>{{.}}</p>{{end}}
+<dl>
+<dt>Source</dt><dd>{{with $s.source}}{{if .workbook_id}}<a href="/admin/workbooks/{{.workbook_id}}">{{.title}}</a> · tableau « {{.table}} »{{else}}<span class="muted">classeur supprimé</span>{{end}}{{end}}</dd>
+<dt>Colonnes</dt><dd>{{range $i, $c := $s.columns}}{{if $i}}, {{end}}{{$c.name}}{{end}}{{with $s.source}}{{if .hidden_columns}} <span class="muted">(masquées : {{range $i, $c := .hidden_columns}}{{if $i}}, {{end}}{{$c}}{{end}})</span>{{end}}{{end}}</dd>
+<dt>Audience des dossiers</dt><dd>{{with $s.source}}{{if .inherit_audience}}héritée{{else}}non héritée{{end}}{{end}}</dd>
+</dl>
+<h3>Audience propre</h3>
+{{template "audience" (audienceCtx $p $s.audience (str $s.id) "" $d.Teams true)}}
+<h3>Utilisée par</h3>
+{{if $s.used_by}}<div class="scroll"><table class="compact"><thead><tr><th>Classeur</th><th>Dernière modification</th><th>Dernière lecture</th></tr></thead><tbody>
+{{range $s.used_by}}<tr><td><a href="/admin/workbooks/{{.workbook_id}}">{{.title}}</a></td>
+<td class="who">{{with .last_edit}}<span class="clip" title="{{.email}}">{{.email}}</span><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td>
+<td class="who">{{with .last_read}}<span class="clip" title="{{.email}}">{{.email}}</span><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p class="muted">Aucun classeur du serveur ne l'utilise.</p>{{end}}
+<form method="post" action="/admin/do/drop_dataset" class="row danger">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$s.id}}">{{template "confirm"}}<button>Retirer ce partage</button></form>
+</section>
+{{end}}
+{{else}}<p class="muted">Le catalogue est vide.</p>{{end}}
+{{end}}

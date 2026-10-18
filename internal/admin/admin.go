@@ -51,6 +51,15 @@ var webFS embed.FS
 
 var pages = map[string]*template.Template{}
 
+// audienceCtx : audience d'une donnée ou d'un dossier, pour le gabarit « audience ».
+type audienceCtx struct {
+	Page            view
+	Entries         any
+	Dataset, Folder string
+	Teams           any
+	Inherit         bool
+}
+
 // providerField : un champ texte d'un fournisseur, pour le gabarit « pfield ».
 type providerField struct {
 	Label, Name, Value, Help string
@@ -62,6 +71,9 @@ var funcs = template.FuncMap{
 		return providerField{Label: label, Name: name, Value: value, Help: help, Required: required}
 	},
 	"join": func(v []string) string { return strings.Join(v, " ") },
+	"audienceCtx": func(page view, entries any, dataset, folder string, teams any, inherit bool) audienceCtx {
+		return audienceCtx{Page: page, Entries: entries, Dataset: dataset, Folder: folder, Teams: teams, Inherit: inherit}
+	},
 	"tenantKind": func(v any) string {
 		k, _ := v.(string)
 		if l, ok := map[string]string{"domain": "Domaine", "tid": "Tenant Microsoft", "realm": "Realm", "email": "Adresse", "any": "Tous"}[k]; ok {
@@ -141,7 +153,7 @@ func trimFloat(f float64) string {
 }
 
 func init() {
-	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link"} {
+	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+name+".html"))
 	}
 }
@@ -191,6 +203,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/teams", s.page("teams", "Équipes", loadTeams))
 	mux.HandleFunc("GET /admin/workbooks", s.page("workbooks", "Classeurs", loadWorkbooks))
 	mux.HandleFunc("GET /admin/workbooks/{id}", s.page("workbook", "Droits du classeur", s.loadWorkbook))
+	mux.HandleFunc("GET /admin/data", s.page("data", "Données d'entreprise", loadData))
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)
