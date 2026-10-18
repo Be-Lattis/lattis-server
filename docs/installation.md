@@ -150,6 +150,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_RATE_LIMIT` | `120` | Requêtes par minute et par adresse sur `/oauth/*`, `/login/*`, `/setup`. |
 | `LATTIS_MIN_CLIENT_VERSION` | `0.0.0` | Version minimale de Lattis acceptée (publiée dans la découverte). |
 | `LATTIS_EXTRA_REDIRECT_URIS` | vide | URI de redirection supplémentaires pour l'application de bureau (en plus du bouclage local). |
+| `LATTIS_DOWNLOAD_URL` | vide | Page de téléchargement de l'application, proposée sur les liens vers un classeur (`/w/<id>`). |
 
 Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres commandes : `lattisd migrate`, `lattisd keygen FICHIER`, `lattisd public-keys [FICHIER]`, `lattisd init-dev DIR [HÔTE…]`, `lattisd version`.
 

@@ -120,3 +120,9 @@ Colonnes système de chaque tableau : `lattis_id`, `lattis_pos`, `lattis_xid`, `
 Un filtre refusé (point-virgule, `$`, commentaire, parenthèses déséquilibrées, colonne inconnue, expression non booléenne) lève `invalid_parameter_value` (22023) avec la raison.
 
 **« Voir en tant que… »** : `POST <preview_endpoint>` (découverte), en-tête `Authorization: Bearer <jeton d'accès>` (le même que pour PostgreSQL), corps `{"workbook_id", "user_id", "table_id"}`. Réponse `{"rows": [...], "truncated": bool}` : au plus 1 000 lignes, celles que verrait l'utilisateur, lues en lecture seule sous son rôle. Réservé aux propriétaires et concepteurs du classeur (403 sinon), journalisé. 401 : jeton refusé, 404 : classeur, tableau ou utilisateur inconnu.
+
+## 8. Lien vers un classeur
+
+- Adresse à partager : `<issuer>/w/<workbook_id>`. L'écran Partager l'affiche, prête à copier.
+- Dans le navigateur, `lattisd` connecte la personne si besoin, vérifie son accès sous sa propre identité (`my_capabilities`), puis propose d'ouvrir le classeur dans l'application de bureau ou, en édition `web`, dans le navigateur. Un classeur inexistant et un classeur interdit donnent la même page (403), sans titre. Le choix est retenu par le navigateur (cookie `lattis_open`, « Changer » pour revenir au choix).
+- « Ouvrir dans Lattis » ouvre `lattis://open?server=<issuer encodé>&workbook=<workbook_id>`. L'application déclare le schéma `lattis` à l'installation (Windows : registre `HKCU\Software\Classes\lattis` ; Linux : fichier `.desktop` avec `MimeType=x-scheme-handler/lattis` ; macOS : `CFBundleURLTypes`). À l'appel : si l'instance tourne déjà, lui transmettre l'adresse ; vérifier que `server` est un serveur Lattis (découverte §1) et demander confirmation avant de se connecter à un serveur jamais utilisé ; se connecter si besoin (§2), puis ouvrir le classeur comme « Ouvrir depuis un serveur » (§5). Aucun autre paramètre n'est lu.

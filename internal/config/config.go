@@ -56,7 +56,10 @@ type Config struct {
 	// ExtraRedirects : URI de redirection supplémentaires acceptées pour le
 	// client public lattis-desktop (en plus du bouclage local).
 	ExtraRedirects []string
-	ShutdownGrace  time.Duration
+	// DownloadURL : page de téléchargement de l'application, proposée par
+	// les liens vers un classeur (vide : rien).
+	DownloadURL   string
+	ShutdownGrace time.Duration
 	// RateLimit : requêtes par minute et par adresse sur /oauth/*, /login/*, /setup.
 	RateLimit int
 	// ReplicaMaxLag : retard au-delà duquel un réplica est retiré de la
@@ -92,6 +95,7 @@ func parse(get func(string) string) (*Config, error) {
 		MinClient:      def("LATTIS_MIN_CLIENT_VERSION", "0.0.0"),
 		WebCacheDir:    def("LATTIS_WEB_CACHE_DIR", ""),
 		ExtraRedirects: splitList(def("LATTIS_EXTRA_REDIRECT_URIS", "")),
+		DownloadURL:    def("LATTIS_DOWNLOAD_URL", ""),
 		ShutdownGrace:  15 * time.Second,
 	}
 	if c.Edition != EditionAdmin && c.Edition != EditionWeb {

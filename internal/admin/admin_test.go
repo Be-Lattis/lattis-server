@@ -151,7 +151,7 @@ func TestSetupSignsOwnerIn(t *testing.T) {
 		t.Fatalf("connecté sous l'adresse choisie attendu : %s", chosen)
 	}
 	// Le passe-droit ne sert qu'une fois : une nouvelle connexion redemande le mot de passe.
-	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/admin"}})
+	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/"}})
 	if _, body := b.get("/admin/server"); !strings.Contains(body, `type="password"`) {
 		t.Fatal("formulaire de connexion attendu une fois la session fermée")
 	}
@@ -265,6 +265,26 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := "/admin/workbooks/" + wb
+
+	// Lien à partager : connexion exigée, accès vérifié, choix retenu.
+	if resp, body := b.get("/w/" + wb); resp.StatusCode != http.StatusOK || !strings.Contains(body, "Ventes console") || !strings.Contains(body, "Ouvrir dans Lattis") {
+		t.Fatalf("lien : %d %s", resp.StatusCode, body)
+	}
+	if _, body := b.get("/w/" + wb + "?open=desktop"); !strings.Contains(body, `url=lattis://open?server=`) {
+		t.Fatal("ouverture dans l'application attendue")
+	}
+	if _, body := b.get("/w/" + wb); !strings.Contains(body, `url=lattis://open?`) {
+		t.Fatal("choix non retenu")
+	}
+	if resp, body := b.get("/w/00000000-0000-0000-0000-000000000000"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "pas accès") {
+		t.Fatalf("classeur inconnu : %d", resp.StatusCode)
+	}
+	if _, body := e.browser().get("/w/" + wb); !strings.Contains(body, `type="password"`) {
+		t.Fatal("connexion attendue avant le lien")
+	}
+	if _, body := b.get(page); !strings.Contains(body, "/w/"+wb) {
+		t.Fatal("lien absent de la page du classeur")
+	}
 	if resp, body := b.get("/admin/workbooks"); resp.StatusCode != http.StatusOK || !strings.Contains(body, page) {
 		t.Fatalf("liste des classeurs : %d", resp.StatusCode)
 	}

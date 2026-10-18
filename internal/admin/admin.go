@@ -141,7 +141,7 @@ func trimFloat(f float64) string {
 }
 
 func init() {
-	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message"} {
+	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+name+".html"))
 	}
 }
@@ -194,6 +194,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)
+	mux.HandleFunc("GET /w/{id}", s.workbookLink)
 }
 
 // --- Connexion -------------------------------------------------------------------
@@ -270,7 +271,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.setCookie(w, sessionCookie, signed, "/admin", sessionTTL, http.SameSiteLaxMode)
+	s.setCookie(w, sessionCookie, signed, "/", sessionTTL, http.SameSiteLaxMode)
 	next := ld.Next
 	if next == "" {
 		next = "/admin/server"
@@ -288,7 +289,8 @@ func (s *Service) logout(w http.ResponseWriter, r *http.Request) {
 			f.Forget(u.ID)
 		}
 	}
-	s.clearCookie(w, sessionCookie, "/admin")
+	s.clearCookie(w, sessionCookie, "/")
+	s.clearCookie(w, sessionCookie, "/admin") // ancien chemin
 	s.message(w, r, http.StatusOK, "Déconnecté", "Vous êtes déconnecté de l'administration.")
 }
 
@@ -470,7 +472,7 @@ func (s *Service) takeFlash(w http.ResponseWriter, r *http.Request) (string, str
 
 // safeBack n'accepte qu'un chemin local de l'administration.
 func safeBack(p string) string {
-	if !strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") {
+	if !(strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/w/")) || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") {
 		return ""
 	}
 	return p

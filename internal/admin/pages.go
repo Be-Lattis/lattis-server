@@ -327,7 +327,8 @@ func (s *Service) loadWorkbook(ctx context.Context, tx pgx.Tx, r *http.Request, 
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]any{"ACL": acl, "Workbook": wb, "Tables": tables, "Roles": roles, "Levels": levels, "Teams": teams}
+	out := map[string]any{"ACL": acl, "Workbook": wb, "Tables": tables, "Roles": roles, "Levels": levels, "Teams": teams,
+		"Link": WorkbookLink(s.Config, id)}
 	if wb["mode"] == "collaborative" && wb["state"] == "published" {
 		drift, err := queryJSON(ctx, tx, `SELECT lattis.check_drift($1::uuid)`, id)
 		if err != nil {

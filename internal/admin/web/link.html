@@ -1,0 +1,20 @@
+{{define "head"}}{{with .Data}}{{if .AutoDesktop}}<meta http-equiv="refresh" content="0;url={{.Desktop}}">{{end}}{{end}}{{end}}
+{{define "body"}}{{$d := .Data}}
+{{if $d.NoAccess}}
+<section class="panel link">
+<p>Ce classeur n'existe pas, ou <strong>{{$d.Email}}</strong> n'y a pas accès.</p>
+<p class="muted">Demandez à son propriétaire de vous inviter avec cette adresse, puis rouvrez le lien.</p>
+</section>
+{{else}}
+<section class="panel link">
+<h2>{{$d.Title}}</h2>
+{{if $d.AutoDesktop}}<p class="muted">Ouverture dans Lattis… Rien ne se passe ? Lattis n'est peut-être pas installé sur ce poste.</p>{{end}}
+<div class="choices">
+<a class="choice" href="/w/{{$d.ID}}?open=desktop"><strong>Ouvrir dans Lattis</strong><span>L'application de bureau, avec la synchronisation et le travail hors ligne.</span></a>
+{{if $d.Web}}<a class="choice" href="/w/{{$d.ID}}?open=web"><strong>Ouvrir dans le navigateur</strong><span>Sans rien installer.</span></a>{{end}}
+</div>
+<p class="muted">Votre choix est retenu sur ce navigateur.{{if $d.Choice}} <a href="/w/{{$d.ID}}?open=choose">Changer</a>{{end}}</p>
+{{if $d.Download}}<p>Pas encore Lattis ? <a href="{{$d.Download}}">Télécharger l'application</a></p>{{end}}
+</section>
+{{end}}
+{{end}}

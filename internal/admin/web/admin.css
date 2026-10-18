@@ -77,3 +77,8 @@ details.panel[open] > summary { margin-bottom: 12px; } details.panel[open] > sum
 .control.editing input:not([type=checkbox]), .control.editing select { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .control.editing.check { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .control.changed input:not([type=checkbox]), .control.changed select { background-color: color-mix(in srgb, var(--accent) 12%, transparent); }
+.link { max-width: 560px; } .link h2 { font-size: 18px; }
+.choices { display: grid; gap: 10px; margin: 12px 0; }
+.choice { display: block; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; color: inherit; text-decoration: none; }
+.choice:hover { border-color: var(--accent); } .choice strong { display: block; color: var(--accent); } .choice span { color: var(--muted); font-size: 13px; }
+.copy { display: flex; gap: 8px; align-items: center; } .copy input { margin-top: 0; }
