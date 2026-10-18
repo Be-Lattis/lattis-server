@@ -43,7 +43,7 @@ tbody tr:nth-child(even) { background: var(--stripe); }
 .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .levels td.depth1 { padding-left: 24px; } .levels td.depth2 { padding-left: 44px; }
 .scroll { overflow-x: auto; }
-.tag { display: inline-block; padding: 0 6px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.tag { display: inline-block; white-space: nowrap; padding: 0 6px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; font-weight: 400; color: var(--muted); }
 .tag.off { border-color: var(--error); color: var(--error); }
 .muted { color: var(--muted); } .error { color: var(--error); } .flash { color: var(--accent); font-weight: 500; }
 code { font: 12px ui-monospace, Consolas, monospace; } code.json { white-space: pre-wrap; word-break: break-all; }
@@ -51,10 +51,24 @@ dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margi
 a { color: var(--accent); }
 @media (max-width: 640px) { .me { margin-left: 0; } th, td { padding: 4px; } }
 .settings .lead { margin: -6px 0 12px; }
-.settings details summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
-.settings details summary::-webkit-details-marker { display: none; }
-.settings details summary h2 { margin: 0; } .settings details summary h2::before { content: "▸ "; color: var(--muted); }
-.settings details[open] summary { margin-bottom: 12px; } .settings details[open] summary h2::before { content: "▾ "; }
 .settings .unit { display: flex; align-items: center; gap: 8px; } .settings .unit input { margin-top: 0; } .settings .unit span { flex: none; white-space: nowrap; color: var(--muted); font-weight: 400; }
 .settings label .unit { margin-top: 4px; }
 .settings .sticky { position: sticky; bottom: 0; margin: 0; padding: 12px 0; background: var(--bg); }
+.field { min-width: 0; } .field .flabel { display: block; font-weight: 500; } .field > small { display: block; color: var(--muted); }
+.field .view { display: flex; align-items: center; gap: 8px; min-height: 34px; } .field .view .val { overflow-wrap: anywhere; }
+.field .edit { display: none; margin-top: 4px; } .field .edit input, .field .edit select { margin-top: 0; }
+.field:has(> .view .pen input:checked) > .edit { display: block; } .field:has(> .view .pen input:checked) > .edit.row { display: flex; }
+.field:has(> .view .pen input:checked) > .view .val { display: none; }
+.field.title .view h2 { margin: 0; } .field.title { margin-bottom: 12px; }
+.pen { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1px solid transparent; border-radius: 4px; color: var(--muted); cursor: pointer; }
+.pen::before { content: "✎"; font-size: 15px; line-height: 1; }
+.pen:hover { border-color: var(--border); color: var(--text); }
+.pen input { position: absolute; inset: 0; opacity: 0; margin: 0; width: 100%; height: 100%; cursor: pointer; }
+.pen:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pen:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.field:has(> .view .pen input:checked) > .view { min-height: 0; }
+.editform .actions.save { display: none; } .editform:has(.pen input:checked) .actions.save { display: block; }
+details.panel > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary h2 { margin: 0; } details.panel > summary h2::before { content: "▸ "; color: var(--muted); }
+details.panel[open] > summary { margin-bottom: 12px; } details.panel[open] > summary h2::before { content: "▾ "; }

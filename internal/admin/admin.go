@@ -51,7 +51,24 @@ var webFS embed.FS
 
 var pages = map[string]*template.Template{}
 
+// providerField : un champ texte d'un fournisseur, pour le gabarit « pfield ».
+type providerField struct {
+	Label, Name, Value, Help string
+	Required                 bool
+}
+
 var funcs = template.FuncMap{
+	"pf": func(label, name, value, help string, required bool) providerField {
+		return providerField{Label: label, Name: name, Value: value, Help: help, Required: required}
+	},
+	"join": func(v []string) string { return strings.Join(v, " ") },
+	"tenantKind": func(v any) string {
+		k, _ := v.(string)
+		if l, ok := map[string]string{"domain": "Domaine", "tid": "Tenant Microsoft", "realm": "Realm", "email": "Adresse", "any": "Tous"}[k]; ok {
+			return l
+		}
+		return k
+	},
 	"json": func(v any) string {
 		if v == nil {
 			return ""

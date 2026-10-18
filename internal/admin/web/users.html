@@ -1,4 +1,14 @@
 {{define "body"}}
+<section class="panel">
+<h2>Ajouter un utilisateur</h2>
+<p>Lattis crée le compte et un lien personnel, valable 7 jours, à transmettre à la personne : elle y choisit son mot de passe. Les personnes qui se connectent par un fournisseur (Google, Microsoft…) n'ont rien à recevoir : en entrée libre elles arrivent seules, sur invitation elles sont invitées depuis un classeur.</p>
+<form method="post" action="/admin/do/add_user" class="row">
+{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr"><input name="display_name" placeholder="Nom affiché">
+<label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
+<label class="inline"><input type="checkbox" name="workbook_creator"> Créateur de classeurs</label>
+<button class="ok">Créer le lien</button>
+</form>
+</section>
 <form method="get" action="/admin/users" class="row"><input type="search" name="q" value="{{.Data.Q}}" placeholder="Rechercher une adresse ou un nom"><button>Rechercher</button></form>
 <table>
 <thead><tr><th>Utilisateur</th><th>Connexion</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
@@ -12,7 +22,7 @@
 <td><div class="buttons">
 {{if eq (str .kind) "password"}}<form method="post" action="/admin/do/reset_password">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Réinitialiser le mot de passe</button></form>{{end}}
 {{if .workbook_creator}}<form method="post" action="/admin/do/workbook_creator_off">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer « créateur de classeurs »</button></form>
-{{else if not .server_owner}}<form method="post" action="/admin/do/workbook_creator_on">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Créateur de classeurs</button></form>{{end}}
+{{else if not .server_owner}}<form method="post" action="/admin/do/workbook_creator_on">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Rendre créateur de classeurs</button></form>{{end}}
 {{if ne (str .id) $.Data.Me}}
 {{if .disabled}}<form method="post" action="/admin/do/enable_user">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Réactiver</button></form>
 {{else}}<form method="post" action="/admin/do/disable_user" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button>Désactiver</button></form>{{end}}
@@ -23,16 +33,7 @@
 </tbody>
 </table>
 
-<section class="panel">
-<h2>Ajouter un utilisateur</h2>
-<p>Lattis crée le compte et un lien personnel, valable 7 jours, à transmettre à la personne : elle y choisit son mot de passe. Les personnes qui se connectent par un fournisseur (Google, Microsoft…) n'ont rien à recevoir : en entrée libre elles arrivent seules, sur invitation elles sont invitées depuis un classeur.</p>
-<form method="post" action="/admin/do/add_user" class="row">
-{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr"><input name="display_name" placeholder="Nom affiché">
-<label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
-<label class="inline"><input type="checkbox" name="workbook_creator"> Créateur de classeurs</label>
-<button class="ok">Créer le lien</button>
-</form>
-</section>
+
 
 <section class="panel">
 <h2>Invitations en attente</h2>

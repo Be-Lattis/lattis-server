@@ -2,33 +2,35 @@
 {{range .Data.Providers}}
 <section class="panel">
 <h2>{{.Label}} <span class="tag">{{.Kind}}</span>{{if not .Enabled}} <span class="tag off">désactivé</span>{{end}}</h2>
-<form method="post" action="/admin/do/update_provider" class="grid">
+<form method="post" action="/admin/do/update_provider" class="grid editform">
 {{template "csrf" $}}
 <input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="kind" value="{{.Kind}}">
-<label>Libellé <input name="label" value="{{.Label}}" required></label>
-<label>Ordre <input type="number" name="position" value="{{.Position}}"></label>
+{{template "pfield" (pf "Libellé" "label" .Label "" true)}}
+{{template "pfield" (pf "Ordre d'affichage" "position" (str .Position) "" false)}}
 {{if ne .Kind "password"}}
-<label>Émetteur (issuer) <input name="issuer" value="{{.Issuer}}"></label>
-<label>Identifiant client <input name="client_id" value="{{.ClientID}}"></label>
-<label>Référence du secret <input name="secret_ref" value="{{.SecretRef}}"><small>Nom du fichier dans le dossier des secrets, jamais le secret lui-même.</small></label>
-<label>Scopes <input name="scopes" value="{{range $i, $s := .Scopes}}{{if $i}} {{end}}{{$s}}{{end}}"></label>
-<label>Revendication exigée <input name="claim_name" value="{{.ClaimName}}" placeholder="groups"></label>
-<label>Valeur exigée <input name="claim_value" value="{{.ClaimValue}}"></label>
+{{template "pfield" (pf "Émetteur (issuer)" "issuer" .Issuer "" false)}}
+{{template "pfield" (pf "Identifiant client" "client_id" .ClientID "" false)}}
+{{template "pfield" (pf "Référence du secret" "secret_ref" .SecretRef "Nom du fichier dans le dossier des secrets, jamais le secret lui-même." false)}}
+{{template "pfield" (pf "Scopes" "scopes" (join .Scopes) "" false)}}
+{{template "pfield" (pf "Revendication exigée" "claim_name" .ClaimName "Par exemple groups." false)}}
+{{template "pfield" (pf "Valeur exigée" "claim_value" .ClaimValue "" false)}}
 {{end}}
-<label class="inline"><input type="checkbox" name="enabled"{{if .Enabled}} checked{{end}}> Activé</label>
-<p class="actions"><button class="ok">Enregistrer</button></p>
+<div class="field"><span class="flabel">État</span>
+<div class="view"><span class="val">{{if .Enabled}}Activé{{else}}Désactivé{{end}}</span>{{template "pen" "État"}}</div>
+<div class="edit"><label class="inline"><input type="checkbox" name="enabled"{{if .Enabled}} checked{{end}}> Activé</label></div></div>
+<p class="actions save"><button class="ok">Enregistrer</button></p>
 </form>
 {{if ne .Kind "password"}}
 <h3>Tenants autorisés</h3>
 {{if .Tenants}}<table><thead><tr><th>Type</th><th>Valeur</th><th>Rôle des arrivants</th><th></th></tr></thead><tbody>
-{{range .Tenants}}<tr><td>{{.kind}}</td><td>{{.value}}</td><td>{{levelName .default_role}}</td>
+{{range .Tenants}}<tr><td>{{tenantKind .kind}}</td><td>{{.value}}</td><td>{{levelName .default_role}}</td>
 <td><form method="post" action="/admin/do/disallow_tenant">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}
 </tbody></table>{{else}}<p class="muted">Aucun tenant : personne n'entre par ce fournisseur.</p>{{end}}
 <form method="post" action="/admin/do/allow_tenant" class="row">
 {{template "csrf" $}}<input type="hidden" name="provider_id" value="{{.ID}}">
 <select name="kind"><option value="domain">Domaine</option><option value="tid">Tenant Microsoft (tid)</option><option value="realm">Realm</option><option value="email">Adresse</option><option value="any">Tous</option></select>
 <input name="value" placeholder="exemple.fr">
-<select name="default_role"><option value="">Rôle du serveur</option><option value="none">Aucun</option><option value="reader">Lecteur</option><option value="participant">Participant</option><option value="editor">Éditeur</option></select>
+<select name="default_role"><option value="">Rôle des arrivants : celui du serveur</option><option value="none">Aucun</option><option value="reader">Lecteur</option><option value="participant">Participant</option><option value="editor">Éditeur</option></select>
 <button>Autoriser</button>
 </form>
 <form method="post" action="/admin/do/remove_provider" class="row danger">
@@ -37,8 +39,8 @@
 {{end}}
 </section>
 {{end}}
-<section class="panel">
-<h2>Ajouter un fournisseur</h2>
+<details class="panel">
+<summary><h2>Ajouter un fournisseur</h2><span class="muted">Google, Microsoft, Keycloak ou tout fournisseur OIDC.</span></summary>
 <form method="post" action="/admin/do/add_provider" class="grid">
 {{template "csrf" $}}
 <label>Type <select name="kind">{{range .Data.Kinds}}<option value="{{index . 0}}">{{index . 1}}</option>{{end}}</select></label>
@@ -49,5 +51,9 @@
 <label>Scopes <input name="scopes" placeholder="openid email profile"></label>
 <p class="actions"><button class="ok">Ajouter</button></p>
 </form>
-</section>
+</details>
 {{end}}
+{{define "pfield"}}<div class="field"><span class="flabel">{{.Label}}</span>
+<div class="view"><span class="val">{{if .Value}}{{.Value}}{{else}}<span class="muted">—</span>{{end}}</span>{{template "pen" .Label}}</div>
+<div class="edit"><input name="{{.Name}}" value="{{.Value}}" aria-label="{{.Label}}"{{if .Required}} required{{end}}></div>
+{{if .Help}}<small>{{.Help}}</small>{{end}}</div>{{end}}

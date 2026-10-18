@@ -1,16 +1,20 @@
 {{define "setting"}}
-<label>{{.Label}}
-{{if eq .Kind "select"}}{{$v := str .Value}}<select name="{{.Key}}">{{range .Options}}<option value="{{index . 0}}"{{if eq (index . 0) $v}} selected{{end}}>{{index . 1}}</option>{{end}}</select>
-{{else if eq .Kind "bool"}}<input type="checkbox" name="{{.Key}}"{{if eq (str .Value) "true"}} checked{{end}}>
-{{else if eq .Kind "duration"}}<span class="unit"><input type="text" inputmode="decimal" name="{{.Key}}" value="{{str .Value}}" required><span>{{.Unit}}</span></span>
-{{else if eq .Kind "number"}}<input type="number" min="1" name="{{.Key}}" value="{{str .Value}}" required>
-{{else if eq .Kind "url"}}<input type="url" name="{{.Key}}" value="{{str .Value}}" placeholder="https://…">
-{{else}}<input type="text" name="{{.Key}}" value="{{str .Value}}" required>{{end}}
+<div class="field">
+<span class="flabel">{{.Label}}</span>
+<div class="view"><span class="val">{{if eq .Kind "select"}}{{$v := str .Value}}{{range .Options}}{{if eq (index . 0) $v}}{{index . 1}}{{end}}{{end}}{{else if eq .Kind "bool"}}{{if eq (str .Value) "true"}}Oui{{else}}Non{{end}}{{else if eq .Kind "duration"}}{{str .Value}} {{.Unit}}{{else if str .Value}}{{str .Value}}{{else}}<span class="muted">—</span>{{end}}</span>{{template "pen" .Label}}</div>
+<div class="edit">
+{{if eq .Kind "select"}}{{$v := str .Value}}<select name="{{.Key}}" aria-label="{{.Label}}">{{range .Options}}<option value="{{index . 0}}"{{if eq (index . 0) $v}} selected{{end}}>{{index . 1}}</option>{{end}}</select>
+{{else if eq .Kind "bool"}}<label class="inline"><input type="checkbox" name="{{.Key}}"{{if eq (str .Value) "true"}} checked{{end}}> Activé</label>
+{{else if eq .Kind "duration"}}<span class="unit"><input type="text" inputmode="decimal" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" required><span>{{.Unit}}</span></span>
+{{else if eq .Kind "number"}}<input type="number" min="1" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" required>
+{{else if eq .Kind "url"}}<input type="url" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" placeholder="https://…">
+{{else}}<input type="text" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" required>{{end}}
+</div>
 {{if .Help}}<small>{{.Help}}</small>{{end}}
-</label>
+</div>
 {{end}}
 {{define "body"}}
-<form method="post" action="/admin/do/server_settings" class="settings">
+<form method="post" action="/admin/do/server_settings" class="settings editform">
 {{template "csrf" $}}
 {{range .Data}}
 {{if .Advanced}}<details class="panel">
@@ -22,6 +26,6 @@
 <div class="grid">{{range .Settings}}{{template "setting" .}}{{end}}</div>
 </section>{{end}}
 {{end}}
-<p class="actions sticky"><button class="ok">Enregistrer</button></p>
+<p class="actions save sticky"><button class="ok">Enregistrer</button></p>
 </form>
 {{end}}
