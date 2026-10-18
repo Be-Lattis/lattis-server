@@ -1,22 +1,31 @@
-{{define "body"}}
-<p class="lead">Une équipe se donne à un rôle de classeur comme une personne : ses membres reçoivent le rôle. Dans un filtre, <code>"Équipe" IN (SELECT lattis.my_teams())</code> garde les lignes des équipes de la personne qui lit.</p>
-{{range .Data.Teams}}{{$t := .}}
+{{define "teamopts"}}<option value="">— Aucune (premier niveau) —</option>{{end}}
+{{define "body"}}{{$all := .Data.Teams}}
+<p class="lead">Une équipe se donne à un rôle de classeur comme une personne : ses membres reçoivent le rôle. Un rôle donné à une équipe vaut aussi pour toutes ses sous-équipes. Dans un filtre, <code>"Équipe" IN (SELECT lattis.my_teams())</code> garde les lignes des équipes de la personne qui lit, équipes parentes comprises.</p>
+
 <section class="panel">
-<h2>{{$t.name}} <span class="tag">{{str $t.member_count}} membre(s)</span></h2>
+<h2>Créer une équipe</h2>
+<form method="post" action="/admin/do/create_team" class="row">{{template "csrf" $}}<input name="name" required placeholder="Nom de l'équipe" aria-label="Nom de l'équipe">
+<select name="parent_id" aria-label="Équipe parente">{{template "teamopts"}}{{range $all}}<option value="{{.id}}">{{.path}}</option>{{end}}</select>
+<button class="ok">Créer</button></form>
+</section>
+
+{{range $all}}{{$t := .}}
+<section class="panel team depth{{str $t.depth}}">
+<h2>{{if gt (len (str $t.parent_id)) 0}}<span class="muted crumbs">{{$t.path}}</span>{{else}}{{$t.name}}{{end}} <span class="tag">{{str $t.member_count}} membre(s)</span>{{if ne (str $t.subteam_count) "0"}} <span class="tag">{{str $t.subteam_count}} sous-équipe(s)</span>{{end}}</h2>
+<div class="grid">
 <form method="post" action="/admin/do/rename_team" class="row editform">{{template "csrf" $}}<input type="hidden" name="id" value="{{$t.id}}">
 <div class="field grow"><span class="flabel">Nom de l'équipe</span><div class="control"><input name="name" required value="{{$t.name}}" aria-label="Nom de l'équipe">{{template "pen" "nom de l'équipe"}}</div></div>
 <span class="actions save"><button class="ok">Renommer</button></span></form>
+<form method="post" action="/admin/do/set_team_parent" class="row editform">{{template "csrf" $}}<input type="hidden" name="id" value="{{$t.id}}">
+<div class="field grow"><span class="flabel">Équipe parente</span><div class="control select"><select name="parent_id" aria-label="Équipe parente">{{template "teamopts"}}{{$p := str $t.parent_id}}{{range $all}}{{if ne (str .id) (str $t.id)}}<option value="{{.id}}"{{if eq (str .id) $p}} selected{{end}}>{{.path}}</option>{{end}}{{end}}</select>{{template "pen" "équipe parente"}}</div></div>
+<span class="actions save"><button class="ok">Déplacer</button></span></form>
+</div>
 <table class="compact"><tbody>
 {{range $t.members}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}</td><td><form method="post" action="/admin/do/remove_team_member">{{template "csrf" $}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
-{{else}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}
+{{else}}<tr><td class="muted">Aucun membre direct.</td></tr>{{end}}
 </tbody></table>
 <form method="post" action="/admin/do/add_team_member" class="row">{{template "csrf" $}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant"><button>Ajouter</button></form>
 <form method="post" action="/admin/do/drop_team" class="row danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$t.id}}">{{template "confirm"}}<button>Supprimer l'équipe</button></form>
 </section>
 {{else}}<p class="muted">Aucune équipe.</p>{{end}}
-
-<section class="panel">
-<h2>Créer une équipe</h2>
-<form method="post" action="/admin/do/create_team" class="row">{{template "csrf" $}}<input name="name" required placeholder="Nom de l'équipe"><button class="ok">Créer</button></form>
-</section>
 {{end}}

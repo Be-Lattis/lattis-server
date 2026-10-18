@@ -222,3 +222,104 @@ func TestTeams(t *testing.T) {
 		t.Fatal("rôle de l'équipe supprimée encore là")
 	}
 }
+
+// Sous-équipes : un rôle donné à une équipe vaut pour ses sous-équipes, sur
+// plusieurs niveaux ; my_teams() rend les équipes parentes ; pas de cycle.
+func TestSubTeams(t *testing.T) {
+	ctx := context.Background()
+	db := testpg.New(t)
+	us := openUsers(t, db, "proprio", "dora")
+	owner, dora := us[0], us[1]
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := func(fn func(pgx.Tx) error) error { return db.Store.AsActor(ctx, "test", fn) }
+
+	var ventes, nord, lille string
+	must(service(func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_team('Ventes', NULL)::text`).Scan(&ventes); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_team('Ventes Nord', $1::uuid)::text`, ventes).Scan(&nord); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_team('Agence Lille', $1::uuid)::text`, nord).Scan(&lille); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `SELECT lattis.add_team_member($1::uuid, $2::uuid)`, lille, dora.UserID)
+		return err
+	}))
+
+	var wb string
+	must(db.AsUser(t, owner.PGRole, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Objectifs', 'collaborative')::text`).Scan(&wb); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT lattis.create_table($1::uuid, 'Lignes', '[{"name":"Texte","type":"text"}]')`, wb); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb).Scan(new(int)); err != nil {
+			return err
+		}
+		var role string
+		if err := tx.QueryRow(ctx, `SELECT id::text FROM lattis.roles WHERE workbook_id = $1 AND builtin = 'reader'`, wb).Scan(&role); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `SELECT lattis.grant_role($1::uuid, $2::uuid)`, role, ventes)
+		return err
+	}))
+
+	// Dora, dans Agence Lille (sous Ventes Nord, sous Ventes), lit le classeur.
+	var teams []string
+	must(db.AsUser(t, dora.PGRole, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT lattis.my_capabilities($1::uuid)`, wb); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `SELECT lattis.my_teams()`)
+		if err != nil {
+			return err
+		}
+		teams, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	}))
+	if !slices.Equal(teams, []string{"Agence Lille", "Ventes", "Ventes Nord"}) {
+		t.Fatalf("mes équipes : %v", teams)
+	}
+	var via string
+	must(db.AsUser(t, owner.PGRole, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT m -> 'teams' ->> 0 FROM jsonb_array_elements(lattis.workbook_members($1::uuid)) m
+			WHERE m ->> 'user_id' = $2`, wb, dora.UserID).Scan(&via)
+	}))
+	if via != "Ventes" {
+		t.Fatalf("membre par l'équipe : %q", via)
+	}
+
+	// Cycles refusés, équipe avec sous-équipes non supprimable.
+	if err := service(func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.set_team_parent($1::uuid, $2::uuid)`, ventes, lille)
+		return err
+	}); pgCode(err) != "22023" {
+		t.Fatalf("cycle accepté : %v", err)
+	}
+	if err := service(func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.drop_team($1::uuid)`, nord)
+		return err
+	}); pgCode(err) != "55000" {
+		t.Fatalf("équipe avec sous-équipes supprimée : %v", err)
+	}
+
+	// Lille remonte au premier niveau : Dora perd l'accès.
+	must(service(func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.set_team_parent($1::uuid, NULL)`, lille)
+		return err
+	}))
+	if err := db.AsUser(t, dora.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.my_capabilities($1::uuid)`, wb)
+		return err
+	}); pgCode(err) != "42501" {
+		t.Fatalf("accès gardé après déplacement : %v", err)
+	}
+}

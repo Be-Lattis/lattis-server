@@ -84,3 +84,7 @@ details.panel[open] > summary { margin-bottom: 12px; } details.panel[open] > sum
 .copy { display: flex; gap: 8px; align-items: center; } .copy input { margin-top: 0; }
 td.who { width: 170px; max-width: 170px; } td.who small { display: block; color: var(--muted); white-space: nowrap; }
 .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team { border-left-width: 4px; } .team.depth1 { margin-left: 24px; } .team.depth2 { margin-left: 48px; } .team.depth3 { margin-left: 72px; }
+.team[class*="depth"]:not(.depth0):not(.depth1):not(.depth2):not(.depth3) { margin-left: 96px; }
+.team .crumbs { font-weight: 400; } .team .grid { margin-bottom: 8px; }
+@media (max-width: 640px) { .team[class*="depth"] { margin-left: 0; } }
