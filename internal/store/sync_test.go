@@ -25,7 +25,7 @@ func TestSyncFeedback(t *testing.T) {
 	}
 	var wb, tid, schema, channel string
 	must(db.AsUser(t, owner.PGRole, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Suivi', 'collaborative')::text`).Scan(&wb); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Synchro', 'collaborative')::text`).Scan(&wb); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `SELECT lattis.create_table($1::uuid, 'T', '[{"name":"v","type":"integer"}]')::text`, wb).Scan(&tid); err != nil {
