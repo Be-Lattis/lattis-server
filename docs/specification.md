@@ -365,11 +365,12 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 
 ## 20. Points à vérifier avant réalisation
 
-1. API des validateurs OAuth de PostgreSQL 18 : contraintes (pas d'accès aux tables ni au réseau), forme de `authn_id`, comportement de `delegate_ident_mapping`.
-2. Support d'`OAUTHBEARER` par pgx (client Go de Lattis) ; sinon, ajout du mécanisme SASL.
+1. ~~API des validateurs OAuth de PostgreSQL 18~~ **Vérifié le 18/10/2026** (PostgreSQL 18.6) : le validateur reçoit le jeton et le rôle demandé, renvoie `authorized` et `authn_id` ; avec `delegate_ident_mapping=1`, sa décision est finale et `system_user` vaut `oauth:<authn_id>`. Le module lit un fichier et des réglages, sans table ni réseau.
+2. ~~Support d'`OAUTHBEARER` par pgx~~ **Vérifié** : pgx v5.11 le gère (`Config.OAuthTokenProvider`).
 3. `pg_current_snapshot()` et `changes_since` sur un réplica en `hot_standby`.
 4. Sous-ressource `scale` du `Cluster` CloudNativePG (pour l'exemple KEDA).
-5. Délégation `CREATEROLE` de PostgreSQL 16+ : un rôle créé par `lattis_service` peut-il recevoir l'appartenance à des groupes créés par lui sans `ADMIN OPTION` supplémentaire.
+5. ~~Délégation `CREATEROLE`~~ **Vérifié** : `lattis_service` donne l'appartenance aux groupes qu'il a créés (`lattis_server_owners`) aux rôles qu'il a créés, sans option supplémentaire.
+6. Les rôles PostgreSQL sont communs à tout le serveur PostgreSQL : un Serveur Lattis par instance PostgreSQL (une seule base `lattis`).
 
 ## 21. Jalons
 

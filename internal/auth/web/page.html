@@ -1,0 +1,21 @@
+{{define "page"}}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · {{.Server}}</title>
+<link rel="stylesheet" href="/static/lattis.css">
+</head>
+<body>
+<main class="card">
+<header>
+{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{end}}
+<p class="server">{{.Server}}</p>
+<h1>{{.Title}}</h1>
+</header>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if .Message}}<p class="message">{{.Message}}</p>{{end}}
+{{template "body" .}}
+</main>
+</body>
+</html>{{end}}

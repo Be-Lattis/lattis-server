@@ -2,6 +2,69 @@
 
 Serveur préconfiguré qui rend [Lattis](https://github.com/Be-Lattis/lattis-app) collaboratif : PostgreSQL 18 comme source de vérité des classeurs partagés (comptes, droits, sécurité au niveau des lignes), et `lattisd`, un service Go pour la connexion multi-fournisseurs (mot de passe, Google, Google Workspace, Microsoft, Keycloak), l'administration, les mesures et, en option, l'application web.
 
-État : spécification, pas encore de code.
-
 - Spécification : [docs/specification.md](docs/specification.md)
+- Contrat avec l'application de bureau : [docs/contrat-client.md](docs/contrat-client.md)
+
+## État
+
+Jalon 1 (socle, édition « gestion des rôles ») :
+
+| Fait | Reste |
+|---|---|
+| Schéma `lattis` (catalogue, journal, jetons) et API SQL du serveur (§9.1) | Classeurs, rôles de classeur, `compile_acl` (jalons 2 à 4) |
+| `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Flux « device code » pour `psql` |
+| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Interface web d'administration (jalon 5) |
+| Inscription sur invitation ou entrée libre, premier propriétaire | Réplicas, retrait d'un réplica en retard, Helm (jalon 6) |
+| Module `lattis_oauth` pour PostgreSQL 18, image `be-lattis/server`, Docker Compose | Application web (jalon 7) |
+| Mesures Prometheus de base (connexions, requêtes, connexions par fournisseur) | Mesures de synchronisation et de réplication |
+
+## Essai local
+
+```sh
+cd deploy/compose
+cp .env.example .env        # mots de passe et adresse du premier propriétaire
+docker compose up --build
+docker compose logs lattisd # lien « /setup?token=… » pour choisir le mot de passe
+```
+
+Puis, dans Lattis, ajouter la source `http://localhost:8080`. Le certificat TLS de PostgreSQL est autosigné (`sslmode=require`) : réservé à l'essai.
+
+## Composants
+
+| Chemin | Rôle |
+|---|---|
+| `cmd/lattisd` | Service ; `lattisd --migrate`, `lattisd migrate`, `lattisd keygen FICHIER`, `lattisd public-keys`, `lattisd init-dev DIR` |
+| `schema/` | Migrations SQL (appliquées par `lattisd`, rôle `lattis_service`) et `bootstrap.sql` (superutilisateur, une fois) |
+| `oauth/` | Module C `lattis_oauth` (`oauth_validator_libraries`) |
+| `deploy/postgres/initdb` | Initialisation de l'image : `lattis_service`, TLS, `pg_hba` (OAuth pour les utilisateurs, mot de passe pour les comptes techniques) |
+| `docker/`, `deploy/compose` | Images et Docker Compose |
+
+### Configuration de `lattisd`
+
+Variables d'environnement (§16) : `LATTIS_EDITION` (`admin`), `LATTIS_PUBLIC_URL`, `LATTIS_PG_RW_URL`, `LATTIS_PG_RO_URLS`, `LATTIS_PG_PUBLIC_RW`, `LATTIS_PG_PUBLIC_RO`, `LATTIS_PG_DATABASE`, `LATTIS_PG_SSLMODE`, `LATTIS_SIGNING_KEY_FILE`, `LATTIS_SECRETS_DIR` (un fichier par `client_secret_ref`), `LATTIS_BOOTSTRAP_OWNER`, `LATTIS_LISTEN_ADDR`, `LATTIS_METRICS_ADDR`, `LATTIS_TLS_CERT_FILE` / `LATTIS_TLS_KEY_FILE`, `LATTIS_TRUST_PROXY`, `LATTIS_RATE_LIMIT`, `LATTIS_MIN_CLIENT_VERSION`. Le reste est en base (`lattis.server_config`, modifiable par `lattis.set_config`).
+
+### Rotation de la clé de signature
+
+1. Ajouter la nouvelle clé **en tête** du fichier `LATTIS_SIGNING_KEY_FILE`, garder l'ancienne derrière (ou sa seule clé publique).
+2. `lattisd public-keys > public.pem` et copier ce fichier pour PostgreSQL (`lattis_oauth.public_keys_file`, relu à chaque connexion).
+3. Redémarrer `lattisd`. Retirer l'ancienne clé une fois ses jetons expirés (15 min par défaut).
+
+### Exemples d'administration en SQL
+
+```sql
+SELECT lattis.set_config('access_mode', '"open"');
+SELECT lattis.add_provider('google_workspace', 'Google Acme', NULL, '<client_id>', 'google-acme', NULL);
+SELECT lattis.allow_tenant('<provider_id>', 'domain', 'acme.fr', 'reader');
+SELECT lattis.invite('marie@acme.fr', NULL, '{server_owner}');
+SELECT lattis.create_password_account('paul@acme.fr', 'Paul');  -- renvoie le jeton du lien /setup
+```
+
+## Tests
+
+```sh
+go test ./...                                          # tests unitaires
+docker run -d -p 55432:5432 -e POSTGRES_PASSWORD=pg postgres:18
+LATTIS_TEST_PG_URL=postgres://postgres:pg@127.0.0.1:55432/postgres go test ./...
+```
+
+Les tests de `internal/e2e` visent un serveur équipé de `lattis_oauth` (variables décrites en tête des fichiers) : connexion `OAUTHBEARER` réelle, jetons refusés, et parcours complet d'un poste contre le Docker Compose.

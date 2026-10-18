@@ -1,0 +1,5 @@
+.git
+.claude
+**/*.so
+**/*.o
+deploy/compose/.env

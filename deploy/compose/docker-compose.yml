@@ -1,0 +1,65 @@
+# Essai local du Serveur Lattis (édition « gestion des rôles »).
+#
+#   cd deploy/compose && cp .env.example .env && docker compose up --build
+#
+# Le lien pour choisir le mot de passe du premier propriétaire
+# (LATTIS_BOOTSTRAP_OWNER) s'affiche dans `docker compose logs lattisd`.
+# Certificat TLS autosigné : réservé à l'essai, fournir de vrais certificats
+# en production (volume /etc/lattis/tls).
+name: lattis
+
+services:
+  init:
+    image: be-lattis/lattisd:dev
+    build: { context: ../.., dockerfile: docker/lattisd/Dockerfile }
+    user: "0"
+    environment:
+      LATTIS_KEY_OWNER: "65532:65532"
+    command: ["init-dev", "/etc/lattis", "localhost", "postgres", "127.0.0.1"]
+    volumes:
+      - secrets:/etc/lattis
+
+  postgres:
+    image: be-lattis/server:dev-pg18
+    build: { context: ../.., dockerfile: docker/server/Dockerfile }
+    depends_on:
+      init: { condition: service_completed_successfully }
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: lattis
+      LATTIS_SERVICE_PASSWORD: ${LATTIS_SERVICE_PASSWORD:?}
+      LATTIS_ISSUER: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - secrets:/etc/lattis:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "lattis"]
+      interval: 5s
+      retries: 20
+
+  lattisd:
+    image: be-lattis/lattisd:dev
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      LATTIS_EDITION: admin
+      LATTIS_PUBLIC_URL: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
+      LATTIS_PG_RW_URL: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@postgres:5432/lattis?sslmode=require
+      LATTIS_PG_PUBLIC_RW: localhost:5432
+      LATTIS_PG_SSLMODE: require
+      LATTIS_SIGNING_KEY_FILE: /etc/lattis/keys/signing.pem
+      LATTIS_SECRETS_DIR: /etc/lattis/oauth
+      LATTIS_BOOTSTRAP_OWNER: ${LATTIS_BOOTSTRAP_OWNER:?}
+      LATTIS_METRICS_ADDR: ":9464"
+    command: ["--migrate"]
+    volumes:
+      - secrets:/etc/lattis:ro
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:9464:9464"
+
+volumes:
+  pgdata:
+  secrets:
