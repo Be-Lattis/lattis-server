@@ -66,10 +66,18 @@ func New(t *testing.T) *DB {
 		`GRANT CREATE, CONNECT ON DATABASE ` + pgx.Identifier{name}.Sanitize() + ` TO lattis_service`,
 		`GRANT pg_monitor, pg_signal_backend TO lattis_service`,
 	}
+	// Rôles communs à tout le serveur PostgreSQL : les paquets de tests qui
+	// tournent en parallèle s'amorcent l'un après l'autre.
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(7357)`); err != nil {
+		t.Fatal(err)
+	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(ctx, s); err != nil {
 			t.Fatalf("amorçage : %v", err)
 		}
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_unlock(7357)`); err != nil {
+		t.Fatal(err)
 	}
 	superURL := withDB(t, admin, name, "", "")
 	svcURL := withDB(t, admin, name, "lattis_service", ServicePassword)

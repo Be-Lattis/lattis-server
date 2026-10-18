@@ -209,7 +209,7 @@ func TestAdminConsole(t *testing.T) {
 	// Droits d'un classeur.
 	var wb, tid string
 	if err := e.db.AsUser(t, ownerEmail, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Ventes', 'collaborative')::text`).Scan(&wb); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Ventes console', 'collaborative')::text`).Scan(&wb); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `SELECT lattis.create_table($1::uuid, 'Commandes', '[{"name":"Région","type":"text"}]')::text`, wb).Scan(&tid); err != nil {
