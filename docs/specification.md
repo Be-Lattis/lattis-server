@@ -93,6 +93,8 @@ Les tables d'identité (`users`, `local_credentials`, `identity_providers`, `all
 
 ### 5.2 Un schéma par classeur (`wb_<slug>`)
 
+Le slug est le titre simplifié (30 caractères au plus) suivi des 6 premiers caractères de l'identifiant du classeur : `wb_ventes_2026_3f9a2c`. Un même titre ne se heurte donc ni à un autre classeur ni aux restes d'un classeur supprimé.
+
 - **Tableaux** : une table PostgreSQL par tableau, **nommée comme le tableau** (identifiant entre guillemets), pour que le SQL d'un DBA reste lisible. La correspondance avec les identifiants internes de Lattis est dans `lattis_meta_tables` / `lattis_meta_columns`.
 - **Colonnes système** de chaque tableau :
 
