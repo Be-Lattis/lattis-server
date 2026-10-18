@@ -18,7 +18,7 @@ var publicAPI = []string{
 	"login_summary", "my_capabilities", "my_workbooks", "publish_script", "remove_provider", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "save_meta", "set_config",
 	"set_level", "since_covered", "sync_point", "table_ref", "tombstones_since", "trg_notify", "trg_stamp",
-	"update_provider", "why_not", "workbook_acl",
+	"update_provider", "why_not", "workbook_acl", "workbook_members",
 }
 
 func TestPublicFunctions(t *testing.T) {

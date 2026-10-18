@@ -71,7 +71,7 @@ Toutes les fonctions sont dans le schéma `lattis`, appelées sous l'identité d
 | Besoin | Appel |
 |---|---|
 | Liste « Ouvrir depuis un serveur » | `my_workbooks() → jsonb` : `id`, `title`, `mode`, `state`, `version`, `schema`, `roles` |
-| Droits sur un classeur | `my_capabilities(workbook_id) → jsonb` : `title`, `mode`, `version`, `schema`, `channel` (canal `LISTEN`), `roles`, `can_design`, `can_manage`, `custom_roles`, `tables` (`table_id` → `name`, `level`, `filtered`), `restrictions` (`table_id`, `command`, `label`) |
+| Droits sur un classeur | `my_capabilities(workbook_id) → jsonb` : `title`, `mode`, `version`, `schema`, `channel` (canal `LISTEN`), `roles`, `can_design`, `can_manage`, `custom_roles`, `tables` (`table_id` → `name`, `sheet_id`, `level`, `filtered`, `read_filtered`, `write_filtered`), `restrictions` (`table_id`, `command`, `label`) |
 | Publier | `create_workbook(title, 'frozen'\|'collaborative')`, puis `create_table(workbook_id, name, columns)` par tableau (`columns` : `[{"name", "type", "local_id", "table_local_id"}]` ; `table_local_id`, identifiant local du tableau, est lu dans le premier élément, types `text`, `integer`, `decimal`, `date`, `datetime`, `boolean`), copie des lignes par `COPY` dans `"<schema>"."<tableau>"` (`lattis_id` UUIDv7 et `lattis_pos` fournis par le client), `save_meta(workbook_id, kind, payload)`, `publish_script(workbook_id, name, source)`, puis `finish_publish(workbook_id)`. `abort_publish` abandonne. |
 | Republier (figé) | `republish(workbook_id) → schéma de travail`, mêmes appels que la publication (ils visent la version de travail), puis `finish_publish` : la nouvelle version remplace l'ancienne d'un coup, notification `*version:<n>` sur le canal. La version de travail ne notifie rien : les lecteurs ne reçoivent que `*version:<n>`. |
 | Inviter | `invite(email, workbook_id, '{reader}')` (propriétaire du classeur) |
@@ -100,7 +100,14 @@ Colonnes système de chaque tableau : `lattis_id`, `lattis_pos`, `lattis_xid`, `
 | Rôle personnalisé | `create_role(workbook_id, name) → uuid` (aucun droit tant qu'aucun niveau n'est posé), `drop_role(role_id)`, `grant_role(role_id, user_id)`, `revoke_role(role_id, user_id)` |
 | Niveau d'un rôle | `set_level(role_id, 'workbook'\|'sheet'\|'table', node_id, 'none'\|'reader'\|'participant'\|'editor', read_filter, write_filter)`. Le niveau d'un nœud s'hérite vers le bas ; `NULL` comme niveau retire celui du nœud. Filtres : expressions SQL booléennes sur les colonnes du tableau (`"Région" = 'Nord'`), tableaux seulement. |
 | Restriction | `add_restriction(workbook_id, table_id, 'select'\|'insert'\|'update'\|'delete'\|'all', role_ids, predicate, label) → uuid` (`role_ids` vide = tous les rôles du classeur sauf propriétaires et concepteurs), `drop_restriction(id)`. Combinées en ET avec les niveaux. |
-| Écarts | `check_drift(workbook_id) → jsonb` : tableaux dont les règles ou droits ont changé hors de Lattis, avec `foreign_policies`. Republier ou recompiler (`set_level` sur n'importe quel nœud) les remet d'aplomb. |
+| Écarts | `check_drift(workbook_id) → jsonb` : tableaux dont les règles ou droits ont changé hors de Lattis, avec `foreign_policies`. `compile_acl(workbook_id)` (propriétaire ou concepteur) recompile et les remet d'aplomb, sans republier. |
+| Inviter à un rôle personnalisé | `invite(email, workbook_id, roles)` : `roles` mêle rôles fournis (`reader`…) et noms de rôles personnalisés (sans casse). Une adresse inconnue reçoit un compte en attente : `grant_role` vaut ensuite pour elle aussi. |
+| Membres (propriétaire ou concepteur) | `workbook_members(workbook_id) → jsonb` : `[{"user_id", "email", "display_name", "pg_role", "roles"}]`, pour choisir qui voir dans « Voir en tant que… ». |
+| Tableau rattaché à une feuille | `create_table(workbook_id, name, columns, sheet_id)` : `set_level(…, 'sheet', sheet_id, …)` s'applique à ses tableaux. Sans `sheet_id`, le tableau n'hérite que du classeur. |
+
+`my_capabilities` : `read_filtered` vaut vrai quand un filtre de lecture ou une restriction `select`/`all` me vise (je ne vois peut-être pas toutes les lignes), `write_filtered` quand un filtre d'écriture ou une restriction `insert`/`update`/`delete`/`all` me vise. `filtered` (l'un ou l'autre filtre de niveau) reste pour compatibilité.
+
+Pas encore : groupes d'annuaire et équipes comme membres (`members.principal` ne désigne que des utilisateurs).
 
 Un filtre refusé (point-virgule, `$`, commentaire, parenthèses déséquilibrées, colonne inconnue, expression non booléenne) lève `invalid_parameter_value` (22023) avec la raison.
 
