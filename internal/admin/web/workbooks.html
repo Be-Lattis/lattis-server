@@ -1,0 +1,19 @@
+{{define "body"}}
+<table>
+<thead><tr><th>Classeur</th><th>Mode</th><th>Propriétaires</th><th>Membres</th><th>Taille</th><th>Version</th><th></th></tr></thead>
+<tbody>
+{{range .Data}}
+<tr>
+<td><a href="/admin/workbooks/{{.id}}">{{.title}}</a>{{if ne (str .state) "published"}} <span class="tag">{{.state}}</span>{{end}}</td>
+<td>{{if eq (str .mode) "frozen"}}Figé{{else}}Collaboratif{{end}}</td>
+<td>{{range $i, $o := .owners}}{{if $i}}, {{end}}{{$o}}{{end}}</td>
+<td>{{str .members}}</td>
+<td>{{bytes .size}}</td>
+<td>{{str .version}}</td>
+<td><form method="post" action="/admin/do/drop_workbook" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button>Supprimer</button></form></td>
+</tr>
+{{else}}<tr><td colspan="7" class="muted">Aucun classeur publié.</td></tr>{{end}}
+</tbody>
+</table>
+<p class="muted">Publier et republier se font depuis l'application Lattis.</p>
+{{end}}

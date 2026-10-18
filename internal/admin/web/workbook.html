@@ -1,0 +1,78 @@
+{{define "body"}}{{$wb := .Data.Workbook}}{{$d := .Data}}
+<p class="lead"><strong>{{$wb.title}}</strong> · {{if eq (str $wb.mode) "frozen"}}figé{{else}}collaboratif{{end}} · version {{str $wb.version}} · schéma <code>{{$wb.schema}}</code></p>
+
+{{if $d.Drift}}<section class="panel warn"><h2>Écarts détectés</h2>
+<p>Les règles de ces tableaux ont été modifiées hors de Lattis. Enregistrer un niveau recompile les droits du classeur.</p>
+<ul>{{range $d.Drift}}<li>{{.name}}{{if .foreign_policies}} : règles étrangères {{range .foreign_policies}}<code>{{.}}</code> {{end}}{{end}}</li>{{end}}</ul></section>{{end}}
+
+{{range $d.Roles}}{{$r := .Role}}
+<section class="panel">
+<h2>{{if $r.builtin}}{{builtinName $r.builtin}}{{else}}{{$r.name}} <span class="tag">personnalisé</span>{{end}}</h2>
+<table class="compact"><tbody>
+{{range $r.members}}<tr><td>{{.email}}</td><td><form method="post" action="/admin/do/revoke_role">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
+{{else}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}
+</tbody></table>
+<form method="post" action="/admin/do/grant_role" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant"><button>Ajouter</button></form>
+{{if .Nodes}}
+<h3>Niveaux</h3>
+<table class="levels"><thead><tr><th>Nœud</th><th>Niveau</th><th>Filtre de lecture</th><th>Filtre d'écriture</th><th></th></tr></thead><tbody>
+{{range .Nodes}}<tr><td class="depth{{.Depth}}">{{.Label}}</td>
+<td colspan="4"><form method="post" action="/admin/do/set_level" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="node" value="{{.Kind}}:{{.ID}}">
+<select name="level">{{if ne .Kind "workbook"}}<option value="">Hérité</option>{{end}}{{$lv := str .Level}}{{range $d.Levels}}<option value="{{.}}"{{if eq . $lv}} selected{{end}}>{{levelName .}}</option>{{end}}</select>
+{{if eq .Kind "table"}}<input name="read_filter" value="{{str .ReadFilter}}" placeholder="Filtre de lecture (SQL)" aria-label="Filtre de lecture"><input name="write_filter" value="{{str .WriteFilter}}" placeholder="Filtre d'écriture (SQL)" aria-label="Filtre d'écriture">{{end}}
+<button>Enregistrer</button></form></td></tr>{{end}}
+</tbody></table>
+{{end}}
+{{if not $r.builtin}}<form method="post" action="/admin/do/drop_role" class="row danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$r.id}}">{{template "confirm"}}<button>Supprimer ce rôle</button></form>{{end}}
+</section>
+{{end}}
+
+{{if eq (str $wb.mode) "collaborative"}}
+<section class="panel">
+<h2>Nouveau rôle</h2>
+<form method="post" action="/admin/do/create_role" class="row">{{template "csrf" $}}<input type="hidden" name="workbook_id" value="{{$wb.id}}"><input name="name" required placeholder="Commerciaux Nord"><button class="ok">Créer</button></form>
+</section>
+
+<section class="panel">
+<h2>Restrictions</h2>
+{{if $d.ACL.restrictions}}<table><thead><tr><th>Libellé</th><th>Commande</th><th>Condition</th><th></th></tr></thead><tbody>
+{{range $d.ACL.restrictions}}<tr><td>{{.label}}</td><td>{{.command}}</td><td><code>{{.predicate}}</code></td>
+<td><form method="post" action="/admin/do/drop_restriction">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Supprimer</button></form></td></tr>{{end}}
+</tbody></table>{{else}}<p class="muted">Aucune restriction.</p>{{end}}
+<form method="post" action="/admin/do/add_restriction" class="grid">{{template "csrf" $}}<input type="hidden" name="workbook_id" value="{{$wb.id}}">
+<label>Libellé <input name="label" required></label>
+<label>Tableau <select name="table_id">{{range $d.Tables}}<option value="{{.table_id}}">{{.name}}</option>{{end}}</select></label>
+<label>Commande <select name="command"><option value="update">Modifier</option><option value="insert">Ajouter</option><option value="delete">Supprimer</option><option value="select">Lire</option><option value="all">Tout</option></select></label>
+<label>Condition à respecter <input name="predicate" required placeholder="&quot;Montant&quot; &lt;= 1000"></label>
+<fieldset><legend>Rôles visés (aucun = tous sauf propriétaires et concepteurs)</legend>
+{{range $d.Roles}}{{if and (ne (str .Role.builtin) "owner") (ne (str .Role.builtin) "designer")}}<label class="inline"><input type="checkbox" name="roles" value="{{.Role.id}}"> {{if .Role.builtin}}{{builtinName .Role.builtin}}{{else}}{{.Role.name}}{{end}}</label>{{end}}{{end}}
+</fieldset>
+<p class="actions"><button class="ok">Ajouter</button></p>
+</form>
+</section>
+{{end}}
+
+<section class="panel">
+<h2>Inviter à ce classeur</h2>
+<form method="post" action="/admin/do/invite_workbook" class="row">{{template "csrf" $}}<input type="hidden" name="workbook_id" value="{{$wb.id}}">
+<input type="email" name="email" required placeholder="adresse@exemple.fr">
+{{range $d.Roles}}{{if .Role.builtin}}<label class="inline"><input type="checkbox" name="roles" value="{{.Role.builtin}}"> {{builtinName .Role.builtin}}</label>{{end}}{{end}}
+<button class="ok">Inviter</button></form>
+{{if $d.ACL.invitations}}<table class="compact"><tbody>{{range $d.ACL.invitations}}<tr><td>{{.email}}</td><td>{{range .roles}}{{builtinName .}} {{end}}</td><td>{{date .expires_at}}</td>
+<td><form method="post" action="/admin/do/revoke_invitation">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}</tbody></table>{{end}}
+</section>
+
+<section class="panel">
+<h2>Voir en tant que…</h2>
+<form method="get" action="/admin/workbooks/{{$wb.id}}" class="row">
+<input type="email" name="preview_user" required value="{{str $d.PreviewUser}}" placeholder="adresse de l'utilisateur">
+<select name="preview_table">{{$pt := str $d.PreviewTable}}{{range $d.Tables}}<option value="{{.table_id}}"{{if eq (str .table_id) $pt}} selected{{end}}>{{.name}}</option>{{end}}</select>
+<button>Afficher</button></form>
+{{if $d.PreviewError}}<p class="error">{{$d.PreviewError}}</p>{{end}}
+{{with $d.Preview}}
+<p class="muted">{{len .Rows}} ligne(s) visibles{{if .Limited}} (1 000 premières){{end}}. Consultation journalisée.</p>
+<div class="scroll"><table class="compact"><thead><tr>{{range .Columns}}<th>{{.}}</th>{{end}}</tr></thead><tbody>
+{{range .Rows}}<tr>{{range .}}<td>{{.}}</td>{{end}}</tr>{{end}}</tbody></table></div>
+{{end}}
+</section>
+{{end}}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
@@ -25,6 +26,7 @@ type Server struct {
 	Store  *store.Store
 	Keys   *tokens.KeySet
 	Auth   *auth.Service
+	Admin  *admin.Service // nil : pas d'interface d'administration
 }
 
 // Handler renvoie le routeur avec ses intergiciels.
@@ -40,11 +42,14 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/preview", s.preview)
 	s.Auth.Routes(mux)
+	if s.Admin != nil {
+		s.Admin.Routes(mux)
+	}
 
 	limiter := newLimiter(max(s.Config.RateLimit, 1), time.Minute)
 	return securityHeaders(s.Config.PublicURL.Scheme == "https", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
+		if strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/admin/do/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
 			if !limiter.allow(auth.ClientIP(r, s.Config.TrustProxy)) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "trop de requêtes", http.StatusTooManyRequests)

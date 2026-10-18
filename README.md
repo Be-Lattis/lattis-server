@@ -7,19 +7,24 @@ Serveur préconfiguré qui rend [Lattis](https://github.com/Be-Lattis/lattis-app
 
 ## État
 
-Jalons 1 à 4 (édition « gestion des rôles ») :
+Jalons 1 à 5 (édition « gestion des rôles ») :
 
 | Fait | Reste |
 |---|---|
 | Schéma `lattis` (catalogue, journal, jetons) et API SQL du serveur (§9.1) | Flux « device code » pour `psql` |
-| `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Interface web d'administration (jalon 5) |
+| `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Mesures de durée des requêtes et de synchronisation |
 | Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Réplicas, retrait d'un réplica en retard, Helm (jalon 6) |
 | Inscription sur invitation ou entrée libre, premier propriétaire | Application web (jalon 7) |
-| Classeurs figés : publication, republication d'un coup, lecteurs | Mesures de synchronisation et de réplication |
+| Classeurs figés : publication, republication d'un coup, lecteurs | |
 | Classeurs collaboratifs : rôles fournis, RLS compilée, deltas, pierres tombales, `why_not`, `NOTIFY` | |
 | Droits avancés : rôles personnalisés, niveaux par classeur, feuille ou tableau, filtres de lecture et d'écriture, restrictions, détection des écarts, « Voir en tant que… » (`POST /api/preview`) | |
 | Module `lattis_oauth` pour PostgreSQL 18, image `be-lattis/server`, Docker Compose | |
-| Mesures Prometheus de base (connexions, requêtes, connexions par fournisseur) | |
+| Administration web `/admin` : serveur, connexion, utilisateurs, classeurs, droits d'un classeur, journal, état | |
+| Mesures Prometheus : connexions, requêtes lourdes ou légères, sessions par client, connexions par fournisseur | |
+
+## Administration web
+
+`http(s)://<serveur>/admin`, réservée aux propriétaires du serveur. La connexion suit le même parcours que l'application (fournisseurs configurés), puis `lattisd` ouvre une connexion PostgreSQL **sous l'identité de l'administrateur** (jeton signé pour lui, OAUTHBEARER) : chaque action passe par les fonctions `lattis.*`, qui vérifient ses droits et journalisent sous son nom. Aucune page n'utilise `lattis_service` pour écrire.
 
 ## Essai local
 

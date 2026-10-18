@@ -33,6 +33,11 @@ import (
 // DesktopClientID est le client public de l'application de bureau.
 const DesktopClientID = "lattis-desktop"
 
+// AdminClientID est le client interne de l'interface d'administration. Ses
+// codes ne s'échangent pas sur /oauth/token : lattisd les consomme lui-même
+// sur /admin/callback.
+const AdminClientID = "lattis-admin"
+
 // Scopes acceptés ; « openid lattis » est la valeur attendue par PostgreSQL.
 var knownScopes = []string{"openid", "lattis", "offline_access", "email", "profile"}
 
@@ -104,6 +109,9 @@ type authRequest struct {
 // validRedirect : bouclage local (RFC 8252 §7.3, port quelconque) ou URI
 // déclarée dans LATTIS_EXTRA_REDIRECT_URIS.
 func (s *Service) validRedirect(clientID, raw string) bool {
+	if clientID == AdminClientID {
+		return raw == s.Config.URL("/admin/callback")
+	}
 	if clientID != DesktopClientID {
 		return false
 	}

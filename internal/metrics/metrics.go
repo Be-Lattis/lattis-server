@@ -58,6 +58,8 @@ var (
 		[]string{"server", "kind"}, nil)
 	descWaiting = prometheus.NewDesc("lattis_queries_waiting", "Requêtes en attente d'un verrou.",
 		[]string{"server"}, nil)
+	descSessions = prometheus.NewDesc("lattis_sessions_active", "Utilisateurs distincts connectés, par type de client.",
+		[]string{"client"}, nil)
 )
 
 // pgCollector lit pg_stat_activity à chaque relevé. Le classement lourd ou
@@ -71,6 +73,7 @@ func (c *pgCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- descConnections
 	ch <- descRunning
 	ch <- descWaiting
+	ch <- descSessions
 }
 
 func (c *pgCollector) Collect(ch chan<- prometheus.Metric) {
@@ -121,4 +124,17 @@ func (c *pgCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(descRunning, prometheus.GaugeValue, n, c.server, k)
 	}
 	ch <- prometheus.MustNewConstMetric(descWaiting, prometheus.GaugeValue, waiting, c.server)
+
+	// Sessions : utilisateurs distincts (un poste ouvre plusieurs connexions).
+	var desktop, web float64
+	if err := c.db.QueryRow(ctx, `
+		SELECT count(DISTINCT usename) FILTER (WHERE application_name LIKE 'Lattis/%'),
+		       count(DISTINCT usename) FILTER (WHERE application_name LIKE 'lattisd/web%')
+		FROM pg_stat_activity
+		WHERE backend_type = 'client backend' AND datname = current_database()`).Scan(&desktop, &web); err != nil {
+		slog.Warn("mesures des sessions", "err", err)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(descSessions, prometheus.GaugeValue, desktop, "desktop")
+	ch <- prometheus.MustNewConstMetric(descSessions, prometheus.GaugeValue, web, "web")
 }

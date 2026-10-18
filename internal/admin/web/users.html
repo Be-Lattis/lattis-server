@@ -1,0 +1,46 @@
+{{define "body"}}
+<form method="get" action="/admin/users" class="row"><input type="search" name="q" value="{{.Data.Q}}" placeholder="Rechercher une adresse ou un nom"><button>Rechercher</button></form>
+<table>
+<thead><tr><th>Utilisateur</th><th>Connexion</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Users}}
+<tr>
+<td>{{.email}}{{if .display_name}}<br><small>{{.display_name}}</small>{{end}}{{if .server_owner}} <span class="tag">propriétaire</span>{{end}}</td>
+<td>{{if .provider}}{{.provider}}{{else}}<span class="muted">invité</span>{{end}}</td>
+<td>{{if .last_login_at}}{{date .last_login_at}}{{else}}<span class="muted">jamais</span>{{end}}</td>
+<td>{{if .disabled}}<span class="tag off">désactivé</span>{{else if .pending}}<span class="tag">en attente</span>{{else}}actif{{end}}</td>
+<td><div class="buttons">
+{{if eq (str .kind) "password"}}<form method="post" action="/admin/do/reset_password">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Réinitialiser le mot de passe</button></form>{{end}}
+{{if ne (str .id) $.Data.Me}}
+{{if .disabled}}<form method="post" action="/admin/do/enable_user">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Réactiver</button></form>
+{{else}}<form method="post" action="/admin/do/disable_user" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button>Désactiver</button></form>{{end}}
+{{end}}
+</div></td>
+</tr>
+{{else}}<tr><td colspan="5" class="muted">Aucun utilisateur.</td></tr>{{end}}
+</tbody>
+</table>
+
+<section class="panel">
+<h2>Inviter</h2>
+<form method="post" action="/admin/do/invite_server" class="row">
+{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr">
+<label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
+<button class="ok">Inviter</button>
+</form>
+<h2>Créer un compte à mot de passe</h2>
+<form method="post" action="/admin/do/create_password_account" class="row">
+{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr"><input name="display_name" placeholder="Nom affiché">
+<button class="ok">Créer</button>
+</form>
+</section>
+
+<section class="panel">
+<h2>Invitations en attente</h2>
+{{if .Data.Invitations}}<table><thead><tr><th>Adresse</th><th>Classeur</th><th>Rôles</th><th>Par</th><th>Expire le</th><th></th></tr></thead><tbody>
+{{range .Data.Invitations}}<tr><td>{{.email}}</td><td>{{if .workbook}}{{.workbook}}{{else}}<span class="muted">serveur</span>{{end}}</td>
+<td>{{range .roles}}{{.}} {{end}}</td><td>{{.invited_by}}</td><td>{{date .expires_at}}</td>
+<td><form method="post" action="/admin/do/revoke_invitation">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}
+</tbody></table>{{else}}<p class="muted">Aucune.</p>{{end}}
+</section>
+{{end}}

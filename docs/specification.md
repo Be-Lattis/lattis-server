@@ -263,7 +263,8 @@ Le serveur fournit les moyens ; la logique côté poste est spécifiée dans la 
 | `GET /.well-known/openid-configuration`, `GET /jwks.json` | Métadonnées OIDC de `lattisd` (émetteur pour PostgreSQL et les clients). |
 | `GET /oauth/authorize`, `POST /oauth/token`, `POST /oauth/device`, `POST /oauth/revoke` | Flux OAuth (PKCE, rafraîchissement, device code). |
 | `GET /login/<provider>`, `GET /callback/<provider>` | Délégation aux fournisseurs. |
-| `GET /admin/…` | Interface d'administration (édition `admin` et `web`). |
+| `GET /admin/…`, `POST /admin/do/<action>` | Interface d'administration (édition `admin` et `web`). Connexion par le client interne `lattis-admin` (code consommé par `lattisd`, jamais sur `/oauth/token`) ; chaque page s'exécute sur une connexion OAUTHBEARER ouverte sous l'identité de l'administrateur. |
+| `POST /api/preview` | « Voir en tant que… » (§8.5) : jeton d'accès en `Bearer`, lecture seule sous le rôle de l'utilisateur visé. |
 | `GET /app/…`, `GET /ws` | Application web et son canal WebSocket (édition `web`). |
 | `GET /healthz`, `GET /readyz` | Vivacité ; disponibilité (PostgreSQL parent joignable, migrations à jour). |
 | `GET /metrics` | Mesures Prometheus (§13). Réseau interne seulement. |

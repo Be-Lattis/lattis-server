@@ -1,0 +1,25 @@
+{{define "body"}}{{$pg := .Data.PG}}
+<section class="panel">
+<h2>Serveur Lattis</h2>
+<dl>
+<dt>lattisd</dt><dd>{{.Version}} · édition {{.Edition}}</dd>
+<dt>PostgreSQL</dt><dd>{{$pg.pg_version}}{{if $pg.in_recovery}} (réplica){{end}} · base <code>{{$pg.database}}</code> · {{bytes $pg.database_size}}</dd>
+<dt>Démarré le</dt><dd>{{date $pg.started_at}}</dd>
+<dt>Point d'écriture</dt><dd><code>{{.Data.Endpoints.Host}}:{{.Data.Endpoints.Port}}</code></dd>
+<dt>Points de lecture</dt><dd>{{range .Data.RO}}<code>{{.Host}}:{{.Port}}</code> {{else}}aucun{{end}}</dd>
+<dt>Utilisateurs</dt><dd>{{str $pg.users}}</dd>
+<dt>Classeurs</dt><dd>{{str $pg.workbooks}}</dd>
+</dl>
+</section>
+<section class="panel">
+<h2>Connexions</h2>
+<p>Maximum : {{str $pg.max_connections}}</p>
+<table class="compact"><tbody>{{range $k, $v := $pg.connections}}<tr><td>{{$k}}</td><td>{{str $v}}</td></tr>{{end}}</tbody></table>
+</section>
+<section class="panel">
+<h2>Réplicas</h2>
+{{if $pg.replicas}}<table><thead><tr><th>Nom</th><th>Adresse</th><th>État</th><th>Retard</th></tr></thead><tbody>
+{{range $pg.replicas}}<tr><td>{{.name}}</td><td>{{.address}}</td><td>{{.state}} ({{.sync_state}})</td><td>{{str .lag_seconds}} s · {{bytes .lag_bytes}}</td></tr>{{end}}
+</tbody></table>{{else}}<p class="muted">Aucun réplica connecté.</p>{{end}}
+</section>
+{{end}}

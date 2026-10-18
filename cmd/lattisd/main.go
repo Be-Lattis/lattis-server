@@ -21,6 +21,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
@@ -29,6 +30,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/upstream"
+	"github.com/Be-Lattis/lattis-server/internal/userdb"
 )
 
 func main() {
@@ -163,7 +165,25 @@ func serve(doMigrate bool) error {
 		Upstream: &upstream.Registry{SecretsDir: cfg.SecretsDir,
 			CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }},
 	}
-	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc}
+	users, err := userdb.NewOAuth(cfg.PGRWURL, keys, cfg.Issuer())
+	if err != nil {
+		return err
+	}
+	defer users.Close()
+	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Version: httpserver.Version}
+	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc}
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				users.Sweep()
+			}
+		}
+	}()
 
 	public := &http.Server{Addr: cfg.ListenAddr, Handler: srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}

@@ -116,4 +116,24 @@ func TestComposeLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("connecté en %s, résumé %v", tr.PGRole, summary)
+
+	// Console d'administration : lattisd ouvre lui-même une connexion
+	// OAUTHBEARER sous l'identité du propriétaire.
+	resp, body = read(c.Get(base + "/admin/status"))
+	if strings.Contains(body, `type="password"`) {
+		resp, body = read(c.PostForm(base+resp.Request.URL.RequestURI(), url.Values{"req": {field(body, "req")},
+			"csrf": {field(body, "csrf")}, "email": {owner}, "password": {pw}}))
+	}
+	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin/status" || !strings.Contains(body, "Serveur Acme") {
+		t.Fatalf("console : %d %s\n%s", resp.StatusCode, resp.Request.URL, body)
+	}
+	resp, body = read(c.PostForm(base+"/admin/do/invite_server", url.Values{"csrf": {field(body, "csrf")},
+		"back": {"/admin/users"}, "email": {"invite.e2e@example.com"}}))
+	if !strings.Contains(body, "Invitation enregistrée") {
+		t.Fatalf("invitation depuis la console : %d", resp.StatusCode)
+	}
+	var actor string
+	if err := conn.QueryRow(ctx, `SELECT actor FROM lattis.audit WHERE action = 'invite' ORDER BY id DESC LIMIT 1`).Scan(&actor); err != nil || actor != tr.PGRole {
+		t.Fatalf("auteur de l'invitation : %q %v", actor, err)
+	}
 }
