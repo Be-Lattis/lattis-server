@@ -1,0 +1,10 @@
+Serveur Lattis {{ .Chart.AppVersion }} déployé.
+
+Découverte : {{ .Values.publicURL }}/.well-known/lattis.json
+Écriture   : {{ include "lattis.publicRW" . }}
+{{- if gt (int .Values.replicas.count) 0 }}
+Lecture    : {{ include "lattis.publicRO" . }} (annoncés tant qu'ils suivent, retard < {{ .Values.lattisd.replicaMaxLag }})
+{{- end }}
+
+Lien du premier propriétaire ({{ .Values.lattisd.bootstrapOwner }}) :
+  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "lattis.fullname" . }}-lattisd | grep token=

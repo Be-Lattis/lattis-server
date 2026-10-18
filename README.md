@@ -4,16 +4,17 @@ Serveur préconfiguré qui rend [Lattis](https://github.com/Be-Lattis/lattis-app
 
 - Spécification : [docs/specification.md](docs/specification.md)
 - Contrat avec l'application de bureau : [docs/contrat-client.md](docs/contrat-client.md)
+- **Installer et configurer** (Docker Compose, Kubernetes, variables, réglages) : [docs/installation.md](docs/installation.md)
 
 ## État
 
-Jalons 1 à 5 (édition « gestion des rôles ») :
+Jalons 1 à 6 (édition « gestion des rôles ») :
 
 | Fait | Reste |
 |---|---|
 | Schéma `lattis` (catalogue, journal, jetons) et API SQL du serveur (§9.1) | Flux « device code » pour `psql` |
 | `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Mesures de durée des requêtes et de synchronisation |
-| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Réplicas, retrait d'un réplica en retard, Helm (jalon 6) |
+| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Variante Helm sur CloudNativePG (bascule, sauvegardes) |
 | Inscription sur invitation ou entrée libre, premier propriétaire | Application web (jalon 7) |
 | Classeurs figés : publication, republication d'un coup, lecteurs | |
 | Classeurs collaboratifs : rôles fournis, RLS compilée, deltas, pierres tombales, `why_not`, `NOTIFY` | |
@@ -21,6 +22,7 @@ Jalons 1 à 5 (édition « gestion des rôles ») :
 | Module `lattis_oauth` pour PostgreSQL 18, image `be-lattis/server`, Docker Compose | |
 | Administration web `/admin` : serveur, connexion, utilisateurs, classeurs, droits d'un classeur, journal, état | |
 | Mesures Prometheus : connexions, requêtes lourdes ou légères, sessions par client, connexions par fournisseur | |
+| Réplicas en flux : retard mesuré, retrait de la découverte au-delà du seuil, deltas lisibles sur réplica ; Docker Compose (`--profile replicas`) et chart Helm | |
 
 ## Administration web
 
@@ -31,11 +33,11 @@ Jalons 1 à 5 (édition « gestion des rôles ») :
 ```sh
 cd deploy/compose
 cp .env.example .env        # mots de passe et adresse du premier propriétaire
-docker compose up --build
+docker compose up --build   # --profile replicas : avec un réplica (port 5433)
 docker compose logs lattisd # lien « /setup?token=… » pour choisir le mot de passe
 ```
 
-Puis, dans Lattis, ajouter la source `http://localhost:8080`. Le certificat TLS de PostgreSQL est autosigné (`sslmode=require`) : réservé à l'essai.
+Puis, dans Lattis, ajouter le serveur `http://localhost:8080`. Le certificat TLS de PostgreSQL est autosigné (`sslmode=require`) : réservé à l'essai. Production et Kubernetes : [docs/installation.md](docs/installation.md).
 
 ## Composants
 
@@ -45,11 +47,13 @@ Puis, dans Lattis, ajouter la source `http://localhost:8080`. Le certificat TLS 
 | `schema/` | Migrations SQL (appliquées par `lattisd`, rôle `lattis_service`) et `bootstrap.sql` (superutilisateur, une fois) |
 | `oauth/` | Module C `lattis_oauth` (`oauth_validator_libraries`) |
 | `deploy/postgres/initdb` | Initialisation de l'image : `lattis_service`, TLS, `pg_hba` (OAuth pour les utilisateurs, mot de passe pour les comptes techniques) |
+| `deploy/postgres/replica.sh` | Point d'entrée `lattis-replica` de l'image : copie du parent puis `hot_standby` |
 | `docker/`, `deploy/compose` | Images et Docker Compose |
+| `deploy/helm/lattis` | Chart Helm (parent, réplicas, `lattisd`) |
 
 ### Configuration de `lattisd`
 
-Variables d'environnement (§16) : `LATTIS_EDITION` (`admin`), `LATTIS_PUBLIC_URL`, `LATTIS_PG_RW_URL`, `LATTIS_PG_RO_URLS`, `LATTIS_PG_PUBLIC_RW`, `LATTIS_PG_PUBLIC_RO`, `LATTIS_PG_DATABASE`, `LATTIS_PG_SSLMODE`, `LATTIS_SIGNING_KEY_FILE`, `LATTIS_SECRETS_DIR` (un fichier par `client_secret_ref`), `LATTIS_BOOTSTRAP_OWNER`, `LATTIS_LISTEN_ADDR`, `LATTIS_METRICS_ADDR`, `LATTIS_TLS_CERT_FILE` / `LATTIS_TLS_KEY_FILE`, `LATTIS_TRUST_PROXY`, `LATTIS_RATE_LIMIT`, `LATTIS_MIN_CLIENT_VERSION`. Le reste est en base (`lattis.server_config`, modifiable par `lattis.set_config`).
+Variables d'environnement et réglages en base : tableau complet dans [docs/installation.md](docs/installation.md#5-variables-denvironnement-de-lattisd).
 
 ### Rotation de la clé de signature
 

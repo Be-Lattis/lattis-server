@@ -1,0 +1,151 @@
+{{- $fn := include "lattis.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-lattisd
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lattisd
+spec:
+  type: {{ .Values.lattisd.service.type }}
+  selector: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 4 }}
+  ports:
+    - { name: http, port: {{ .Values.lattisd.service.port }}, targetPort: http }
+    - { name: metrics, port: 9464, targetPort: metrics }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fn }}-lattisd
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.lattisd.replicaCount }}
+  selector:
+    matchLabels: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65532
+      containers:
+        - name: lattisd
+          image: "{{ .Values.image.lattisd.repository }}:{{ .Values.image.lattisd.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: {{ if .Values.lattisd.migrate }}["--migrate"]{{ else }}[]{{ end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          env:
+            - { name: LATTIS_EDITION, value: admin }
+            - { name: LATTIS_PUBLIC_URL, value: {{ .Values.publicURL | quote }} }
+            - { name: LATTIS_BOOTSTRAP_OWNER, value: {{ .Values.lattisd.bootstrapOwner | quote }} }
+            - { name: LATTIS_TRUST_PROXY, value: {{ .Values.lattisd.trustProxy | quote }} }
+            - name: LATTIS_SERVICE_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: service-password } }
+            - name: LATTIS_PG_RW_URL
+              value: "postgres://lattis_service:$(LATTIS_SERVICE_PASSWORD)@{{ include "lattis.primaryHost" . }}:5432/{{ .Values.postgres.database }}?sslmode=require"
+            - { name: LATTIS_PG_DATABASE, value: {{ .Values.postgres.database | quote }} }
+            - { name: LATTIS_PG_SSLMODE, value: {{ .Values.postgres.clientSSLMode | quote }} }
+            - { name: LATTIS_PG_PUBLIC_RW, value: {{ include "lattis.publicRW" . | quote }} }
+            {{- if gt (int .Values.replicas.count) 0 }}
+            - { name: LATTIS_PG_RO_URLS, value: {{ include "lattis.roURLs" . | quote }} }
+            - { name: LATTIS_PG_PUBLIC_RO, value: {{ include "lattis.publicRO" . | quote }} }
+            - { name: LATTIS_REPLICA_MAX_LAG, value: {{ .Values.lattisd.replicaMaxLag | quote }} }
+            {{- end }}
+            - { name: LATTIS_SIGNING_KEY_FILE, value: /etc/lattis/keys/signing.pem }
+            {{- if .Values.secrets.providersSecret }}
+            - { name: LATTIS_SECRETS_DIR, value: /etc/lattis/oauth }
+            {{- end }}
+            - { name: LATTIS_METRICS_ADDR, value: ":9464" }
+            {{- with .Values.lattisd.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9464 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 15
+          volumeMounts:
+            - { name: signing, mountPath: /etc/lattis/keys, readOnly: true }
+            {{- if .Values.secrets.providersSecret }}
+            - { name: providers, mountPath: /etc/lattis/oauth, readOnly: true }
+            {{- end }}
+          {{- with .Values.lattisd.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: signing
+          secret:
+            secretName: {{ .Values.secrets.signingKeySecret }}
+            defaultMode: 0440
+        {{- if .Values.secrets.providersSecret }}
+        - name: providers
+          secret:
+            secretName: {{ .Values.secrets.providersSecret }}
+            defaultMode: 0440
+        {{- end }}
+      {{- with .Values.lattisd.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.lattisd.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.lattisd.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.lattisd.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fn }}-lattisd
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+  {{- with .Values.lattisd.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.lattisd.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.lattisd.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ required "lattisd.ingress.host est obligatoire" .Values.lattisd.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fn }}-lattisd
+                port: { name: http }
+{{- end }}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fn }}-lattisd
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: lattisd
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+{{- end }}

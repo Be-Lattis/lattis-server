@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -27,6 +28,9 @@ type Endpoint struct {
 	Port int    `json:"port"`
 }
 
+// String renvoie « hôte:port ».
+func (e Endpoint) String() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
+
 // Config est la configuration d'amorçage.
 type Config struct {
 	Edition        Edition
@@ -36,7 +40,7 @@ type Config struct {
 	TLSCertFile    string
 	TLSKeyFile     string
 	PGRWURL        string   // connexion de service (lattis_service)
-	PGROURLs       []string // connexions de service vers les réplicas
+	PGROURLs       []string // connexions de service vers les réplicas, dans l'ordre de PGPublicRO
 	PGPublicRW     Endpoint
 	PGPublicRO     []Endpoint
 	PGDatabase     string
@@ -55,6 +59,9 @@ type Config struct {
 	ShutdownGrace  time.Duration
 	// RateLimit : requêtes par minute et par adresse sur /oauth/*, /login/*, /setup.
 	RateLimit int
+	// ReplicaMaxLag : retard au-delà duquel un réplica est retiré de la
+	// découverte (§12).
+	ReplicaMaxLag time.Duration
 }
 
 // FromEnv lit les variables LATTIS_*.
@@ -125,6 +132,18 @@ func parse(get func(string) string) (*Config, error) {
 			continue
 		}
 		c.PGPublicRO = append(c.PGPublicRO, ep)
+	}
+	// Chaque réplica surveillé correspond, dans l'ordre, à un point annoncé.
+	// Sans connexion de service, les points ro sont annoncés tels quels (par
+	// exemple un service unique qui répartit et écarte lui-même les retards).
+	if len(c.PGROURLs) > 0 && len(c.PGROURLs) != len(c.PGPublicRO) {
+		errs = append(errs, fmt.Errorf("LATTIS_PG_RO_URLS (%d) et LATTIS_PG_PUBLIC_RO (%d) doivent avoir le même nombre d'éléments",
+			len(c.PGROURLs), len(c.PGPublicRO)))
+	}
+	if d, err := time.ParseDuration(def("LATTIS_REPLICA_MAX_LAG", "10s")); err == nil && d > 0 {
+		c.ReplicaMaxLag = d
+	} else {
+		errs = append(errs, errors.New("LATTIS_REPLICA_MAX_LAG : durée positive attendue (10s)"))
 	}
 	if n, err := strconv.Atoi(def("LATTIS_WEB_MAX_ENGINES", "0")); err == nil {
 		c.WebMaxEngines = n

@@ -16,4 +16,5 @@ FROM postgres:${PG_MAJOR}
 COPY --from=build /out/usr/lib/postgresql/ /usr/lib/postgresql/
 COPY schema/bootstrap.sql /usr/share/lattis/bootstrap.sql
 COPY deploy/postgres/initdb/10-lattis.sh /docker-entrypoint-initdb.d/10-lattis.sh
+COPY deploy/postgres/replica.sh /usr/local/bin/lattis-replica
 ENV POSTGRES_DB=lattis

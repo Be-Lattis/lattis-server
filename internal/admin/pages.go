@@ -410,5 +410,11 @@ func (s *Service) loadStatus(ctx context.Context, tx pgx.Tx, r *http.Request, u 
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"PG": st, "Endpoints": s.Config.PGPublicRW, "RO": s.Config.PGPublicRO}, nil
+	out := map[string]any{"PG": st, "Endpoints": s.Config.PGPublicRW, "RO": s.Config.PGPublicRO}
+	if s.Replicas != nil {
+		out["Monitored"] = s.Replicas.States()
+		out["Announced"] = s.Replicas.Available()
+		out["MaxLag"] = s.Config.ReplicaMaxLag.String()
+	}
+	return out, nil
 }

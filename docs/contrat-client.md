@@ -51,6 +51,14 @@ Ce que l'application de bureau (`lattis-app`) doit savoir pour se connecter à u
 - `application_name` = `Lattis/<version>/<usage>` (§13).
 - Un jeton refusé (expiré, autre rôle, compte désactivé) donne une erreur d'authentification : rafraîchir puis réessayer une fois.
 
+### 3.1 Réplicas (`ro`)
+
+- Même jeton, même `pg_role`, même RLS que sur `rw` ; toute écriture y est refusée (`25006`, transaction en lecture seule).
+- La liste `ro` de la découverte ne contient que les réplicas qui suivent le parent (retard sous `LATTIS_REPLICA_MAX_LAG`, 10 s par défaut). Elle est mise en cache 10 s au plus : la relire à chaque (re)connexion. Liste vide : tout lire sur `rw`.
+- Lecture de ses propres écritures : après une écriture, lire sur `rw`, ou attendre que `pg_last_wal_replay_lsn()` du réplica atteigne `pg_current_wal_lsn()` lu sur `rw` après la validation.
+- Deltas sur un réplica : `sync_point()` et `changes_since` y fonctionnent (vérifié contre PostgreSQL 18, test `internal/e2e`). Un `since` lu sur un serveur plus avancé reste valable sur un réplica en retard : les lignes manquantes reviennent au relevé suivant.
+- **Refus inattendu sur un réplica** : une session ouverte pendant que le réplica rejoue la création ou la modification d'un classeur peut garder une vue périmée des rôles de l'utilisateur (cache de PostgreSQL, observé sur PostgreSQL 18) et refuser l'accès (`42501`, « aucun accès à ce classeur ») alors que `rw` l'accorde. Règle : sur un `42501` venu d'un réplica pour un classeur que `rw` donne accessible, fermer cette connexion et en ouvrir une nouvelle (ou lire sur `rw`) ; ne pas réessayer sur la même session.
+
 ## 4. Après connexion
 
 - `SELECT lattis.login_summary()` : utilisateur, propriétaire du serveur ou non, classeurs (vide tant que les classeurs ne sont pas livrés).
@@ -63,9 +71,9 @@ Toutes les fonctions sont dans le schéma `lattis`, appelées sous l'identité d
 | Besoin | Appel |
 |---|---|
 | Liste « Ouvrir depuis un serveur » | `my_workbooks() → jsonb` : `id`, `title`, `mode`, `state`, `version`, `schema`, `roles` |
-| Droits sur un classeur | `my_capabilities(workbook_id) → jsonb` : `schema`, `channel` (canal `LISTEN`), `roles`, `can_design`, `can_manage`, `custom_roles`, `tables` (`table_id` → `name`, `level`, `filtered`), `restrictions` (`table_id`, `command`, `label`) |
-| Publier | `create_workbook(title, 'frozen'\|'collaborative')`, puis `create_table(workbook_id, name, columns)` par tableau (`columns` : `[{"name", "type", "local_id"}]`, types `text`, `integer`, `decimal`, `date`, `datetime`, `boolean`), copie des lignes par `COPY` dans `"<schema>"."<tableau>"` (`lattis_id` UUIDv7 et `lattis_pos` fournis par le client), `save_meta(workbook_id, kind, payload)`, `publish_script(workbook_id, name, source)`, puis `finish_publish(workbook_id)`. `abort_publish` abandonne. |
-| Republier (figé) | `republish(workbook_id) → schéma de travail`, mêmes appels que la publication (ils visent la version de travail), puis `finish_publish` : la nouvelle version remplace l'ancienne d'un coup, notification `*version:<n>` sur le canal. |
+| Droits sur un classeur | `my_capabilities(workbook_id) → jsonb` : `title`, `mode`, `version`, `schema`, `channel` (canal `LISTEN`), `roles`, `can_design`, `can_manage`, `custom_roles`, `tables` (`table_id` → `name`, `level`, `filtered`), `restrictions` (`table_id`, `command`, `label`) |
+| Publier | `create_workbook(title, 'frozen'\|'collaborative')`, puis `create_table(workbook_id, name, columns)` par tableau (`columns` : `[{"name", "type", "local_id", "table_local_id"}]` ; `table_local_id`, identifiant local du tableau, est lu dans le premier élément, types `text`, `integer`, `decimal`, `date`, `datetime`, `boolean`), copie des lignes par `COPY` dans `"<schema>"."<tableau>"` (`lattis_id` UUIDv7 et `lattis_pos` fournis par le client), `save_meta(workbook_id, kind, payload)`, `publish_script(workbook_id, name, source)`, puis `finish_publish(workbook_id)`. `abort_publish` abandonne. |
+| Republier (figé) | `republish(workbook_id) → schéma de travail`, mêmes appels que la publication (ils visent la version de travail), puis `finish_publish` : la nouvelle version remplace l'ancienne d'un coup, notification `*version:<n>` sur le canal. La version de travail ne notifie rien : les lecteurs ne reçoivent que `*version:<n>`. |
 | Inviter | `invite(email, workbook_id, '{reader}')` (propriétaire du classeur) |
 | Supprimer | `drop_workbook(workbook_id)` |
 

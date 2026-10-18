@@ -1,0 +1,87 @@
+{{- include "lattis.required" . }}
+{{- $fn := include "lattis.fullname" . -}}
+# PostgreSQL 18 parent (lecture-écriture), image be-lattis/server.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-postgres
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+  {{- with .Values.postgres.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.postgres.service.type }}
+  selector: {{- include "lattis.selector" (dict "root" . "component" "postgres") | nindent 4 }}
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fn }}-postgres
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $fn }}-postgres
+  replicas: 1
+  selector:
+    matchLabels: {{- include "lattis.selector" (dict "root" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "lattis.selector" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 999
+      initContainers: {{- include "lattis.publicKeysInit" . | nindent 8 }}
+      containers:
+        - name: postgres
+          image: "{{ .Values.image.server.repository }}:{{ .Values.image.server.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - { name: POSTGRES_DB, value: {{ .Values.postgres.database | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: postgres-password } }
+            - name: LATTIS_SERVICE_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: service-password } }
+            - name: LATTIS_REPLICATION_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: replication-password, optional: true } }
+            - { name: LATTIS_ISSUER, value: {{ .Values.publicURL | quote }} }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["gosu", "postgres", "pg_isready", "-d", {{ .Values.postgres.database | quote }}] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["gosu", "postgres", "pg_isready", "-d", {{ .Values.postgres.database | quote }}] }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql }
+            - { name: tls, mountPath: /etc/lattis/tls, readOnly: true }
+            - { name: keys, mountPath: /etc/lattis/keys, readOnly: true }
+          {{- with .Values.postgres.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes: {{- include "lattis.pgVolumes" . | nindent 8 }}
+      {{- with .Values.postgres.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.postgres.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.postgres.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgres.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.persistence.size }}

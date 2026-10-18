@@ -13,6 +13,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
+	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 )
@@ -27,6 +28,8 @@ type Server struct {
 	Keys   *tokens.KeySet
 	Auth   *auth.Service
 	Admin  *admin.Service // nil : pas d'interface d'administration
+	// Replicas choisit les points ro annoncés ; nil : ceux de la configuration.
+	Replicas *replicas.Monitor
 }
 
 // Handler renvoie le routeur avec ses intergiciels.
@@ -116,13 +119,21 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 		RevocationURL: s.Config.URL("/oauth/revoke"), PreviewURL: s.Config.URL("/api/preview"),
 		Providers: []DiscoveryProvider{},
 		Postgres: DiscoveryPostgres{Database: s.Config.PGDatabase, SSLMode: s.Config.PGSSLMode,
-			RW: s.Config.PGPublicRW, RO: append([]config.Endpoint{}, s.Config.PGPublicRO...)},
+			RW: s.Config.PGPublicRW, RO: s.readEndpoints()},
 	}
 	for _, p := range providers {
 		d.Providers = append(d.Providers, DiscoveryProvider{ID: p.ID, Label: p.Label, Kind: p.Kind, Icon: p.Kind})
 	}
-	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Cache-Control", "public, max-age=10") // court : la liste ro suit le retard des réplicas
 	writeJSON(w, d)
+}
+
+// readEndpoints : réplicas annoncés, sans ceux en retard ou injoignables.
+func (s *Server) readEndpoints() []config.Endpoint {
+	if s.Replicas != nil {
+		return s.Replicas.Available()
+	}
+	return append([]config.Endpoint{}, s.Config.PGPublicRO...)
 }
 
 func (s *Server) openidConfiguration(w http.ResponseWriter, r *http.Request) {
