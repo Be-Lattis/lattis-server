@@ -16,6 +16,12 @@ $$;
 
 GRANT USAGE ON SCHEMA lattis TO PUBLIC;
 
+-- Aucune fonction n'est appelable par tous sans GRANT explicite : les
+-- fonctions internes (SECURITY DEFINER) restent réservées à lattis_service.
+-- (Réglage global du rôle : un réglage par schéma ne peut pas retirer le
+-- droit accordé à PUBLIC par défaut.)
+ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
 CREATE TABLE lattis.server_config (
     key   text PRIMARY KEY,
     value jsonb NOT NULL
