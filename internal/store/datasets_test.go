@@ -181,3 +181,79 @@ func TestDatasets(t *testing.T) {
 		return nil
 	}))
 }
+
+// Une donnée tirée d'un classeur figé suit ses republications : la vue est
+// refaite sur la nouvelle version et survit à la suppression de l'ancienne.
+func TestDatasetFrozenRepublish(t *testing.T) {
+	ctx := context.Background()
+	db := testpg.New(t)
+	us := openUsers(t, db, "publieur", "anne")
+	pub, anne := us[0], us[1]
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	as := func(role string, fn func(pgx.Tx) error) error { return db.AsUser(t, role, fn) }
+	must(db.Store.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.set_data_publisher($1::uuid, true)`, pub.UserID)
+		return err
+	}))
+	cols := `[{"name":"Article","type":"text","table_local_id":"t1"}]`
+	var wb, tid, schema, ds string
+	must(as(pub.PGRole, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Tarifs', 'frozen')::text`).Scan(&wb); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_table($1::uuid, 'Tarifs', $2::jsonb)::text`, wb, cols).Scan(&tid); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.my_capabilities($1::uuid) ->> 'schema'`, wb).Scan(&schema); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO `+pgx.Identifier{schema, "Tarifs"}.Sanitize()+` (lattis_id, "Article") VALUES (gen_random_uuid(), 'Vis')`); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb).Scan(new(int)); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_dataset($1::uuid, $2::uuid, NULL, 'Tarifs', '', 'tarifs', NULL)::text`, wb, tid).Scan(&ds); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `SELECT lattis.add_data_audience($1::uuid, NULL, $2::uuid, NULL)`, ds, anne.UserID)
+		return err
+	}))
+	count := func() int {
+		t.Helper()
+		var n int
+		must(as(anne.PGRole, func(tx pgx.Tx) error { return tx.QueryRow(ctx, `SELECT count(*) FROM donnees.tarifs`).Scan(&n) }))
+		return n
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("avant republication : %d", n)
+	}
+	must(as(pub.PGRole, func(tx pgx.Tx) error {
+		var staging string
+		if err := tx.QueryRow(ctx, `SELECT lattis.republish($1::uuid)`, wb).Scan(&staging); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT lattis.create_table($1::uuid, 'Tarifs', $2::jsonb)`, wb, cols); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO `+pgx.Identifier{staging, "Tarifs"}.Sanitize()+` (lattis_id, "Article") VALUES (gen_random_uuid(), 'Vis'), (gen_random_uuid(), 'Écrou')`); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb).Scan(new(int))
+	}))
+	if n := count(); n != 2 {
+		t.Fatalf("après republication : %d", n)
+	}
+	if _, err := db.Super.Exec(ctx, `UPDATE lattis.pending_drops SET drop_after = now() - interval '1 second'`); err != nil {
+		t.Fatal(err)
+	}
+	must(db.Store.Purge(ctx))
+	if n := count(); n != 2 {
+		t.Fatalf("après suppression de l'ancienne version : %d", n)
+	}
+}
