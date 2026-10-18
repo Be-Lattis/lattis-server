@@ -128,3 +128,25 @@ Un filtre refusé (point-virgule, `$`, commentaire, parenthèses déséquilibré
 - Adresse à partager : `<issuer>/w/<workbook_id>`. L'écran Partager l'affiche, prête à copier.
 - Dans le navigateur, `lattisd` connecte la personne si besoin, vérifie son accès sous sa propre identité (`my_capabilities`), puis propose d'ouvrir le classeur dans l'application de bureau ou, en édition `web`, dans le navigateur. Un classeur inexistant et un classeur interdit donnent la même page (403), sans titre. Le choix est retenu par le navigateur (cookie `lattis_open`, « Changer » pour revenir au choix).
 - « Ouvrir dans Lattis » ouvre `lattis://open?server=<issuer encodé>&workbook=<workbook_id>`. L'application déclare le schéma `lattis` à l'installation (Windows : registre `HKCU\Software\Classes\lattis` ; Linux : fichier `.desktop` avec `MimeType=x-scheme-handler/lattis` ; macOS : `CFBundleURLTypes`). À l'appel : si l'instance tourne déjà, lui transmettre l'adresse ; vérifier que `server` est un serveur Lattis (découverte §1) et demander confirmation avant de se connecter à un serveur jamais utilisé ; se connecter si besoin (§2), puis ouvrir le classeur comme « Ouvrir depuis un serveur » (§5). Aucun autre paramètre n'est lu.
+
+## 9. Données d'entreprise
+
+Un tableau d'un classeur publié se partage dans un catalogue rangé en dossiers. Il est lisible depuis n'importe quel classeur par son audience (personnes, équipes avec leurs sous-équipes, filtre facultatif par entrée).
+
+**Partager** (publieur de données ou propriétaire du serveur, et propriétaire ou concepteur du classeur source) :
+
+| Besoin | Appel |
+|---|---|
+| Droit de partager | `login_summary()` : `can_publish_data` (et `data_publisher`) |
+| Dossiers | `create_data_folder(name, parent_id) → id`, `rename_data_folder(id, name)`, `move_data_folder(id, parent_id)` (cycles refusés, `22023`), `drop_data_folder(id)` (vide seulement, `55000`) |
+| Partager un tableau | `create_dataset(workbook_id, table_id, folder_id, name, description, sql_name, hidden_columns text[]) → id`. `sql_name` vide : proposé à partir du nom (`clients`, `clients_2`…), sinon `^[a-z][a-z0-9_]{0,62}$` et libre. Il ne change plus ensuite. |
+| Modifier | `update_dataset(id, {"name", "description", "folder_id", "hidden_columns", "inherit_audience"})` (champs facultatifs) |
+| Audience | `add_data_audience(dataset_id, folder_id, principal, predicate) → id` : l'un des deux identifiants, `principal` = utilisateur ou équipe, `predicate` = filtre comme ceux des rôles (`"Région" = 'Nord'`, `"Équipe" IN (SELECT lattis.my_teams())`), vide = toutes les lignes. L'audience d'un dossier vaut pour les données qu'il contient, sous-dossiers compris, si `inherit_audience` (vrai par défaut). `remove_data_audience(id)`. |
+| Retirer | `drop_dataset(id)` : la vue disparaît, `NOTIFY lattis_data '*withdrawn:<id>'`. |
+
+**Lire** (toute personne de l'audience) :
+
+- `data_catalog() → jsonb` : `{"can_publish", "folders": [{"id", "parent_id", "name", "path", "depth", "audience"}], "datasets": [{"id", "folder_id", "name", "description", "sql_name", "readable", "manageable", "available", "table_id", "channel", "columns": [{"name", "type"}], "updated_at", "source", "audience", "used_by"}]}`. Une personne hors publieurs ne voit que les données qu'elle peut lire et les dossiers qui y mènent. `source`, `audience` et `used_by` (classeurs qui l'utilisent, avec leur dernière modification et leur dernière lecture) ne sont remplis que pour qui gère la donnée. `available` faux : source supprimée ou tableau introuvable (la donnée reste au catalogue).
+- Lignes : `SELECT … FROM donnees."<sql_name>"`, sur `rw` ou `ro`. Colonnes : `lattis_id`, `lattis_pos`, `lattis_xid`, `lattis_updated_at`, puis les colonnes exposées. Sans droit : `42501`.
+- **Tableau lié** (lecture seule, à jour en direct) : chargement complet, puis comme un tableau collaboratif. `LISTEN "<channel>"` et relevé à chaque notification dont la charge vaut `table_id` (ou `*version:<n>` : rechargement complet, le classeur source a été republié et `table_id` a changé, relire `data_catalog`) ; lignes changées `SELECT … FROM donnees."<sql_name>" WHERE lattis_xid > $since`, supprimées `dataset_tombstones(id, since) → (row_id, xid)` ; prochain `since` = `sync_point()` pris avant la lecture. `LISTEN lattis_data` : `<dataset_id>` (vue refaite : colonnes ou audience ont pu changer, relire le catalogue), `*catalog` (dossiers ou données ajoutés, déplacés, renommés), `*withdrawn:<id>` (partage retiré : garder la dernière copie en lecture seule, marquée « partage retiré »).
+- Un classeur du serveur qui insère un tableau lié l'annonce : `link_dataset(dataset_id, workbook_id)` (propriétaire ou concepteur du classeur), `unlink_dataset` quand le tableau lié est supprimé. C'est ce qui remplit « Utilisée par ».
