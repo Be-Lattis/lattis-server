@@ -90,3 +90,8 @@ metrics:
     enabled: false
     interval: 30s
     labels: {}
+
+# Pipelines d'ingestion : volume des fichiers envoyés ou déposés
+# (/var/lib/lattis/pipelines). Vide : emptyDir.
+pipelines:
+  persistentClaim: ""

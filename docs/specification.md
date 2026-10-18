@@ -329,6 +329,15 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 6. **Journal** : `audit`, filtrable.
 7. **État** : parent, réplicas, retard, connexions, version.
 
+### 15.1 Pipelines d'ingestion (`/admin/pipelines`)
+
+Un pipeline (`lattis.pipelines`, migration 0020) lit une source et écrit dans un tableau d'un classeur collaboratif publié ; une donnée d'entreprise tirée de ce tableau suit.
+
+- **Sources** : fichier envoyé depuis /admin, dossier de dépôt (`LATTIS_PIPELINE_DIR/<pipeline>/inbox`, motif), adresse HTTP(S) (jeton, identifiant:mot de passe ou en-tête, lus dans le dossier des secrets), SFTP (mot de passe ou clé privée, empreinte de la clé du serveur obligatoire), base PostgreSQL externe (chaîne de connexion en secret, requête en transaction en lecture seule). Formats : CSV (séparateur détecté, UTF-8 ou Latin-1), Excel `.xlsx`, JSON (tableau d'objets, chemin facultatif). 100 Mo et 2 millions de lignes au plus.
+- **Écriture** : correspondance des colonnes (même nom par défaut), conversion selon le type du tableau (nombres à la française, dates JJ/MM/AAAA, numéros de série Excel, oui/non) ; lignes invalides rejetées et échantillonnées. Modes : ajout, mise à jour par clé (`MERGE`, sans réécrire une ligne inchangée, doublons de clé : la dernière l'emporte), remplacement (par clé : lignes absentes supprimées ; sans clé : tout réécrit). Une seule transaction.
+- **Identité** : un utilisateur technique « Pipeline : <nom> » par pipeline, membre d'un rôle du classeur (Éditeur par défaut) ; `lattisd` écrit avec un jeton signé pour lui. RLS, déclencheurs (pierres tombales, `NOTIFY`) et `lattis_updated_by` s'appliquent. Supprimer le pipeline retire ses rôles et désactive le compte.
+- **Exécution** : à la demande, toutes les N minutes ou chaque jour à heure fixe ; relevé toutes les 15 s, réservation `FOR UPDATE SKIP LOCKED` (plusieurs lattisd possibles). Journal `lattis.pipeline_runs` (lues, ajoutées, modifiées, supprimées, rejetées, erreur), mesure `lattis_pipeline_runs_total{status}`, webhook POST JSON en cas d'échec.
+
 ## 16. Configuration de `lattisd`
 
 Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.yaml`) ; tout le reste est dans `lattis.server_config`.

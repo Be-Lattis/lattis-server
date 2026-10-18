@@ -96,6 +96,7 @@ Dépendances, toutes compatibles avec l'AGPL-3.0 :
 | `github.com/coreos/go-oidc`, `github.com/go-jose/go-jose`, `github.com/prometheus/*` | Apache-2.0 |
 | `github.com/cespare/xxhash`, `github.com/beorn7/perks`, `github.com/munnerz/goautoneg`, `github.com/kylelemons/godebug` | MIT, BSD ou Apache-2.0 |
 | `github.com/lalamefine/lattis/protocol` | MPL-2.0 |
+| `github.com/pkg/sftp`, `github.com/kr/fs` (pipelines SFTP) | BSD-2-Clause, BSD-3-Clause |
 | Module `lattis_oauth` : PostgreSQL (en-têtes, chargement) | PostgreSQL License |
 | Module `lattis_oauth` : OpenSSL 3 (`libcrypto`) | Apache-2.0 |
 | Images : PostgreSQL 18 (Debian), distroless | PostgreSQL License, licences Debian, Apache-2.0 |

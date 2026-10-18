@@ -76,6 +76,7 @@ spec:
             periodSeconds: 15
           volumeMounts:
             - { name: signing, mountPath: /etc/lattis/keys, readOnly: true }
+            - { name: pipelines, mountPath: /var/lib/lattis/pipelines }
             {{- if .Values.secrets.providersSecret }}
             - { name: providers, mountPath: /etc/lattis/oauth, readOnly: true }
             {{- end }}
@@ -83,6 +84,16 @@ spec:
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
+        # Fichiers des pipelines d'ingestion (envois, dossiers de dépôt).
+        # emptyDir : perdus au redémarrage ; un volume persistant pour garder
+        # les dépôts et l'historique des fichiers (pipelines.persistentClaim).
+        - name: pipelines
+          {{- if .Values.pipelines.persistentClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.pipelines.persistentClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: signing
           secret:
             secretName: {{ .Values.secrets.signingKeySecret }}

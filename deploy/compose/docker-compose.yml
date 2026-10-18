@@ -86,12 +86,14 @@ services:
     volumes:
       - secrets:/etc/lattis:ro
       - web:/var/lib/lattis/web
+      - pipelines:/var/lib/lattis/pipelines
     ports:
       - "8080:8080"
       - "127.0.0.1:9464:9464"
 
 volumes:
   web:
+  pipelines:
   pgdata:
   replicadata:
   secrets:
