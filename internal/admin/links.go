@@ -58,7 +58,9 @@ func (s *Service) workbookLink(w http.ResponseWriter, r *http.Request) {
 	}
 	v := view{Title: "Ouvrir un classeur", Page: "link", Server: "Serveur Lattis", Version: s.Version}
 	err = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
-		_ = tx.QueryRow(r.Context(), `SELECT lattis.config('display_name') #>> '{}'`).Scan(&v.Server)
+		if err := tx.QueryRow(r.Context(), `SELECT lattis.login_summary() #>> '{server,display_name}'`).Scan(&v.Server); err != nil {
+			return err
+		}
 		return tx.QueryRow(r.Context(), `SELECT lattis.my_capabilities($1::uuid) ->> 'title'`, id).Scan(&d.Title)
 	})
 	var pe *pgconn.PgError
