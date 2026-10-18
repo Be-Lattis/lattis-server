@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -66,7 +67,8 @@ func TestFrozenWorkbookLifecycle(t *testing.T) {
 		t.Fatalf("le catalogue ne doit pas être lisible par un membre : %v", err)
 	}
 	_ = db.Super.QueryRow(ctx, `SELECT schema_name FROM lattis.workbooks WHERE id = $1::uuid`, wb).Scan(&schema)
-	if schema != "wb_ventes_2026_ete" {
+	// Les rôles sont communs au serveur de test : suffixe possible (_2, _3…).
+	if !strings.HasPrefix(schema, "wb_ventes_2026_ete") {
 		t.Fatalf("schéma : %q", schema)
 	}
 	tbl := pgx.Identifier{schema, "Clients"}.Sanitize()
@@ -181,7 +183,7 @@ func TestFrozenWorkbookLifecycle(t *testing.T) {
 	if err := as(author, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, `SELECT lattis.drop_workbook($1::uuid)`, wb); return err }); err != nil {
 		t.Fatal(err)
 	}
-	_ = db.Super.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname LIKE 'wb\_ventes\_2026\_ete%')`).Scan(&exists)
+	_ = db.Super.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname LIKE $1 || '\_%')`, schema).Scan(&exists)
 	if exists {
 		t.Fatal("rôles du classeur restants")
 	}

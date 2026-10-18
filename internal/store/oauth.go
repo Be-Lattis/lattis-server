@@ -129,6 +129,6 @@ func (s *Store) Purge(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.Exec(ctx, `SELECT lattis.drop_expired_versions()`)
+	_, err = s.DB.Exec(ctx, `SELECT lattis.drop_expired_versions(), lattis.purge_tombstones()`)
 	return err
 }
