@@ -1,0 +1,92 @@
+# Serveur Lattis (spécification §12 et §20). Les secrets ne sont jamais
+# générés par le chart : ils sont créés à part (docs/installation.md §4).
+
+# URL publique de lattisd, émetteur des jetons (obligatoire). Les postes
+# l'utilisent pour la découverte ; PostgreSQL la vérifie dans chaque jeton.
+publicURL: ""
+
+image:
+  lattisd:
+    repository: ghcr.io/be-lattis/lattisd
+    tag: ""            # appVersion par défaut
+  server:
+    repository: ghcr.io/be-lattis/server
+    tag: "18"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+secrets:
+  # Secret générique : postgres-password (superutilisateur), service-password
+  # (lattis_service), replication-password (lattis_replicator).
+  existingSecret: ""
+  # Secret contenant signing.pem (clé de signature des jetons, lattisd keygen).
+  signingKeySecret: ""
+  # Secret TLS (tls.crt, tls.key) du serveur PostgreSQL ; ses noms d'hôte
+  # couvrent les adresses publiques en lecture-écriture et en lecture.
+  postgresTLSSecret: ""
+  # Facultatif : secrets des fournisseurs d'identité (LATTIS_SECRETS_DIR).
+  providersSecret: ""
+
+lattisd:
+  replicaCount: 1
+  bootstrapOwner: ""   # adresse du premier propriétaire du serveur
+  migrate: true        # migrations au démarrage
+  trustProxy: true     # derrière un Ingress
+  replicaMaxLag: 10s
+  extraEnv: []
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: ""
+    tls: []            # [{secretName: lattis-tls, hosts: [lattis.example.com]}]
+
+postgres:
+  database: lattis
+  # sslmode annoncé aux postes : verify-full demande un certificat signé par
+  # une autorité qu'ils connaissent et qui couvre les adresses publiques.
+  clientSSLMode: verify-full
+  # Adresse que les postes utilisent pour écrire (découverte, « rw »).
+  # Vide : nom DNS du service dans le cluster.
+  publicReadWrite: ""  # hôte:port
+  service:
+    type: ClusterIP    # LoadBalancer pour des postes hors du cluster
+    annotations: {}
+  persistence:
+    size: 20Gi
+    storageClass: ""
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+replicas:
+  # Réplicas en flux, surveillés par lattisd et annoncés aux postes tant
+  # qu'ils suivent le parent (retard < lattisd.replicaMaxLag).
+  count: 0
+  # Adresses annoncées aux postes, une par réplica (même ordre que les pods).
+  # Vide : nom DNS de chaque pod dans le cluster.
+  publicEndpoints: []  # ["ro0.example.com:5432", …]
+  service:
+    type: ClusterIP
+    annotations: {}
+  persistence:
+    size: 20Gi
+    storageClass: ""
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}

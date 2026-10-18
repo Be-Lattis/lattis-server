@@ -1,0 +1,106 @@
+{{- if gt (int .Values.replicas.count) 0 }}
+{{- $fn := include "lattis.fullname" . -}}
+# Réplicas en flux (§12) : copie du parent au premier démarrage
+# (pg_basebackup), un emplacement de réplication par pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-replica-hl
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector: {{- include "lattis.selector" (dict "root" . "component" "replica") | nindent 4 }}
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+---
+# Service commun en lecture (outils, tableaux de bord). Les postes, eux,
+# reçoivent la liste des réplicas qui suivent par la découverte.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-replica
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+  {{- with .Values.replicas.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.replicas.service.type }}
+  selector: {{- include "lattis.selector" (dict "root" . "component" "replica") | nindent 4 }}
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fn }}-replica
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $fn }}-replica-hl
+  replicas: {{ .Values.replicas.count }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: {{- include "lattis.selector" (dict "root" . "component" "replica") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "lattis.selector" (dict "root" . "component" "replica") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 999
+      initContainers: {{- include "lattis.publicKeysInit" . | nindent 8 }}
+      containers:
+        - name: postgres
+          image: "{{ .Values.image.server.repository }}:{{ .Values.image.server.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["lattis-replica"]
+          env:
+            - { name: LATTIS_PRIMARY_HOST, value: {{ include "lattis.primaryHost" . | quote }} }
+            - { name: LATTIS_REPLICATION_SLOT, value: auto }
+            - name: LATTIS_REPLICATION_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: replication-password } }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          # La copie initiale peut être longue : pas de sonde de vie avant
+          # que PostgreSQL réponde.
+          startupProbe:
+            exec: { command: ["gosu", "postgres", "pg_isready", "-d", {{ .Values.postgres.database | quote }}] }
+            periodSeconds: 10
+            failureThreshold: 360
+          readinessProbe:
+            exec: { command: ["gosu", "postgres", "pg_isready", "-d", {{ .Values.postgres.database | quote }}] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["gosu", "postgres", "pg_isready", "-d", {{ .Values.postgres.database | quote }}] }
+            periodSeconds: 15
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql }
+            - { name: tls, mountPath: /etc/lattis/tls, readOnly: true }
+            - { name: keys, mountPath: /etc/lattis/keys, readOnly: true }
+          {{- with .Values.replicas.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes: {{- include "lattis.pgVolumes" . | nindent 8 }}
+      {{- with .Values.replicas.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.replicas.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.replicas.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.replicas.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.replicas.persistence.size }}
+{{- end }}

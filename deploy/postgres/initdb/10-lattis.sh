@@ -28,6 +28,7 @@ lattis_oauth.issuer = '${LATTIS_ISSUER}'
 lattis_oauth.public_keys_file = '${LATTIS_PUBLIC_KEYS_FILE}'
 shared_preload_libraries = 'pg_stat_statements'
 hot_standby = on
+wal_keep_size = '1GB'
 CONF
 
 cat > "$PGDATA/pg_hba.conf" <<HBA
@@ -49,3 +50,12 @@ DO \$\$ BEGIN
   END IF;
 END \$\$;
 SQL
+
+# Réplication en flux (§12) : rôle des réplicas, si un mot de passe est fourni.
+if [ -n "${LATTIS_REPLICATION_PASSWORD:-}" ]; then
+	psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+	     -v pw="$LATTIS_REPLICATION_PASSWORD" <<'SQL'
+SELECT format('CREATE ROLE lattis_replicator LOGIN REPLICATION PASSWORD %L', :'pw')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lattis_replicator') \gexec
+SQL
+fi

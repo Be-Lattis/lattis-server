@@ -129,6 +129,25 @@ func TestFrozenWorkbookLifecycle(t *testing.T) {
 		t.Fatalf("lecteur qui republie : %v", err)
 	}
 
+	// Les lecteurs écoutent le canal : rien avant la bascule.
+	var capsJ struct {
+		Channel string `json:"channel"`
+		Title   string `json:"title"`
+	}
+	if err := as(reader, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT lattis.my_capabilities($1::uuid)`, wb).Scan(&capsJ)
+	}); err != nil || capsJ.Title == "" {
+		t.Fatalf("capacités : %+v %v", capsJ, err)
+	}
+	listen, err := db.Super.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listen.Release()
+	if _, err := listen.Exec(ctx, `LISTEN `+pgx.Identifier{capsJ.Channel}.Sanitize()); err != nil {
+		t.Fatal(err)
+	}
+
 	// Republication : version de travail, bascule atomique.
 	var staging string
 	if err := as(author, func(tx pgx.Tx) error {
@@ -157,6 +176,9 @@ func TestFrozenWorkbookLifecycle(t *testing.T) {
 		return tx.QueryRow(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb).Scan(&version)
 	}); err != nil || version != 2 {
 		t.Fatalf("republication : %d %v", version, err)
+	}
+	if note, err := listen.Conn().WaitForNotification(ctx); err != nil || note.Payload != "*version:2" {
+		t.Fatalf("première notification : %+v %v", note, err)
 	}
 	if err := as(reader, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM `+pgx.Identifier{staging, "Clients"}.Sanitize()).Scan(&n)

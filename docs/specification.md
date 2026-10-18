@@ -278,7 +278,9 @@ Limitation de débit sur `/oauth/*` et `/login/*` ; en-têtes de sécurité (HST
 - Routage attendu des clients : chargement initial, TCD, requêtes de l'onglet SQL, Power Query et requêtes lourdes → `ro` ; écritures, `LISTEN`, lecture des deltas → `rw`.
 - Lecture de ses propres écritures : un client qui vient d'écrire lit sur `rw`, ou attend que `pg_last_wal_replay_lsn()` du réplica dépasse le LSN de sa validation.
 - Retard de réplica au-delà d'un seuil (réglable, 10 s par défaut) : `lattisd` retire le réplica de la liste `ro` de la découverte.
-- **[à vérifier]** `pg_current_snapshot()` sur un réplica et validité de `changes_since` en lecture sur réplica ; à défaut, les deltas restent sur `rw`.
+- ~~[à vérifier]~~ **Vérifié le 18/10/2026** : `pg_current_snapshot()`, `sync_point()` et `changes_since` fonctionnent sur un réplica (connexion `OAUTHBEARER` comprise) ; les deltas peuvent donc se lire sur `ro`.
+- **Constaté** : une session ouverte sur un réplica pendant le rejeu d'une grosse transaction de catalogue (création d'un classeur et de ses tableaux) peut garder des appartenances aux rôles périmées (`pg_has_role` faux alors que `pg_auth_members` est à jour), jusqu'à sa fermeture. Une nouvelle connexion voit juste. Le contrat client impose de rouvrir la connexion sur un refus inattendu venu d'un réplica (contrat §3.1).
+- Surveillance par `lattisd` (relevé toutes les 5 s, connexion `lattis_service` à chaque réplica) : retard en secondes (nul quand tout le WAL reçu est rejoué), retard en octets par rapport au parent ; un réplica injoignable, promu ou trop en retard est retiré, puis réannoncé dès qu'il a rattrapé.
 
 ## 13. Mesures
 
@@ -343,8 +345,10 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 
 - **Images** : `be-lattis/server:<version>-pg18` (PostgreSQL 18 officiel + `lattis_oauth` + migrations au démarrage) et `be-lattis/lattisd:<version>`.
 - **Docker Compose** : parent, N réplicas, `lattisd`, volume de données, certificats.
-- **Kubernetes** : chart Helm qui s'appuie sur l'opérateur **CloudNativePG** (`Cluster` avec image `be-lattis/server`, `instances: 1 + réplicas`, services `-rw`/`-ro`, sauvegardes, bascule) et déploie `lattisd` (Deployment, Service, Ingress, ServiceMonitor). Exemple fourni (non activé) de `ScaledObject` KEDA sur `lattis_queries_waiting`. **[à vérifier]** sous-ressource `scale` du `Cluster` CloudNativePG.
-- **Sauvegardes** : celles de CloudNativePG (Barman, stockage objet) ou `pg_basebackup` + archivage WAL hors Kubernetes. Restauration testée en CI.
+- **Kubernetes** (jalon 6, `deploy/helm/lattis`) : chart Helm **autonome** : parent et réplicas en StatefulSets avec l'image `be-lattis/server` (réplication en flux, un emplacement par réplica), `lattisd` (Deployment, Service, Ingress, ServiceMonitor), secrets fournis par l'exploitant. Pas de bascule automatique ni de sauvegardes gérées.
+- **Plus tard** : variante sur l'opérateur **CloudNativePG** (`Cluster`, `instances: 1 + réplicas`, sauvegardes, bascule). Elle demande une image dérivée de celle de CloudNativePG, un amorçage sans le script `initdb` de l'image (pg_hba, TLS et paramètres gérés par l'opérateur) et la clé publique des jetons en secret projeté. Exemple KEDA (`ScaledObject` sur `lattis_queries_waiting`) avec elle. **[à vérifier]** paramètres OAuth acceptés par l'opérateur, sous-ressource `scale` du `Cluster`.
+- **Sauvegardes** : `pg_basebackup` + archivage WAL (ou celles de CloudNativePG avec la variante à venir). Restauration testée en CI.
+- Guide d'installation et de configuration : `docs/installation.md`.
 - **Mises à jour** : migrations SQL versionnées, appliquées par `lattisd --migrate` ; compatibilité ascendante d'une version mineure entre `lattisd` et les clients (la découverte publie la version minimale du client).
 
 ## 18. Sécurité
@@ -368,7 +372,7 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 
 1. ~~API des validateurs OAuth de PostgreSQL 18~~ **Vérifié le 18/10/2026** (PostgreSQL 18.6) : le validateur reçoit le jeton et le rôle demandé, renvoie `authorized` et `authn_id` ; avec `delegate_ident_mapping=1`, sa décision est finale et `system_user` vaut `oauth:<authn_id>`. Le module lit un fichier et des réglages, sans table ni réseau.
 2. ~~Support d'`OAUTHBEARER` par pgx~~ **Vérifié** : pgx v5.11 le gère (`Config.OAuthTokenProvider`).
-3. `pg_current_snapshot()` et `changes_since` sur un réplica en `hot_standby`.
+3. ~~`pg_current_snapshot()` et `changes_since` sur un réplica~~ **Vérifié le 18/10/2026** (§12), avec la réserve du cache des rôles.
 4. Sous-ressource `scale` du `Cluster` CloudNativePG (pour l'exemple KEDA).
 5. ~~Délégation `CREATEROLE`~~ **Vérifié** : `lattis_service` donne l'appartenance aux groupes qu'il a créés (`lattis_server_owners`) aux rôles qu'il a créés, sans option supplémentaire.
 6. Les rôles PostgreSQL sont communs à tout le serveur PostgreSQL : un Serveur Lattis par instance PostgreSQL (une seule base `lattis`).
@@ -380,5 +384,5 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 3. **Classeurs collaboratifs** : colonnes système, déclencheurs, `changes_since`, `why_not`, rôles fournis, `compile_acl`.
 4. **Droits avancés** : rôles personnalisés, filtres, restrictions, « Voir en tant que… », écarts.
 5. **Administration web** (édition `admin`) et mesures.
-6. **Réplicas** et routage, chart Helm CloudNativePG.
+6. **Réplicas** et routage, chart Helm (autonome ; variante CloudNativePG plus tard).
 7. **Application web** (édition `web`).

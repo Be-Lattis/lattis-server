@@ -14,9 +14,11 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Be-Lattis/lattis-server/internal/config"
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
 )
 
@@ -92,18 +94,23 @@ func TestComposeLogin(t *testing.T) {
 	}
 
 	// Le rôle contient « @ » : il se pose dans la configuration, pas dans l'URL.
-	cfg, err := pgx.ParseConfig(fmt.Sprintf("postgres://%s:%d/%s?sslmode=%s",
-		d.Postgres.RW.Host, d.Postgres.RW.Port, d.Postgres.Database, d.Postgres.SSLMode))
-	if err != nil {
-		t.Fatal(err)
+	connect := func(e config.Endpoint) *pgx.Conn {
+		t.Helper()
+		cfg, err := pgx.ParseConfig(fmt.Sprintf("postgres://%s:%d/%s?sslmode=%s",
+			e.Host, e.Port, d.Postgres.Database, d.Postgres.SSLMode))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.User = tr.PGRole
+		cfg.OAuthTokenProvider = func(context.Context) (string, error) { return tr.AccessToken, nil }
+		conn, err := pgx.ConnectConfig(ctx, cfg)
+		if err != nil {
+			t.Fatalf("connexion PostgreSQL %s : %v", e, err)
+		}
+		t.Cleanup(func() { conn.Close(ctx) })
+		return conn
 	}
-	cfg.User = tr.PGRole
-	cfg.OAuthTokenProvider = func(context.Context) (string, error) { return tr.AccessToken, nil }
-	conn, err := pgx.ConnectConfig(ctx, cfg)
-	if err != nil {
-		t.Fatalf("connexion PostgreSQL : %v", err)
-	}
-	defer conn.Close(ctx)
+	conn := connect(d.Postgres.RW)
 	var summary map[string]any
 	if err := conn.QueryRow(ctx, `SELECT lattis.login_summary()`).Scan(&summary); err != nil {
 		t.Fatal(err)
@@ -135,5 +142,84 @@ func TestComposeLogin(t *testing.T) {
 	var actor string
 	if err := conn.QueryRow(ctx, `SELECT actor FROM lattis.audit WHERE action = 'invite' ORDER BY id DESC LIMIT 1`).Scan(&actor); err != nil || actor != tr.PGRole {
 		t.Fatalf("auteur de l'invitation : %q %v", actor, err)
+	}
+
+	// Réplicas annoncés : même jeton, lecture seule, deltas lus sur le réplica.
+	if len(d.Postgres.RO) == 0 {
+		t.Log("aucun réplica annoncé")
+		return
+	}
+	var wb, tid, schema string
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Réplica e2e', 'collaborative')::text`).Scan(&wb); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.create_table($1::uuid, 'Lignes', '[{"name":"Titre","type":"text"}]')::text`, wb).Scan(&tid); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.my_capabilities($1::uuid) ->> 'schema'`, wb).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb).Scan(new(int)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tbl := pgx.Identifier{schema, "Lignes"}.Sanitize()
+	for _, e := range d.Postgres.RO {
+		ro := connect(e)
+		var since string
+		deadline := time.Now().Add(15 * time.Second)
+		// Le classeur arrive par le WAL : attendre qu'il soit rejoué. Une
+		// session ouverte pendant ce rejeu peut garder des appartenances aux
+		// rôles périmées (cache de PostgreSQL) : sur un refus, le poste ouvre
+		// une nouvelle connexion (contrat client).
+		for reconnects := 0; ; {
+			_, err := ro.Exec(ctx, `SELECT count(*) FROM lattis.changes_since($1::uuid, $2::uuid, '0')`, wb, tid)
+			if err == nil {
+				if err := ro.QueryRow(ctx, `SELECT lattis.sync_point()::text`).Scan(&since); err != nil {
+					t.Fatalf("réplica %s : sync_point : %v", e, err)
+				}
+				if reconnects > 0 {
+					t.Logf("réplica %s : %d reconnexion(s) après refus", e, reconnects)
+				}
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("réplica %s : classeur jamais rejoué : %v", e, err)
+			}
+			time.Sleep(200 * time.Millisecond)
+			if strings.Contains(err.Error(), "42501") {
+				ro.Close(ctx)
+				ro = connect(e)
+				reconnects++
+			}
+		}
+		if _, err := ro.Exec(ctx, `INSERT INTO `+tbl+` (lattis_id, lattis_pos, "Titre") VALUES (uuidv7(), 'a0', 'refusé')`); err == nil || !strings.Contains(err.Error(), "read-only") {
+			t.Fatalf("réplica %s : écriture acceptée : %v", e, err)
+		}
+		title := "ligne " + e.String()
+		if _, err := conn.Exec(ctx, `INSERT INTO `+tbl+` (lattis_id, lattis_pos, "Titre") VALUES (uuidv7(), 'a0', $1)`, title); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			var n int
+			if err := ro.QueryRow(ctx, `SELECT count(*) FROM lattis.changes_since($1::uuid, $2::uuid, $3::xid8) WHERE row_data ->> 'Titre' = $4`,
+				wb, tid, since, title).Scan(&n); err != nil {
+				t.Fatalf("réplica %s : deltas : %v", e, err)
+			}
+			if n == 1 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("réplica %s : delta jamais vu depuis %s", e, since)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		t.Logf("réplica %s : connexion OAUTHBEARER et deltas depuis %s", e, since)
 	}
 }

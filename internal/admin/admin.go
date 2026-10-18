@@ -29,6 +29,7 @@ import (
 
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/userdb"
@@ -130,12 +131,14 @@ func init() {
 
 // Service porte les routes /admin/*.
 type Service struct {
-	Config  *config.Config
-	Store   *store.Store
-	Keys    *tokens.KeySet
-	Users   userdb.Runner
-	Version string
-	Now     func() time.Time
+	Config *config.Config
+	Store  *store.Store
+	Keys   *tokens.KeySet
+	Users  userdb.Runner
+	// Replicas : réplicas surveillés par lattisd (écran État) ; nil possible.
+	Replicas *replicas.Monitor
+	Version  string
+	Now      func() time.Time
 }
 
 func (s *Service) now() time.Time {

@@ -27,6 +27,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
 	"github.com/Be-Lattis/lattis-server/internal/metrics"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
+	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/upstream"
@@ -59,7 +60,10 @@ func run(args []string) error {
 			}
 			return initDev(args[1], hosts)
 		case "public-keys":
-			return publicKeys()
+			if len(args) > 2 {
+				return errors.New("usage : lattisd public-keys [FICHIER]")
+			}
+			return publicKeys(args[1:])
 		case "migrate":
 			return migrateOnly()
 		case "version":
@@ -86,7 +90,9 @@ func keygen(path string) error {
 	return os.WriteFile(path, pem, 0o600)
 }
 
-func publicKeys() error {
+// publicKeys écrit les clés publiques (PEM) sur la sortie standard ou dans
+// FICHIER (image sans shell : conteneur d'initialisation du chart Helm).
+func publicKeys(args []string) error {
 	path := os.Getenv("LATTIS_SIGNING_KEY_FILE")
 	if path == "" {
 		return errors.New("LATTIS_SIGNING_KEY_FILE manquant")
@@ -98,6 +104,9 @@ func publicKeys() error {
 	pem, err := ks.PublicPEM()
 	if err != nil {
 		return err
+	}
+	if len(args) == 1 {
+		return os.WriteFile(args[0], pem, 0o644)
 	}
 	_, err = os.Stdout.Write(pem)
 	return err
@@ -170,8 +179,15 @@ func serve(doMigrate bool) error {
 		return err
 	}
 	defer users.Close()
-	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Version: httpserver.Version}
-	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc}
+	reps, err := replicas.New(ctx, st.DB, cfg.PGROURLs, cfg.PGPublicRO, cfg.ReplicaMaxLag)
+	if err != nil {
+		return fmt.Errorf("réplicas : %w", err)
+	}
+	defer reps.Close()
+	m.Registry.MustRegister(reps)
+	go reps.Run(ctx)
+	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version}
+	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc, Replicas: reps}
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()

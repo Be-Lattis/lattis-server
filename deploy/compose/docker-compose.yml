@@ -2,6 +2,10 @@
 #
 #   cd deploy/compose && cp .env.example .env && docker compose up --build
 #
+# Avec un réplica en lecture (§12) :
+#
+#   docker compose --profile replicas up --build
+#
 # Le lien pour choisir le mot de passe du premier propriétaire
 # (LATTIS_BOOTSTRAP_OWNER) s'affiche dans `docker compose logs lattisd`.
 # Certificat TLS autosigné : réservé à l'essai, fournir de vrais certificats
@@ -29,15 +33,36 @@ services:
       POSTGRES_DB: lattis
       LATTIS_SERVICE_PASSWORD: ${LATTIS_SERVICE_PASSWORD:?}
       LATTIS_ISSUER: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
+      LATTIS_REPLICATION_PASSWORD: ${LATTIS_REPLICATION_PASSWORD:?}
     volumes:
       - pgdata:/var/lib/postgresql
       - secrets:/etc/lattis:ro
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "lattis"]
+      test: ["CMD", "gosu", "postgres", "pg_isready", "-d", "lattis"]
       interval: 5s
       retries: 20
+
+  replica:
+    image: be-lattis/server:dev-pg18
+    profiles: [replicas]
+    depends_on:
+      postgres: { condition: service_healthy }
+    entrypoint: ["lattis-replica"]
+    environment:
+      LATTIS_PRIMARY_HOST: postgres
+      LATTIS_REPLICATION_PASSWORD: ${LATTIS_REPLICATION_PASSWORD:?}
+      LATTIS_REPLICATION_SLOT: replica_1
+    volumes:
+      - replicadata:/var/lib/postgresql
+      - secrets:/etc/lattis:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "gosu", "postgres", "pg_isready", "-d", "lattis"]
+      interval: 5s
+      retries: 40
 
   lattisd:
     image: be-lattis/lattisd:dev
@@ -48,6 +73,10 @@ services:
       LATTIS_PUBLIC_URL: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
       LATTIS_PG_RW_URL: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@postgres:5432/lattis?sslmode=require
       LATTIS_PG_PUBLIC_RW: localhost:5432
+      # Réplica du profil « replicas » : surveillé, annoncé seulement s'il
+      # répond et suit le parent.
+      LATTIS_PG_RO_URLS: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@replica:5432/lattis?sslmode=require&connect_timeout=3
+      LATTIS_PG_PUBLIC_RO: localhost:5433
       LATTIS_PG_SSLMODE: require
       LATTIS_SIGNING_KEY_FILE: /etc/lattis/keys/signing.pem
       LATTIS_SECRETS_DIR: /etc/lattis/oauth
@@ -62,4 +91,5 @@ services:
 
 volumes:
   pgdata:
+  replicadata:
   secrets:
