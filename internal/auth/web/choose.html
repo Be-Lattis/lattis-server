@@ -1,0 +1,7 @@
+{{define "body"}}
+{{if .Providers}}
+<ul class="providers">
+{{range .Providers}}<li><a class="button" href="{{.URL}}">{{.Label}}</a></li>
+{{end}}</ul>
+{{else}}<p>Aucun moyen de connexion n'est activé sur ce serveur.</p>{{end}}
+{{end}}

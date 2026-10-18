@@ -240,7 +240,7 @@ Toutes les fonctions sont dans le schéma `lattis`, `SECURITY DEFINER` avec `sea
 
 ### 9.2 Classeurs et droits
 
-`create_workbook(title, mode) → id`, `drop_workbook(id)`, `republish(id)` (figé), `invite(email, workbook_id, roles[])`, `revoke_invitation(id)`, `create_role(workbook_id, name)`, `drop_role(role_id)`, `set_level(role_id, node_kind, node_id, level, read_filter, write_filter)`, `grant_role(role_id, principal)`, `revoke_role(role_id, principal)`, `add_restriction(table_id, command, applies_to[], predicate, label)`, `drop_restriction(id)`, `compile_acl(workbook_id)`, `check_drift(workbook_id)`, `preview_as(workbook_id, user_id)`, `my_capabilities(workbook_id) → jsonb` (niveau effectif par tableau, restrictions qui s'appliquent, rôle du classeur), `login_summary() → jsonb`.
+`create_workbook(title, mode) → id`, `drop_workbook(id)`, `republish(id)` (figé), `invite(email, workbook_id, roles[])`, `revoke_invitation(id)`, `create_role(workbook_id, name)`, `drop_role(role_id)`, `set_level(role_id, node_kind, node_id, level, read_filter, write_filter)`, `grant_role(role_id, principal)`, `revoke_role(role_id, principal)`, `add_restriction(workbook_id, table_id, command, applies_to[], predicate, label)`, `drop_restriction(id)`, `compile_acl(workbook_id)`, `check_drift(workbook_id)`, « Voir en tant que… » (`POST /api/preview` de `lattisd`, qui appelle `authorize_preview(actor, workbook_id, user_id)` puis lit sous le rôle de l’utilisateur), `my_capabilities(workbook_id) → jsonb` (niveau effectif par tableau, restrictions qui s'appliquent, rôle du classeur), `login_summary() → jsonb`.
 
 ### 9.3 Structure (concepteurs)
 
@@ -263,7 +263,8 @@ Le serveur fournit les moyens ; la logique côté poste est spécifiée dans la 
 | `GET /.well-known/openid-configuration`, `GET /jwks.json` | Métadonnées OIDC de `lattisd` (émetteur pour PostgreSQL et les clients). |
 | `GET /oauth/authorize`, `POST /oauth/token`, `POST /oauth/device`, `POST /oauth/revoke` | Flux OAuth (PKCE, rafraîchissement, device code). |
 | `GET /login/<provider>`, `GET /callback/<provider>` | Délégation aux fournisseurs. |
-| `GET /admin/…` | Interface d'administration (édition `admin` et `web`). |
+| `GET /admin/…`, `POST /admin/do/<action>` | Interface d'administration (édition `admin` et `web`). Connexion par le client interne `lattis-admin` (code consommé par `lattisd`, jamais sur `/oauth/token`) ; chaque page s'exécute sur une connexion OAUTHBEARER ouverte sous l'identité de l'administrateur. |
+| `POST /api/preview` | « Voir en tant que… » (§8.5) : jeton d'accès en `Bearer`, lecture seule sous le rôle de l'utilisateur visé. |
 | `GET /app/…`, `GET /ws` | Application web et son canal WebSocket (édition `web`). |
 | `GET /healthz`, `GET /readyz` | Vivacité ; disponibilité (PostgreSQL parent joignable, migrations à jour). |
 | `GET /metrics` | Mesures Prometheus (§13). Réseau interne seulement. |
@@ -365,11 +366,12 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 
 ## 20. Points à vérifier avant réalisation
 
-1. API des validateurs OAuth de PostgreSQL 18 : contraintes (pas d'accès aux tables ni au réseau), forme de `authn_id`, comportement de `delegate_ident_mapping`.
-2. Support d'`OAUTHBEARER` par pgx (client Go de Lattis) ; sinon, ajout du mécanisme SASL.
+1. ~~API des validateurs OAuth de PostgreSQL 18~~ **Vérifié le 18/10/2026** (PostgreSQL 18.6) : le validateur reçoit le jeton et le rôle demandé, renvoie `authorized` et `authn_id` ; avec `delegate_ident_mapping=1`, sa décision est finale et `system_user` vaut `oauth:<authn_id>`. Le module lit un fichier et des réglages, sans table ni réseau.
+2. ~~Support d'`OAUTHBEARER` par pgx~~ **Vérifié** : pgx v5.11 le gère (`Config.OAuthTokenProvider`).
 3. `pg_current_snapshot()` et `changes_since` sur un réplica en `hot_standby`.
 4. Sous-ressource `scale` du `Cluster` CloudNativePG (pour l'exemple KEDA).
-5. Délégation `CREATEROLE` de PostgreSQL 16+ : un rôle créé par `lattis_service` peut-il recevoir l'appartenance à des groupes créés par lui sans `ADMIN OPTION` supplémentaire.
+5. ~~Délégation `CREATEROLE`~~ **Vérifié** : `lattis_service` donne l'appartenance aux groupes qu'il a créés (`lattis_server_owners`) aux rôles qu'il a créés, sans option supplémentaire.
+6. Les rôles PostgreSQL sont communs à tout le serveur PostgreSQL : un Serveur Lattis par instance PostgreSQL (une seule base `lattis`).
 
 ## 21. Jalons
 

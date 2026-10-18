@@ -1,0 +1,53 @@
+{{define "body"}}
+{{range .Data.Providers}}
+<section class="panel">
+<h2>{{.Label}} <span class="tag">{{.Kind}}</span>{{if not .Enabled}} <span class="tag off">désactivé</span>{{end}}</h2>
+<form method="post" action="/admin/do/update_provider" class="grid">
+{{template "csrf" $}}
+<input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="kind" value="{{.Kind}}">
+<label>Libellé <input name="label" value="{{.Label}}" required></label>
+<label>Ordre <input type="number" name="position" value="{{.Position}}"></label>
+{{if ne .Kind "password"}}
+<label>Émetteur (issuer) <input name="issuer" value="{{.Issuer}}"></label>
+<label>Identifiant client <input name="client_id" value="{{.ClientID}}"></label>
+<label>Référence du secret <input name="secret_ref" value="{{.SecretRef}}"><small>Nom du fichier dans le dossier des secrets, jamais le secret lui-même.</small></label>
+<label>Scopes <input name="scopes" value="{{range $i, $s := .Scopes}}{{if $i}} {{end}}{{$s}}{{end}}"></label>
+<label>Revendication exigée <input name="claim_name" value="{{.ClaimName}}" placeholder="groups"></label>
+<label>Valeur exigée <input name="claim_value" value="{{.ClaimValue}}"></label>
+{{end}}
+<label class="inline"><input type="checkbox" name="enabled"{{if .Enabled}} checked{{end}}> Activé</label>
+<p class="actions"><button class="ok">Enregistrer</button></p>
+</form>
+{{if ne .Kind "password"}}
+<h3>Tenants autorisés</h3>
+{{if .Tenants}}<table><thead><tr><th>Type</th><th>Valeur</th><th>Rôle des arrivants</th><th></th></tr></thead><tbody>
+{{range .Tenants}}<tr><td>{{.kind}}</td><td>{{.value}}</td><td>{{levelName .default_role}}</td>
+<td><form method="post" action="/admin/do/disallow_tenant">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}
+</tbody></table>{{else}}<p class="muted">Aucun tenant : personne n'entre par ce fournisseur.</p>{{end}}
+<form method="post" action="/admin/do/allow_tenant" class="row">
+{{template "csrf" $}}<input type="hidden" name="provider_id" value="{{.ID}}">
+<select name="kind"><option value="domain">Domaine</option><option value="tid">Tenant Microsoft (tid)</option><option value="realm">Realm</option><option value="email">Adresse</option><option value="any">Tous</option></select>
+<input name="value" placeholder="exemple.fr">
+<select name="default_role"><option value="">Rôle du serveur</option><option value="none">Aucun</option><option value="reader">Lecteur</option><option value="participant">Participant</option><option value="editor">Éditeur</option></select>
+<button>Autoriser</button>
+</form>
+<form method="post" action="/admin/do/remove_provider" class="row danger">
+{{template "csrf" $}}<input type="hidden" name="id" value="{{.ID}}">{{template "confirm"}}<button>Supprimer ce fournisseur</button>
+</form>
+{{end}}
+</section>
+{{end}}
+<section class="panel">
+<h2>Ajouter un fournisseur</h2>
+<form method="post" action="/admin/do/add_provider" class="grid">
+{{template "csrf" $}}
+<label>Type <select name="kind">{{range .Data.Kinds}}<option value="{{index . 0}}">{{index . 1}}</option>{{end}}</select></label>
+<label>Libellé <input name="label" required placeholder="Se connecter avec…"></label>
+<label>Émetteur (issuer) <input name="issuer" placeholder="Par défaut pour Google et Microsoft"></label>
+<label>Identifiant client <input name="client_id" required></label>
+<label>Référence du secret <input name="secret_ref"></label>
+<label>Scopes <input name="scopes" placeholder="openid email profile"></label>
+<p class="actions"><button class="ok">Ajouter</button></p>
+</form>
+</section>
+{{end}}
