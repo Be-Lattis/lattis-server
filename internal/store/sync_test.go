@@ -68,6 +68,40 @@ func TestSyncFeedback(t *testing.T) {
 		t.Fatalf("échos écartés : %d lignes", n)
 	}
 
+	// Écho qui recouvre l'écriture d'un autre pas encore reçue : la ligne
+	// revient. Depuis un point de reprise postérieur à cette écriture : non.
+	var since0, mine2 string
+	must(db.AsUser(t, editor.PGRole, func(tx pgx.Tx) error { return tx.QueryRow(ctx, `SELECT lattis.sync_point()::text`).Scan(&since0) }))
+	must(db.AsUser(t, owner.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE `+tbl+` SET v = 20 WHERE v = 2`)
+		return err
+	}))
+	var since1 string
+	must(db.AsUser(t, editor.PGRole, func(tx pgx.Tx) error { return tx.QueryRow(ctx, `SELECT lattis.sync_point()::text`).Scan(&since1) }))
+	must(db.AsUser(t, editor.PGRole, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL lattis.device = 'poste-1'`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE `+tbl+` SET v = 21 WHERE v = 20`); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT pg_current_xact_id()::text`).Scan(&mine2)
+	}))
+	echoes := func(since string, skip []string) (n int) {
+		t.Helper()
+		must(db.AsUser(t, editor.PGRole, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM lattis.changes_since($1::uuid, $2::uuid, $3::xid8, $4::xid8[]) WHERE (row_data ->> 'v')::int = 21`,
+				wb, tid, since, skip).Scan(&n)
+		}))
+		return n
+	}
+	if n := echoes(since0, []string{mine, mine2}); n != 1 {
+		t.Fatalf("écriture recouverte masquée : %d", n)
+	}
+	if n := echoes(since1, []string{mine, mine2}); n != 0 {
+		t.Fatalf("écho déjà couvert renvoyé : %d", n)
+	}
+
 	// Droits : une invitation notifie « *acl » sur le canal, une seule fois.
 	conn, err := db.Super.Acquire(ctx)
 	must(err)

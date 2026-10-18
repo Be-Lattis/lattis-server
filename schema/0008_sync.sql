@@ -1,11 +1,74 @@
 -- Synchronisation (retours de l'application, docs/collaboration/synchronisation.md §4) :
---  * changes_since peut écarter les transactions du poste (ses échos) ;
+--  * changes_since peut écarter les transactions du poste (ses échos), sans
+--    masquer l'écriture d'un autre que le poste a recouverte sans l'avoir reçue ;
 --  * « *acl » sur le canal du classeur quand ses droits changent ;
 --  * since_covered dit si les pierres tombales couvrent encore un point de reprise.
 
--- Deltas sans les transactions p_skip (identifiants lus par le poste avec
--- pg_current_xact_id() dans ses transactions d'écriture). Une ligne réécrite
--- ensuite par un autre revient, son lattis_xid ayant changé.
+-- Auteur d'une écriture : rôle de l'utilisateur et, si le poste l'a posé
+-- (SET lattis.device = '…'), son poste. lattis_other_xid : dernière écriture
+-- de la ligne par un autre auteur que le dernier, avant lui.
+CREATE OR REPLACE FUNCTION lattis.system_columns() RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, pg_temp
+AS $$
+    SELECT 'lattis_id uuid PRIMARY KEY,
+            lattis_pos text COLLATE "C" NOT NULL DEFAULT '''',
+            lattis_xid xid8 NOT NULL DEFAULT pg_current_xact_id(),
+            lattis_author text NOT NULL DEFAULT session_user,
+            lattis_updated_by text NOT NULL DEFAULT session_user,
+            lattis_updated_at timestamptz NOT NULL DEFAULT now(),
+            lattis_updated_device text NOT NULL DEFAULT '''',
+            lattis_other_xid xid8'
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.trg_stamp() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_device text := coalesce(current_setting('lattis.device', true), '');
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        NEW.lattis_author := current_user;
+        NEW.lattis_pos := coalesce(NEW.lattis_pos, '');
+        NEW.lattis_other_xid := NULL;
+    ELSE
+        IF NEW.lattis_id IS DISTINCT FROM OLD.lattis_id THEN
+            RAISE EXCEPTION 'lattis_id ne se modifie pas' USING ERRCODE = 'check_violation';
+        END IF;
+        NEW.lattis_author := OLD.lattis_author;
+        IF (OLD.lattis_updated_by, OLD.lattis_updated_device) IS DISTINCT FROM (current_user::text, v_device) THEN
+            NEW.lattis_other_xid := OLD.lattis_xid;
+        ELSE
+            NEW.lattis_other_xid := OLD.lattis_other_xid;
+        END IF;
+    END IF;
+    NEW.lattis_xid := pg_current_xact_id();
+    NEW.lattis_updated_by := current_user;
+    NEW.lattis_updated_device := v_device;
+    NEW.lattis_updated_at := now();
+    RETURN NEW;
+END
+$$;
+
+-- Tableaux déjà publiés : mêmes colonnes.
+DO $$
+DECLARE
+    v_sch text;
+    v_tab record;
+BEGIN
+    FOR v_sch IN SELECT schema_name FROM lattis.workbooks
+                 UNION SELECT staging_schema FROM lattis.workbooks WHERE staging_schema IS NOT NULL LOOP
+        FOR v_tab IN SELECT * FROM lattis.data_tables(v_sch) LOOP
+            EXECUTE format('ALTER TABLE %I.%I ADD COLUMN IF NOT EXISTS lattis_updated_device text NOT NULL DEFAULT '''',
+                                               ADD COLUMN IF NOT EXISTS lattis_other_xid xid8', v_sch, v_tab.name);
+        END LOOP;
+    END LOOP;
+END
+$$;
+
+-- Deltas sans les échos du poste : p_skip, identifiants de ses transactions
+-- d'écriture (pg_current_xact_id()). Une ligne dont la dernière écriture est
+-- un écho revient quand même si un autre l'a écrite depuis p_since
+-- (lattis_other_xid) : le poste a pu recouvrir une valeur qu'il n'a pas reçue.
 CREATE FUNCTION lattis.changes_since(p_workbook_id uuid, p_table_id uuid, p_since xid8, p_skip xid8[])
 RETURNS TABLE (row_data jsonb, deleted boolean, xid xid8)
 LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp
@@ -15,7 +78,8 @@ DECLARE
 BEGIN
     r := lattis.table_ref(p_workbook_id, p_table_id);
     RETURN QUERY EXECUTE format(
-        'SELECT to_jsonb(t), false, t.lattis_xid FROM %I.%I t WHERE t.lattis_xid >= $1 AND t.lattis_xid <> ALL ($2)',
+        'SELECT to_jsonb(t), false, t.lattis_xid FROM %I.%I t WHERE t.lattis_xid >= $1
+           AND (t.lattis_xid <> ALL ($2) OR t.lattis_other_xid >= $1)',
         r.schema_name, r.table_name)
         USING p_since, coalesce(p_skip, '{}');
     RETURN QUERY SELECT jsonb_build_object('lattis_id', s.row_id), true, s.xid
