@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -164,10 +165,13 @@ func (s *Service) saveSettings(ctx context.Context, tx pgx.Tx, f form) (string, 
 		switch st.Kind {
 		case "bool":
 			v = f.checked(st.Key)
-		case "number":
-			n, err := strconv.ParseFloat(strings.ReplaceAll(f.s(st.Key), " ", ""), 64)
-			if err != nil {
-				return "", inputError(st.Label + " : nombre attendu.")
+		case "number", "duration":
+			n, err := strconv.ParseFloat(strings.NewReplacer(" ", "", ",", ".").Replace(f.s(st.Key)), 64)
+			if err != nil || n <= 0 {
+				return "", inputError(st.Label + " : nombre positif attendu.")
+			}
+			if st.Kind == "duration" {
+				n = math.Round(n * st.Scale)
 			}
 			v = n
 		case "url":

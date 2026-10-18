@@ -50,3 +50,11 @@ code { font: 12px ui-monospace, Consolas, monospace; } code.json { white-space: 
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; } dt { color: var(--muted); } dd { margin: 0; }
 a { color: var(--accent); }
 @media (max-width: 640px) { .me { margin-left: 0; } th, td { padding: 4px; } }
+.settings .lead { margin: -6px 0 12px; }
+.settings details summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.settings details summary::-webkit-details-marker { display: none; }
+.settings details summary h2 { margin: 0; } .settings details summary h2::before { content: "▸ "; color: var(--muted); }
+.settings details[open] summary { margin-bottom: 12px; } .settings details[open] summary h2::before { content: "▾ "; }
+.settings .unit { display: flex; align-items: center; gap: 8px; } .settings .unit input { margin-top: 0; } .settings .unit span { color: var(--muted); font-weight: 400; }
+.settings label .unit { margin-top: 4px; }
+.settings .sticky { position: sticky; bottom: 0; margin: 0; padding: 12px 0; background: var(--bg); }

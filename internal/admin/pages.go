@@ -59,31 +59,69 @@ func queryJSON(ctx context.Context, tx pgx.Tx, q string, args ...any) (any, erro
 
 // setting décrit un champ de l'écran « Serveur ».
 type setting struct {
-	Key, Label, Help, Kind string // Kind : text, url, number, bool, select
+	Key, Label, Help, Kind string // Kind : text, url, number, duration, bool, select
 	Options                [][2]string
-	Value                  any
+	// Unit, Scale : durée affichée dans cette unité, enregistrée en secondes.
+	Unit  string
+	Scale float64
+	Value any
 }
 
-var settings = []setting{
-	{Key: "display_name", Label: "Nom affiché", Kind: "text"},
-	{Key: "logo_url", Label: "Logo (adresse https://)", Kind: "url"},
-	{Key: "access_mode", Label: "Mode d'accès", Kind: "select",
-		Options: [][2]string{{"invitation", "Sur invitation"}, {"open", "Entrée libre"}}},
-	{Key: "default_role", Label: "Rôle des arrivants (entrée libre)", Kind: "select",
-		Options: [][2]string{{"none", "Aucun"}, {"reader", "Lecteur"}, {"participant", "Participant"}, {"editor", "Éditeur"}},
-		Help:    "Rôle donné sur les classeurs ouverts aux arrivants."},
-	{Key: "workbook_creators", Label: "Qui publie des classeurs", Kind: "select",
-		Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs de classeurs"}},
-		Help:    "Le rôle « créateur de classeurs » se donne sur la page Utilisateurs."},
-	{Key: "web_scripting", Label: "Scripts dans l'application web", Kind: "bool", Help: "Édition web seulement."},
-	{Key: "access_token_ttl", Label: "Durée des jetons d'accès (s)", Kind: "number"},
-	{Key: "refresh_token_ttl", Label: "Durée des sessions (s)", Kind: "number"},
-	{Key: "invitation_ttl", Label: "Validité des invitations (s)", Kind: "number"},
-	{Key: "password_max_failures", Label: "Essais de mot de passe avant verrouillage", Kind: "number"},
-	{Key: "password_lock_seconds", Label: "Durée du verrouillage (s)", Kind: "number"},
-	{Key: "tombstone_retention", Label: "Conservation des suppressions pour la synchronisation (s)", Kind: "number"},
-	{Key: "republish_grace", Label: "Délai avant suppression d'une ancienne version (s)", Kind: "number"},
+// settingGroup regroupe les réglages par thème, du plus courant au plus
+// technique ; Advanced se replie.
+type settingGroup struct {
+	Title, Help string
+	Advanced    bool
+	Settings    []setting
 }
+
+const (
+	minute = 60.0
+	day    = 86400.0
+)
+
+var settingGroups = []settingGroup{
+	{Title: "Identité", Help: "Ce que voient les personnes à la connexion et dans Lattis.", Settings: []setting{
+		{Key: "display_name", Label: "Nom du serveur", Kind: "text"},
+		{Key: "logo_url", Label: "Logo (adresse https://)", Kind: "url"},
+	}},
+	{Title: "Accès et publication", Help: "Qui peut entrer sur le serveur et qui peut y publier des classeurs.", Settings: []setting{
+		{Key: "access_mode", Label: "Mode d'accès", Kind: "select",
+			Options: [][2]string{{"invitation", "Sur invitation"}, {"open", "Entrée libre"}},
+			Help:    "Sur invitation : seules les personnes invitées ou créées ici entrent."},
+		{Key: "default_role", Label: "Rôle des arrivants (entrée libre)", Kind: "select",
+			Options: [][2]string{{"none", "Aucun"}, {"reader", "Lecteur"}, {"participant", "Participant"}, {"editor", "Éditeur"}},
+			Help:    "Rôle donné sur les classeurs ouverts aux arrivants."},
+		{Key: "workbook_creators", Label: "Qui publie des classeurs", Kind: "select",
+			Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs de classeurs"}},
+			Help:    "Le rôle « créateur de classeurs » se donne sur la page Utilisateurs."},
+		{Key: "invitation_ttl", Label: "Validité des invitations", Kind: "duration", Unit: "jours", Scale: day},
+	}},
+	{Title: "Connexion et sécurité", Help: "Durée des sessions et protection des comptes à mot de passe.", Settings: []setting{
+		{Key: "refresh_token_ttl", Label: "Durée d'une session", Kind: "duration", Unit: "jours", Scale: day,
+			Help: "Sans usage pendant ce temps, il faut se reconnecter."},
+		{Key: "access_token_ttl", Label: "Durée des jetons d'accès", Kind: "duration", Unit: "minutes", Scale: minute,
+			Help: "Renouvelés sans rien demander ; plus court, un compte désactivé est coupé plus vite."},
+		{Key: "password_max_failures", Label: "Essais de mot de passe avant verrouillage", Kind: "number"},
+		{Key: "password_lock_seconds", Label: "Durée du verrouillage", Kind: "duration", Unit: "minutes", Scale: minute},
+	}},
+	{Title: "Avancé", Help: "Rarement à changer.", Advanced: true, Settings: []setting{
+		{Key: "web_scripting", Label: "Scripts dans l'application web", Kind: "bool", Help: "Édition web seulement."},
+		{Key: "tombstone_retention", Label: "Conservation des suppressions pour la synchronisation", Kind: "duration", Unit: "jours", Scale: day,
+			Help: "Un poste resté hors ligne plus longtemps recharge le classeur entier."},
+		{Key: "republish_grace", Label: "Délai avant suppression d'une ancienne version", Kind: "duration", Unit: "minutes", Scale: minute,
+			Help: "Après une republication, laisse aux postes ouverts le temps de basculer."},
+	}},
+}
+
+// settings : tous les réglages, dans l'ordre de l'écran.
+var settings = func() []setting {
+	var out []setting
+	for _, g := range settingGroups {
+		out = append(out, g.Settings...)
+	}
+	return out
+}()
 
 func readSettings(ctx context.Context, tx pgx.Tx) (map[string]any, error) {
 	rows, err := tx.Query(ctx, `SELECT key, value FROM lattis.server_config`)
@@ -107,10 +145,17 @@ func loadServer(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (
 	if err != nil {
 		return nil, err
 	}
-	out := make([]setting, 0, len(settings))
-	for _, s := range settings {
-		s.Value = cur[s.Key]
-		out = append(out, s)
+	out := make([]settingGroup, 0, len(settingGroups))
+	for _, g := range settingGroups {
+		g.Settings = append([]setting(nil), g.Settings...)
+		for i := range g.Settings {
+			st := &g.Settings[i]
+			st.Value = cur[st.Key]
+			if f, ok := st.Value.(float64); ok && st.Kind == "duration" {
+				st.Value = strconv.FormatFloat(f/st.Scale, 'f', -1, 64)
+			}
+		}
+		out = append(out, g)
 	}
 	return out, nil
 }

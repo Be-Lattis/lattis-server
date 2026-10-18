@@ -144,7 +144,7 @@ func TestSetupSignsOwnerIn(t *testing.T) {
 	chosen := testpg.Email("chosen")
 	resp, body := b.post("/setup", url.Values{"token": {field(body, "token")}, "csrf": {field(body, "csrf")},
 		"email": {chosen}, "password": {pw}, "confirm": {pw}})
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom affiché") {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom du serveur") {
 		t.Fatalf("après le choix du mot de passe : %d %s", resp.StatusCode, resp.Request.URL)
 	}
 	if !strings.Contains(body, chosen) {
@@ -169,15 +169,16 @@ func TestAdminConsole(t *testing.T) {
 
 	b := e.browser()
 	resp, body := b.login(ownerEmail, pw, "/admin/server")
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom affiché") {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom du serveur") {
 		t.Fatalf("console : %d %s %s", resp.StatusCode, resp.Request.URL, body)
 	}
 	csrf := field(body, "csrf")
 	settings := url.Values{"csrf": {csrf}, "back": {"/admin/server"}, "display_name": {"Serveur de test"},
 		"access_mode": {"open"}, "default_role": {"reader"}, "workbook_creators": {"everyone"}, "logo_url": {""},
-		"access_token_ttl": {"600"}, "refresh_token_ttl": {"2592000"}, "invitation_ttl": {"1209600"},
-		"password_max_failures": {"5"}, "password_lock_seconds": {"900"}, "tombstone_retention": {"2592000"},
-		"republish_grace": {"600"}}
+		// Durées dans l'unité affichée (minutes, jours), enregistrées en secondes.
+		"access_token_ttl": {"10"}, "refresh_token_ttl": {"30"}, "invitation_ttl": {"14"},
+		"password_max_failures": {"5"}, "password_lock_seconds": {"15"}, "tombstone_retention": {"30"},
+		"republish_grace": {"10"}}
 
 	// Sans jeton de formulaire : refusé.
 	noCSRF := url.Values{}
@@ -192,6 +193,10 @@ func TestAdminConsole(t *testing.T) {
 	resp, body = b.post("/admin/do/server_settings", settings)
 	if !strings.Contains(body, "Réglages enregistrés.") || !strings.Contains(body, "Serveur de test") {
 		t.Fatalf("réglages : %d", resp.StatusCode)
+	}
+	var ttl float64
+	if err := e.db.Store.DB.QueryRow(ctx, `SELECT (value #>> '{}')::float8 FROM lattis.server_config WHERE key = 'access_token_ttl'`).Scan(&ttl); err != nil || ttl != 600 {
+		t.Fatalf("jetons d'accès : %v s, %v", ttl, err)
 	}
 	// Valeur refusée par la base : message affiché, rien d'enregistré.
 	bad := url.Values{}

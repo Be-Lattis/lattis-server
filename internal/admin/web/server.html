@@ -1,16 +1,27 @@
-{{define "body"}}
-<form method="post" action="/admin/do/server_settings" class="panel grid">
-{{template "csrf" $}}
-{{range .Data}}
+{{define "setting"}}
 <label>{{.Label}}
 {{if eq .Kind "select"}}{{$v := str .Value}}<select name="{{.Key}}">{{range .Options}}<option value="{{index . 0}}"{{if eq (index . 0) $v}} selected{{end}}>{{index . 1}}</option>{{end}}</select>
 {{else if eq .Kind "bool"}}<input type="checkbox" name="{{.Key}}"{{if eq (str .Value) "true"}} checked{{end}}>
+{{else if eq .Kind "duration"}}<span class="unit"><input type="text" inputmode="decimal" name="{{.Key}}" value="{{str .Value}}" required><span>{{.Unit}}</span></span>
 {{else if eq .Kind "number"}}<input type="number" min="1" name="{{.Key}}" value="{{str .Value}}" required>
 {{else if eq .Kind "url"}}<input type="url" name="{{.Key}}" value="{{str .Value}}" placeholder="https://…">
 {{else}}<input type="text" name="{{.Key}}" value="{{str .Value}}" required>{{end}}
 {{if .Help}}<small>{{.Help}}</small>{{end}}
 </label>
 {{end}}
-<p class="actions"><button class="ok">Enregistrer</button></p>
+{{define "body"}}
+<form method="post" action="/admin/do/server_settings" class="settings">
+{{template "csrf" $}}
+{{range .Data}}
+{{if .Advanced}}<details class="panel">
+<summary><h2>{{.Title}}</h2>{{if .Help}}<span class="muted">{{.Help}}</span>{{end}}</summary>
+<div class="grid">{{range .Settings}}{{template "setting" .}}{{end}}</div>
+</details>
+{{else}}<section class="panel">
+<h2>{{.Title}}</h2>{{if .Help}}<p class="muted lead">{{.Help}}</p>{{end}}
+<div class="grid">{{range .Settings}}{{template "setting" .}}{{end}}</div>
+</section>{{end}}
+{{end}}
+<p class="actions sticky"><button class="ok">Enregistrer</button></p>
 </form>
 {{end}}
