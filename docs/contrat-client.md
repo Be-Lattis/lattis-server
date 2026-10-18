@@ -63,7 +63,7 @@ Toutes les fonctions sont dans le schéma `lattis`, appelées sous l'identité d
 | Besoin | Appel |
 |---|---|
 | Liste « Ouvrir depuis un serveur » | `my_workbooks() → jsonb` : `id`, `title`, `mode`, `state`, `version`, `schema`, `roles` |
-| Droits sur un classeur | `my_capabilities(workbook_id) → jsonb` : `schema`, `channel` (canal `LISTEN`), `roles`, `can_design`, `can_manage`, `tables` (`table_id` → `name`, `level`) |
+| Droits sur un classeur | `my_capabilities(workbook_id) → jsonb` : `schema`, `channel` (canal `LISTEN`), `roles`, `can_design`, `can_manage`, `custom_roles`, `tables` (`table_id` → `name`, `level`, `filtered`), `restrictions` (`table_id`, `command`, `label`) |
 | Publier | `create_workbook(title, 'frozen'\|'collaborative')`, puis `create_table(workbook_id, name, columns)` par tableau (`columns` : `[{"name", "type", "local_id"}]`, types `text`, `integer`, `decimal`, `date`, `datetime`, `boolean`), copie des lignes par `COPY` dans `"<schema>"."<tableau>"` (`lattis_id` UUIDv7 et `lattis_pos` fournis par le client), `save_meta(workbook_id, kind, payload)`, `publish_script(workbook_id, name, source)`, puis `finish_publish(workbook_id)`. `abort_publish` abandonne. |
 | Republier (figé) | `republish(workbook_id) → schéma de travail`, mêmes appels que la publication (ils visent la version de travail), puis `finish_publish` : la nouvelle version remplace l'ancienne d'un coup, notification `*version:<n>` sur le canal. |
 | Inviter | `invite(email, workbook_id, '{reader}')` (propriétaire du classeur) |
@@ -78,3 +78,17 @@ Colonnes système de chaque tableau : `lattis_id`, `lattis_pos`, `lattis_xid`, `
 - Écriture : une transaction par étape d'annulation, `UPDATE … WHERE lattis_id = $1 AND "<col>" IS NOT DISTINCT FROM $vu`. Zéro ligne touchée → `lattis.why_not(workbook_id, table_id, row_id) → jsonb` : `{"reason": "modified", "row", "updated_by", "updated_at"}`, `{"reason": "deleted", "deleted_by", "deleted_at"}`, `{"reason": "forbidden"}` ou `{"reason": "missing"}`.
 - Un `INSERT`/`UPDATE`/`DELETE` refusé pour tout le tableau (lecteur) lève `insufficient_privilege` (42501).
 - Pierres tombales gardées 30 jours (`tombstone_retention`) : au-delà, recharger le tableau en entier.
+
+## 7. Droits avancés (classeur collaboratif, propriétaire du classeur)
+
+| Besoin | Appel |
+|---|---|
+| Écran « Droits d'un classeur » | `workbook_acl(workbook_id) → jsonb` : `roles` (`id`, `name`, `builtin`, `grants`, `members`), `restrictions`, `invitations` en attente |
+| Rôle personnalisé | `create_role(workbook_id, name) → uuid` (aucun droit tant qu'aucun niveau n'est posé), `drop_role(role_id)`, `grant_role(role_id, user_id)`, `revoke_role(role_id, user_id)` |
+| Niveau d'un rôle | `set_level(role_id, 'workbook'\|'sheet'\|'table', node_id, 'none'\|'reader'\|'participant'\|'editor', read_filter, write_filter)`. Le niveau d'un nœud s'hérite vers le bas ; `NULL` comme niveau retire celui du nœud. Filtres : expressions SQL booléennes sur les colonnes du tableau (`"Région" = 'Nord'`), tableaux seulement. |
+| Restriction | `add_restriction(workbook_id, table_id, 'select'\|'insert'\|'update'\|'delete'\|'all', role_ids, predicate, label) → uuid` (`role_ids` vide = tous les rôles du classeur sauf propriétaires et concepteurs), `drop_restriction(id)`. Combinées en ET avec les niveaux. |
+| Écarts | `check_drift(workbook_id) → jsonb` : tableaux dont les règles ou droits ont changé hors de Lattis, avec `foreign_policies`. Republier ou recompiler (`set_level` sur n'importe quel nœud) les remet d'aplomb. |
+
+Un filtre refusé (point-virgule, `$`, commentaire, parenthèses déséquilibrées, colonne inconnue, expression non booléenne) lève `invalid_parameter_value` (22023) avec la raison.
+
+**« Voir en tant que… »** : `POST <preview_endpoint>` (découverte), en-tête `Authorization: Bearer <jeton d'accès>` (le même que pour PostgreSQL), corps `{"workbook_id", "user_id", "table_id"}`. Réponse `{"rows": [...], "truncated": bool}` : au plus 1 000 lignes, celles que verrait l'utilisateur, lues en lecture seule sous son rôle. Réservé aux propriétaires et concepteurs du classeur (403 sinon), journalisé. 401 : jeton refusé, 404 : classeur, tableau ou utilisateur inconnu.

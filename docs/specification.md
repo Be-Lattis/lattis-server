@@ -240,7 +240,7 @@ Toutes les fonctions sont dans le schéma `lattis`, `SECURITY DEFINER` avec `sea
 
 ### 9.2 Classeurs et droits
 
-`create_workbook(title, mode) → id`, `drop_workbook(id)`, `republish(id)` (figé), `invite(email, workbook_id, roles[])`, `revoke_invitation(id)`, `create_role(workbook_id, name)`, `drop_role(role_id)`, `set_level(role_id, node_kind, node_id, level, read_filter, write_filter)`, `grant_role(role_id, principal)`, `revoke_role(role_id, principal)`, `add_restriction(table_id, command, applies_to[], predicate, label)`, `drop_restriction(id)`, `compile_acl(workbook_id)`, `check_drift(workbook_id)`, `preview_as(workbook_id, user_id)`, `my_capabilities(workbook_id) → jsonb` (niveau effectif par tableau, restrictions qui s'appliquent, rôle du classeur), `login_summary() → jsonb`.
+`create_workbook(title, mode) → id`, `drop_workbook(id)`, `republish(id)` (figé), `invite(email, workbook_id, roles[])`, `revoke_invitation(id)`, `create_role(workbook_id, name)`, `drop_role(role_id)`, `set_level(role_id, node_kind, node_id, level, read_filter, write_filter)`, `grant_role(role_id, principal)`, `revoke_role(role_id, principal)`, `add_restriction(workbook_id, table_id, command, applies_to[], predicate, label)`, `drop_restriction(id)`, `compile_acl(workbook_id)`, `check_drift(workbook_id)`, « Voir en tant que… » (`POST /api/preview` de `lattisd`, qui appelle `authorize_preview(actor, workbook_id, user_id)` puis lit sous le rôle de l’utilisateur), `my_capabilities(workbook_id) → jsonb` (niveau effectif par tableau, restrictions qui s'appliquent, rôle du classeur), `login_summary() → jsonb`.
 
 ### 9.3 Structure (concepteurs)
 

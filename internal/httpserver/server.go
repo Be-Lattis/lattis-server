@@ -38,12 +38,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/.well-known/lattis.json", http.StatusFound)
 	})
+	mux.HandleFunc("POST /api/preview", s.preview)
 	s.Auth.Routes(mux)
 
 	limiter := newLimiter(max(s.Config.RateLimit, 1), time.Minute)
 	return securityHeaders(s.Config.PublicURL.Scheme == "https", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
+		if strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
 			if !limiter.allow(auth.ClientIP(r, s.Config.TrustProxy)) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "trop de requêtes", http.StatusTooManyRequests)
@@ -69,6 +70,7 @@ type Discovery struct {
 	AuthorizationURL string              `json:"authorization_endpoint"`
 	TokenURL         string              `json:"token_endpoint"`
 	RevocationURL    string              `json:"revocation_endpoint"`
+	PreviewURL       string              `json:"preview_endpoint"`
 	Providers        []DiscoveryProvider `json:"providers"`
 	Postgres         DiscoveryPostgres   `json:"postgres"`
 }
@@ -106,8 +108,8 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 		Edition: string(s.Config.Edition), AccessMode: cfg.AccessMode, Issuer: s.Config.Issuer(),
 		ClientID: auth.DesktopClientID, Scope: auth.DefaultScope,
 		AuthorizationURL: s.Config.URL("/oauth/authorize"), TokenURL: s.Config.URL("/oauth/token"),
-		RevocationURL: s.Config.URL("/oauth/revoke"),
-		Providers:     []DiscoveryProvider{},
+		RevocationURL: s.Config.URL("/oauth/revoke"), PreviewURL: s.Config.URL("/api/preview"),
+		Providers: []DiscoveryProvider{},
 		Postgres: DiscoveryPostgres{Database: s.Config.PGDatabase, SSLMode: s.Config.PGSSLMode,
 			RW: s.Config.PGPublicRW, RO: append([]config.Endpoint{}, s.Config.PGPublicRO...)},
 	}

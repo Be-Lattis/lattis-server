@@ -7,16 +7,19 @@ Serveur préconfiguré qui rend [Lattis](https://github.com/Be-Lattis/lattis-app
 
 ## État
 
-Jalon 1 (socle, édition « gestion des rôles ») :
+Jalons 1 à 4 (édition « gestion des rôles ») :
 
 | Fait | Reste |
 |---|---|
-| Schéma `lattis` (catalogue, journal, jetons) et API SQL du serveur (§9.1) | Classeurs, rôles de classeur, `compile_acl` (jalons 2 à 4) |
-| `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Flux « device code » pour `psql` |
-| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Interface web d'administration (jalon 5) |
-| Inscription sur invitation ou entrée libre, premier propriétaire | Réplicas, retrait d'un réplica en retard, Helm (jalon 6) |
-| Module `lattis_oauth` pour PostgreSQL 18, image `be-lattis/server`, Docker Compose | Application web (jalon 7) |
-| Mesures Prometheus de base (connexions, requêtes, connexions par fournisseur) | Mesures de synchronisation et de réplication |
+| Schéma `lattis` (catalogue, journal, jetons) et API SQL du serveur (§9.1) | Flux « device code » pour `psql` |
+| `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Interface web d'administration (jalon 5) |
+| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Réplicas, retrait d'un réplica en retard, Helm (jalon 6) |
+| Inscription sur invitation ou entrée libre, premier propriétaire | Application web (jalon 7) |
+| Classeurs figés : publication, republication d'un coup, lecteurs | Mesures de synchronisation et de réplication |
+| Classeurs collaboratifs : rôles fournis, RLS compilée, deltas, pierres tombales, `why_not`, `NOTIFY` | |
+| Droits avancés : rôles personnalisés, niveaux par classeur, feuille ou tableau, filtres de lecture et d'écriture, restrictions, détection des écarts, « Voir en tant que… » (`POST /api/preview`) | |
+| Module `lattis_oauth` pour PostgreSQL 18, image `be-lattis/server`, Docker Compose | |
+| Mesures Prometheus de base (connexions, requêtes, connexions par fournisseur) | |
 
 ## Essai local
 
