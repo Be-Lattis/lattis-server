@@ -146,6 +146,34 @@ func TestDatasets(t *testing.T) {
 		return nil
 	}))
 
+	// Sortie d'audience : Lille passe au Sud, la ligne n'est plus rendue mais
+	// son identifiant figure parmi les lignes changées.
+	var since string
+	must(as(anne.PGRole, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT lattis.sync_point()::text`).Scan(&since)
+	}))
+	must(as(pub.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE `+pgx.Identifier{schema, "Clients"}.Sanitize()+` SET "Région" = 'Sud' WHERE "Nom" = 'Lille SA'`)
+		return err
+	}))
+	must(as(anne.PGRole, func(tx pgx.Tx) error {
+		var visible, changed int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+view+` WHERE lattis_xid >= $1::xid8`, since).Scan(&visible); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM lattis.dataset_changed_ids($1::uuid, $2::xid8)`, ds, since).Scan(&changed); err != nil {
+			return err
+		}
+		if visible != 0 || changed != 1 {
+			t.Errorf("sortie d'audience : %d visibles, %d changées", visible, changed)
+		}
+		return nil
+	}))
+	must(as(pub.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE `+pgx.Identifier{schema, "Clients"}.Sanitize()+` SET "Région" = 'Nord' WHERE "Nom" = 'Lille SA'`)
+		return err
+	}))
+
 	// Suppression dans la source : visible par les pierres tombales.
 	must(as(pub.PGRole, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `DELETE FROM `+pgx.Identifier{schema, "Clients"}.Sanitize()+` WHERE "Nom" = 'Lille SA'`)

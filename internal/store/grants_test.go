@@ -15,7 +15,7 @@ var publicAPI = []string{
 	"add_team_member", "admin_pipelines", "admin_status", "admin_workbooks", "allow_tenant", "can_create_workbooks",
 	"can_publish_data", "changes_since", "check_drift", "compile_acl", "create_data_folder", "create_dataset",
 	"create_password_account", "create_pipeline", "create_role", "create_table", "create_team", "create_workbook",
-	"data_catalog", "dataset_tombstones", "disable_user", "disallow_tenant", "drop_data_folder", "drop_dataset",
+	"data_catalog", "dataset_changed_ids", "dataset_tombstones", "disable_user", "disallow_tenant", "drop_data_folder", "drop_dataset",
 	"drop_pipeline", "drop_restriction", "drop_role", "drop_team", "drop_workbook", "enable_user", "finish_publish",
 	"grant_role", "invite", "is_server_owner", "link_dataset", "list_teams", "login_summary", "move_data_folder",
 	"my_capabilities", "my_teams", "my_workbooks", "pipeline_targets", "publish_script", "record_open",
