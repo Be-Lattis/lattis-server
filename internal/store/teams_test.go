@@ -265,7 +265,7 @@ func TestSubTeams(t *testing.T) {
 			return err
 		}
 		var role string
-		if err := tx.QueryRow(ctx, `SELECT id::text FROM lattis.roles WHERE workbook_id = $1 AND builtin = 'reader'`, wb).Scan(&role); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT r ->> 'id' FROM jsonb_array_elements(lattis.workbook_acl($1::uuid) -> 'roles') r WHERE r ->> 'builtin' = 'reader'`, wb).Scan(&role); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `SELECT lattis.grant_role($1::uuid, $2::uuid)`, role, ventes)
