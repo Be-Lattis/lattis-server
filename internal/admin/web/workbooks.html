@@ -1,5 +1,5 @@
 {{define "body"}}
-<table>
+<div class="scroll"><table>
 <thead><tr><th>Classeur</th><th>Mode</th><th>Propriétaires</th><th>Membres</th><th>Dernière modification</th><th>Dernière lecture</th><th>Taille</th><th>Version</th><th></th></tr></thead>
 <tbody>
 {{range .Data}}
@@ -8,14 +8,14 @@
 <td>{{if eq (str .mode) "frozen"}}Figé{{else}}Collaboratif{{end}}</td>
 <td>{{range $i, $o := .owners}}{{if $i}}, {{end}}{{$o}}{{end}}</td>
 <td>{{str .members}}</td>
-<td>{{with .last_edit}}{{.email}}<br><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td>
-<td>{{with .last_read}}{{.email}}<br><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td>
+<td class="who">{{with .last_edit}}<span class="clip" title="{{.email}}">{{.email}}</span><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td>
+<td class="who">{{with .last_read}}<span class="clip" title="{{.email}}">{{.email}}</span><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{bytes .size}}</td>
 <td>{{str .version}}</td>
 <td><form method="post" action="/admin/do/drop_workbook" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button>Supprimer</button></form></td>
 </tr>
 {{else}}<tr><td colspan="9" class="muted">Aucun classeur publié.</td></tr>{{end}}
 </tbody>
-</table>
+</table></div>
 <p class="muted">Publier et republier se font depuis l'application Lattis.</p>
 {{end}}

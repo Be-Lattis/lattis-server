@@ -82,3 +82,5 @@ details.panel[open] > summary { margin-bottom: 12px; } details.panel[open] > sum
 .choice { display: block; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; color: inherit; text-decoration: none; }
 .choice:hover { border-color: var(--accent); } .choice strong { display: block; color: var(--accent); } .choice span { color: var(--muted); font-size: 13px; }
 .copy { display: flex; gap: 8px; align-items: center; } .copy input { margin-top: 0; }
+td.who { width: 170px; max-width: 170px; } td.who small { display: block; color: var(--muted); white-space: nowrap; }
+.clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
