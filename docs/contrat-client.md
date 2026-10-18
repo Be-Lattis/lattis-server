@@ -26,6 +26,8 @@ Ce que l'application de bureau (`lattis-app`) doit savoir pour se connecter à u
 }
 ```
 
+`source_url` : code source du serveur (AGPL-3.0, article 13), à proposer dans « À propos » (`LATTIS_SOURCE_URL`).
+
 `kind` ∈ `password`, `google`, `google_workspace`, `microsoft`, `keycloak`, `oidc` ; `icon` reprend `kind` (icônes côté client).
 
 ## 2. Connexion (RFC 8252)

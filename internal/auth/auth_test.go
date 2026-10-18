@@ -56,7 +56,7 @@ func setup(t *testing.T) *env {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r) }))
 	t.Cleanup(srv.Close)
 	pub, _ := url.Parse(srv.URL)
-	cfg := &config.Config{Edition: config.EditionAdmin, PublicURL: pub, PGDatabase: "lattis", PGSSLMode: "verify-full",
+	cfg := &config.Config{Edition: config.EditionAdmin, SourceURL: "https://example.test/source", PublicURL: pub, PGDatabase: "lattis", PGSSLMode: "verify-full",
 		PGPublicRW: config.Endpoint{Host: "pg.example.test", Port: 5432}, RateLimit: 10000}
 	m := metrics.New("test", db.Store.DB)
 	a := &auth.Service{Config: cfg, Store: db.Store, Keys: keys, Metrics: m,
@@ -258,7 +258,7 @@ func TestDiscovery(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &d); err != nil {
 		t.Fatal(err)
 	}
-	if d.Issuer != e.srv.URL || d.Postgres.RW.Host != "pg.example.test" || len(d.Providers) != 1 || d.Providers[0].Kind != "password" || d.Edition != "admin" {
+	if d.Issuer != e.srv.URL || d.Postgres.RW.Host != "pg.example.test" || len(d.Providers) != 1 || d.Providers[0].Kind != "password" || d.Edition != "admin" || d.SourceURL == "" {
 		t.Fatalf("découverte : %+v", d)
 	}
 	_, body = e.get(e.srv.URL + "/jwks.json")

@@ -107,6 +107,7 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 			ClientID: protocol.DesktopClientID, Scope: protocol.DefaultScope,
 			AuthorizationEndpoint: s.Config.URL(protocol.PathAuthorize), TokenEndpoint: s.Config.URL(protocol.PathToken),
 			RevocationEndpoint: s.Config.URL(protocol.PathRevoke), PreviewEndpoint: s.Config.URL("/api/preview"),
+			SourceURL: s.Config.SourceURL,
 			Providers: []protocol.Provider{},
 		},
 		Postgres: DiscoveryPostgres{Database: s.Config.PGDatabase, SSLMode: s.Config.PGSSLMode,

@@ -21,8 +21,8 @@ github.com/klauspost/compress v1.20.1 h1:T7kKElXUMXrUJ2E9QhQhxFtcK5rPyLdsGZvdbLM
 github.com/klauspost/compress v1.20.1/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
-github.com/lalamefine/lattis v0.0.0-20261018212232-2d1de70adfc5 h1:N10uUk9HdvdMrT2MAK9ibAyphE0wVXJ1DQmBhUZRBiQ=
-github.com/lalamefine/lattis v0.0.0-20261018212232-2d1de70adfc5/go.mod h1:/POLaxj94tUV6Kim6gObFuX9P6YdpxCs2NF9ZPTKEfc=
+github.com/lalamefine/lattis v0.0.0-20261018230958-836792e7a671 h1:rspsCAklA3KMSywKJmripCsJKPqUwNQY3NFmTE4u09c=
+github.com/lalamefine/lattis v0.0.0-20261018230958-836792e7a671/go.mod h1:/POLaxj94tUV6Kim6gObFuX9P6YdpxCs2NF9ZPTKEfc=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
