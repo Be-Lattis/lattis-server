@@ -183,7 +183,7 @@ func TestAdminConsole(t *testing.T) {
 	// Compte à mot de passe créé depuis la console, puis connexion refusée à
 	// l'administration (pas propriétaire du serveur).
 	other := testpg.Email("autre")
-	_, body = b.post("/admin/do/create_password_account", url.Values{"csrf": {csrf}, "back": {"/admin/users"}, "email": {other}})
+	_, body = b.post("/admin/do/add_user", url.Values{"csrf": {csrf}, "back": {"/admin/users"}, "email": {other}})
 	m := regexp.MustCompile(`/setup\?token=([A-Za-z0-9_-]+)`).FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("lien de création absent")
@@ -195,6 +195,18 @@ func TestAdminConsole(t *testing.T) {
 	}
 	if resp, _ := ob.post("/admin/do/disable_user", url.Values{"csrf": {csrf}, "id": {"00000000-0000-0000-0000-000000000000"}}); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("action d'un non-propriétaire sans son jeton : %d", resp.StatusCode)
+	}
+
+	// Ajout d'un propriétaire du serveur par lien : il entre dans l'administration.
+	second := testpg.Email("second")
+	_, body = b.post("/admin/do/add_user", url.Values{"csrf": {csrf}, "back": {"/admin/users"}, "email": {second}, "server_owner": {"on"}})
+	m = regexp.MustCompile(`/setup\?token=([A-Za-z0-9_-]+)`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("lien du second propriétaire absent")
+	}
+	e.account(m[1], pw)
+	if resp, _ := e.browser().login(second, pw, "/admin/users"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("second propriétaire : %d", resp.StatusCode)
 	}
 
 	// Désactivation : confirmation exigée.

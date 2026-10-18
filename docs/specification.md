@@ -320,7 +320,7 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 Écrans (en français, mêmes codes visuels que Lattis) :
 1. **Serveur** : nom affiché, logo, mode d'accès, rôle par défaut, scripting web, durées des jetons.
 2. **Connexion** : fournisseurs (ajout, ordre, activation, test de connexion) et tenants autorisés avec leur rôle par défaut.
-3. **Utilisateurs** : liste, recherche, invitations en attente, désactivation, réinitialisation de mot de passe, dernière connexion.
+3. **Utilisateurs** : liste, recherche, invitations en attente, désactivation, réinitialisation de mot de passe, dernière connexion. Seul ajout manuel : « Ajouter un utilisateur » crée un compte à mot de passe et un lien pré-signé (7 jours) à transmettre, éventuellement propriétaire du serveur.
 4. **Classeurs** : liste, mode, propriétaires, taille, suppression, republication (figé).
 5. **Droits d'un classeur** : rôles (fournis et personnalisés), arborescence feuilles → tableaux avec un niveau par nœud, filtres (formulaire simple et SQL), membres, restrictions, « Voir en tant que… », écarts détectés.
 6. **Journal** : `audit`, filtrable.
