@@ -1,0 +1,64 @@
+{{define "body"}}{{$d := .Data}}
+<p class="lead">Un pipeline lit une source (fichier envoyé ou déposé, adresse HTTP, serveur SFTP, base PostgreSQL) et écrit dans un tableau d'un classeur collaboratif publié, sous une identité technique « Pipeline : … » membre du classeur. Les secrets (mot de passe, jeton, chaîne de connexion) sont des fichiers du dossier des secrets : on n'en saisit que le nom.</p>
+
+<details class="panel"{{if not $d.Pipelines}} open{{end}}>
+<summary><h2>Nouveau pipeline</h2><span class="muted">Source, tableau cible, mode d'écriture et horaire.</span></summary>
+<form method="post" action="/admin/do/create_pipeline" class="grid">{{template "csrf" $}}
+<label>Nom <input name="name" required placeholder="Tarifs fournisseur"></label>
+<label>Tableau cible <select name="target" required>{{range $d.Targets}}<option value="{{.workbook_id}}|{{.table_id}}">{{.workbook}} › {{.table}}</option>{{else}}<option value="">Aucun classeur collaboratif publié</option>{{end}}</select></label>
+<label>Rôle de l'identité technique <select name="role"><option value="editor">Éditeur</option><option value="participant">Participant</option></select><small>Le niveau d'un rôle personnalisé se règle ensuite sur la page du classeur.</small></label>
+<label>Source <select name="source_kind">
+<option value="upload">Fichier envoyé depuis cette page</option>
+<option value="file">Dossier de dépôt sur le serveur</option>
+<option value="http">Adresse HTTP(S)</option>
+<option value="sftp">Serveur SFTP</option>
+<option value="sql">Base PostgreSQL externe</option></select></label>
+<label data-show-if="source_kind=upload,file,http,sftp">Format <select name="format"><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="json">JSON (tableau d'objets)</option></select></label>
+<label data-show-if="source_kind=file">Motif des fichiers <input name="pattern" placeholder="*.csv"><small>Dossier : <code>{{$d.Dir}}/&lt;pipeline&gt;/inbox</code>. Chaque fichier est traité puis rangé dans done/ ou failed/.</small></label>
+<label data-show-if="source_kind=http">Adresse <input name="url" placeholder="https://api.exemple.fr/export.csv"></label>
+<label data-show-if="source_kind=http">Authentification <select name="auth"><option value="bearer">Jeton (Authorization: Bearer)</option><option value="basic">Identifiant:mot de passe</option><option value="header">En-tête personnalisé</option></select></label>
+<label data-show-if="auth=header">Nom de l'en-tête <input name="header" placeholder="X-Api-Key"></label>
+<label data-show-if="source_kind=sftp">Hôte <input name="host" placeholder="sftp.exemple.fr"></label>
+<label data-show-if="source_kind=sftp">Port <input name="port" type="number" min="1" placeholder="22"></label>
+<label data-show-if="source_kind=sftp">Utilisateur <input name="user"></label>
+<label data-show-if="source_kind=sftp">Chemin du fichier <input name="path" placeholder="/export/tarifs.csv"></label>
+<label data-show-if="source_kind=sftp">Empreinte de la clé du serveur <input name="host_key" placeholder="SHA256:…"><small><code>ssh-keyscan hôte | ssh-keygen -lf -</code></small></label>
+<label data-show-if="source_kind=sql">Requête (lecture seule) <input name="query" placeholder="SELECT code, libelle, prix FROM articles"></label>
+<label data-show-if="format=xlsx">Feuille <input name="sheet" placeholder="Première feuille"></label>
+<label data-show-if="format=csv">Séparateur <select name="delimiter"><option value="">Détecté</option><option value=";">;</option><option value=",">,</option><option value="&#9;">Tabulation</option></select></label>
+<label data-show-if="format=json">Chemin du tableau <input name="json_path" placeholder="data.items"></label>
+<label data-show-if="source_kind=http,sftp,sql">Secret <input name="secret_ref" placeholder="nom-du-fichier"><small>SFTP : mot de passe ou clé privée ; SQL : chaîne postgres://….</small></label>
+<label>Mode d'écriture <select name="mode"><option value="upsert">Mettre à jour par clé (ajoute les nouvelles lignes)</option><option value="append">Ajouter à la suite</option><option value="replace">Remplacer le contenu</option></select></label>
+<label data-show-if="mode=upsert,replace">Colonnes clés <input name="key_columns" placeholder="Code article"><small>Séparées par des virgules. En remplacement, sans clé, tout est effacé puis réécrit.</small></label>
+<label class="wide">Correspondance des colonnes <textarea name="column_map" rows="3" placeholder="Prix = PRIX_HT&#10;Libellé = DESIGNATION"></textarea><small>« Colonne du tableau = colonne de la source », une par ligne. Sans correspondance, les colonnes de même nom sont reliées.</small></label>
+<label>Horaire <select name="schedule_kind"><option value="manual">À la demande</option><option value="every">Toutes les N minutes</option><option value="daily">Chaque jour à</option></select></label>
+<label data-show-if="schedule_kind=every">Minutes <input name="schedule_minutes" type="number" min="5" value="60"></label>
+<label data-show-if="schedule_kind=daily">Heure <input name="schedule_time" type="time" value="06:00"></label>
+<label>Alerte en cas d'échec (webhook) <input name="webhook_url" type="url" placeholder="https://hooks.slack.com/…"><small>Reçoit un POST JSON (Slack, Teams, Mattermost…).</small></label>
+<p class="actions"><button class="ok">Créer le pipeline</button></p>
+</form>
+</details>
+
+{{range $d.Pipelines}}{{$x := .}}
+<section class="panel">
+<h2>{{$x.name}} {{with $x.runs}}{{with index . 0}}{{if eq (str .status) "ok"}}<span class="tag">réussi</span>{{else if eq (str .status) "warning"}}<span class="tag warn">lignes rejetées</span>{{else if eq (str .status) "error"}}<span class="tag off">échec</span>{{else}}<span class="tag">en cours</span>{{end}}{{end}}{{end}}{{if not $x.enabled}} <span class="tag off">suspendu</span>{{end}}</h2>
+<dl>
+<dt>Cible</dt><dd><a href="/admin/workbooks/{{$x.workbook_id}}">{{$x.workbook}}</a> › {{$x.table_name}} · {{pipelineMode $x.mode}}{{if $x.key_columns}} sur {{range $i, $k := $x.key_columns}}{{if $i}}, {{end}}« {{$k}} »{{end}}{{end}}</dd>
+<dt>Source</dt><dd>{{pipelineSource $x}}</dd>
+<dt>Horaire</dt><dd>{{if eq (str $x.schedule_kind) "every"}}toutes les {{str $x.schedule_minutes}} min{{else if eq (str $x.schedule_kind) "daily"}}chaque jour à {{$x.schedule_time}}{{else}}à la demande{{end}}{{with $x.next_run_at}} · prochaine exécution {{date .}}{{end}}</dd>
+<dt>Identité</dt><dd><code>{{$x.identity}}</code></dd>
+</dl>
+<div class="buttons">
+{{if eq (str $x.source_kind) "upload"}}<form method="post" action="/admin/pipelines/{{$x.id}}/upload" enctype="multipart/form-data" class="row">{{template "csrf" $}}<input type="file" name="file" required aria-label="Fichier"><button class="ok">Exécuter avec ce fichier</button></form>
+{{else}}<form method="post" action="/admin/do/run_pipeline">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}"><button class="ok">Exécuter maintenant</button></form>{{end}}
+<form method="post" action="/admin/do/toggle_pipeline">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}"><input type="hidden" name="enabled" value="{{if $x.enabled}}false{{else}}true{{end}}"><button>{{if $x.enabled}}Suspendre{{else}}Reprendre{{end}}</button></form>
+<form method="post" action="/admin/do/drop_pipeline" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}">{{template "confirm"}}<button>Supprimer</button></form>
+</div>
+<h3>Exécutions</h3>
+{{if $x.runs}}<div class="scroll"><table class="compact"><thead><tr><th>Début</th><th>Déclenchement</th><th>Statut</th><th>Lues</th><th>Ajoutées</th><th>Modifiées</th><th>Supprimées</th><th>Rejetées</th><th>Détail</th></tr></thead><tbody>
+{{range $x.runs}}<tr><td>{{date .started_at}}</td><td>{{pipelineTrigger .trigger}}</td><td>{{pipelineStatus .status}}</td><td>{{str .rows_read}}</td><td>{{str .inserted}}</td><td>{{str .updated}}</td><td>{{str .deleted}}</td><td>{{str .rejected}}</td>
+<td>{{with .error}}<span class="error">{{.}}</span>{{end}}{{if .rejects}}<details><summary>{{len .rejects}} ligne(s)</summary><ul>{{range .rejects}}<li>ligne {{str .row}}{{with .column}}, {{.}}{{end}}{{with .value}} « {{.}} »{{end}} : {{.error}}</li>{{end}}</ul></details>{{end}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p class="muted">Pas encore exécuté.</p>{{end}}
+</section>
+{{end}}
+{{end}}

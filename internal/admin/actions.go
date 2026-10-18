@@ -75,6 +75,10 @@ func (s *Service) actions() map[string]actionFunc {
 		"drop_dataset":         exec1(`SELECT lattis.drop_dataset($1::uuid)`, "Partage retiré.", true, "id"),
 		"remove_data_audience": exec1(`SELECT lattis.remove_data_audience($1::uuid)`, "Retiré de l'audience.", false, "id"),
 		"add_data_audience":    addDataAudience,
+		"create_pipeline":      createPipeline,
+		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
+		"toggle_pipeline":      exec1(`SELECT lattis.update_pipeline($1::uuid, jsonb_build_object('enabled', $2::boolean))`, "Pipeline mis à jour.", false, "id", "enabled"),
+		"drop_pipeline":        exec1(`SELECT lattis.drop_pipeline($1::uuid)`, "Pipeline supprimé.", true, "id"),
 		"set_team_parent":      exec1(`SELECT lattis.set_team_parent($1::uuid, $2::uuid)`, "Équipe déplacée.", false, "id", "parent_id"),
 		"rename_team":          exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
 		"drop_team":            exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
@@ -98,14 +102,20 @@ func (s *Service) do(w http.ResponseWriter, r *http.Request) {
 		s.message(w, r, http.StatusForbidden, "Demande refusée", "Jeton de formulaire invalide : rechargez la page.")
 		return
 	}
-	u, err := s.session(r)
-	if err != nil {
-		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
-		return
-	}
 	fn, ok := s.actions()[r.PathValue("action")]
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	s.perform(w, r, fn)
+}
+
+// perform exécute une action sous l'identité de l'administrateur connecté
+// (formulaire déjà lu et jeton anti-CSRF vérifié), puis revient à la page.
+func (s *Service) perform(w http.ResponseWriter, r *http.Request, fn actionFunc) {
+	u, err := s.session(r)
+	if err != nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 		return
 	}
 	back := safeBack(r.PostFormValue("back"))
@@ -378,4 +388,61 @@ func addDataAudience(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	_, err := tx.Exec(ctx, `SELECT lattis.add_data_audience($1::uuid, $2::uuid, $3::uuid, $4)`,
 		f.n("dataset_id"), f.n("folder_id"), principal, f.s("predicate"))
 	return "Ajouté à l'audience.", err
+}
+
+// createPipeline : formulaire de /admin/pipelines → lattis.create_pipeline.
+func createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	wb, tbl, _ := strings.Cut(f.s("target"), "|")
+	if wb == "" || tbl == "" {
+		return "", inputError("Choisissez le tableau cible.")
+	}
+	src := map[string]any{}
+	for _, k := range []string{"url", "auth", "header", "host", "user", "path", "host_key", "pattern", "query", "sheet", "json_path"} {
+		if v := f.s(k); v != "" {
+			src[k] = v
+		}
+	}
+	if v := f.r.PostFormValue("delimiter"); v != "" {
+		src["delimiter"] = v
+	}
+	if v := f.s("port"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return "", inputError("Port : nombre attendu.")
+		}
+		src["port"] = n
+	}
+	var keys []string
+	for _, k := range strings.Split(f.s("key_columns"), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			keys = append(keys, k)
+		}
+	}
+	cmap := map[string]string{}
+	for _, line := range strings.Split(f.r.PostFormValue("column_map"), "\n") {
+		dst, srcCol, ok := strings.Cut(line, "=")
+		if dst, srcCol = strings.TrimSpace(dst), strings.TrimSpace(srcCol); ok && dst != "" && srcCol != "" {
+			cmap[dst] = srcCol
+		}
+	}
+	format := f.s("format")
+	if f.s("source_kind") == "sql" {
+		format = "sql"
+	}
+	p := map[string]any{"name": f.s("name"), "workbook_id": wb, "table_id": tbl, "role": f.s("role"),
+		"source_kind": f.s("source_kind"), "source": src, "secret_ref": f.s("secret_ref"), "format": format,
+		"mode": f.s("mode"), "key_columns": keys, "column_map": cmap, "schedule_kind": f.s("schedule_kind"),
+		"webhook_url": f.s("webhook_url")}
+	if keys == nil {
+		p["key_columns"] = []string{}
+	}
+	switch f.s("schedule_kind") {
+	case "every":
+		p["schedule_minutes"] = f.s("schedule_minutes")
+	case "daily":
+		p["schedule_time"] = f.s("schedule_time")
+	}
+	b, _ := json.Marshal(p)
+	_, err := tx.Exec(ctx, `SELECT lattis.create_pipeline($1::jsonb)`, string(b))
+	return "Pipeline créé.", err
 }

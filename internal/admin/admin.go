@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -71,7 +72,11 @@ type providerField struct {
 var SourceURL = "https://github.com/Be-Lattis/lattis-server"
 
 var funcs = template.FuncMap{
-	"sourceURL": func() string { return SourceURL },
+	"sourceURL":       func() string { return SourceURL },
+	"pipelineMode":    func(v any) string { return pipelineModes[fmt.Sprint(v)] },
+	"pipelineTrigger": func(v any) string { return pipelineTriggers[fmt.Sprint(v)] },
+	"pipelineStatus":  func(v any) string { return pipelineStatuses[fmt.Sprint(v)] },
+	"pipelineSource":  pipelineSource,
 	"pf": func(label, name, value, help string, required bool) providerField {
 		return providerField{Label: label, Name: name, Value: value, Help: help, Required: required}
 	},
@@ -158,7 +163,7 @@ func trimFloat(f float64) string {
 }
 
 func init() {
-	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data"} {
+	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data", "pipelines"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+name+".html"))
 	}
 }
@@ -209,6 +214,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/workbooks", s.page("workbooks", "Classeurs", loadWorkbooks))
 	mux.HandleFunc("GET /admin/workbooks/{id}", s.page("workbook", "Droits du classeur", s.loadWorkbook))
 	mux.HandleFunc("GET /admin/data", s.page("data", "Données d'entreprise", loadData))
+	mux.HandleFunc("GET /admin/pipelines", s.page("pipelines", "Pipelines d'ingestion", s.loadPipelines))
+	mux.HandleFunc("POST /admin/pipelines/{id}/upload", s.uploadPipeline)
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)

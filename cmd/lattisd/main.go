@@ -28,6 +28,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
 	"github.com/Be-Lattis/lattis-server/internal/metrics"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
+	"github.com/Be-Lattis/lattis-server/internal/pipeline"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
@@ -224,6 +225,8 @@ func serve(doMigrate bool) error {
 	internal := &http.Server{Addr: cfg.MetricsAddr, Handler: metricsMux, ReadHeaderTimeout: 10 * time.Second}
 
 	go purgeLoop(ctx, st)
+	go (&pipeline.Runner{Store: st, Users: users, Dir: cfg.PipelineDir, SecretsDir: cfg.SecretsDir,
+		AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}).Run(ctx)
 	errc := make(chan error, 2)
 	go func() {
 		slog.Info("lattisd à l'écoute", "addr", cfg.ListenAddr, "issuer", cfg.Issuer(), "edition", cfg.Edition)

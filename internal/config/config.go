@@ -65,7 +65,9 @@ type Config struct {
 	DownloadURL string
 	// SourceURL : code source de ce serveur, proposé à ses utilisateurs
 	// (AGPL-3.0, §13). À changer pour une version modifiée.
-	SourceURL     string
+	SourceURL string
+	// PipelineDir : fichiers des pipelines d'ingestion (envois, dépôts).
+	PipelineDir   string
 	ShutdownGrace time.Duration
 	// RateLimit : requêtes par minute et par adresse sur /oauth/*, /login/*, /setup.
 	RateLimit int
@@ -105,6 +107,7 @@ func parse(get func(string) string) (*Config, error) {
 		ExtraRedirects: splitList(def("LATTIS_EXTRA_REDIRECT_URIS", "")),
 		DownloadURL:    def("LATTIS_DOWNLOAD_URL", ""),
 		SourceURL:      def("LATTIS_SOURCE_URL", "https://github.com/Be-Lattis/lattis-server"),
+		PipelineDir:    def("LATTIS_PIPELINE_DIR", "/var/lib/lattis/pipelines"),
 		ShutdownGrace:  15 * time.Second,
 	}
 	if c.Edition != EditionAdmin && c.Edition != EditionWeb {

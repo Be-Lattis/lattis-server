@@ -20,7 +20,12 @@ type Metrics struct {
 	Logins      *prometheus.CounterVec
 	Enrollments *prometheus.CounterVec
 	BuildInfo   *prometheus.GaugeVec
+	// PipelineRuns : exécutions des pipelines d'ingestion par statut.
+	PipelineRuns *prometheus.CounterVec
 }
+
+// Inc compte une exécution de pipeline (pipeline.Counter).
+func (m *Metrics) Inc(status string) { m.PipelineRuns.WithLabelValues(status).Inc() }
 
 // New crée les mesures ; db alimente les jauges lues dans pg_stat_activity.
 func New(server string, db *pgxpool.Pool) *Metrics {
@@ -35,8 +40,11 @@ func New(server string, db *pgxpool.Pool) *Metrics {
 		BuildInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lattis_build_info", Help: "Version de lattisd.",
 		}, []string{"version", "edition", "pg_version"}),
+		PipelineRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "lattis_pipeline_runs_total", Help: "Exécutions des pipelines d'ingestion par statut (ok, warning, error).",
+		}, []string{"status"}),
 	}
-	m.Registry.MustRegister(m.Logins, m.Enrollments, m.BuildInfo,
+	m.Registry.MustRegister(m.Logins, m.Enrollments, m.BuildInfo, m.PipelineRuns,
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		&pgCollector{server: server, db: db})
 	return m

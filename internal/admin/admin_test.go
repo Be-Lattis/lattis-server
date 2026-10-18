@@ -335,6 +335,16 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatal("retrait du partage")
 	}
 
+	// Pipelines : création depuis le formulaire, puis liste.
+	if _, body = b.post("/admin/do/create_pipeline", url.Values{"csrf": {csrf}, "back": {"/admin/pipelines"}, "name": {"Import"},
+		"target": {wb + "|" + tid}, "role": {"editor"}, "source_kind": {"upload"}, "format": {"csv"}, "mode": {"upsert"},
+		"key_columns": {"Région"}, "schedule_kind": {"manual"}}); !strings.Contains(body, "Pipeline créé.") {
+		t.Fatalf("création de pipeline : %s", body)
+	}
+	if _, body = b.get("/admin/pipelines"); !strings.Contains(body, "Exécuter avec ce fichier") || !strings.Contains(body, "Ventes console") {
+		t.Fatal("liste des pipelines")
+	}
+
 	// Équipes : création, membre, rôle donné à l'équipe.
 	if _, body = b.post("/admin/do/create_team", url.Values{"csrf": {csrf}, "back": {"/admin/teams"}, "name": {"Nord"}}); !strings.Contains(body, "Équipe créée.") {
 		t.Fatal("création d'équipe")
