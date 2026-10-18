@@ -50,33 +50,32 @@ func (e inputError) Error() string { return string(e) }
 
 func (s *Service) actions() map[string]actionFunc {
 	return map[string]actionFunc{
-		"server_settings":         s.saveSettings,
-		"add_provider":            addProvider,
-		"update_provider":         updateProvider,
-		"remove_provider":         exec1(`SELECT lattis.remove_provider($1::uuid)`, "Fournisseur supprimé.", true, "id"),
-		"allow_tenant":            allowTenant,
-		"disallow_tenant":         exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", false, "id"),
-		"create_password_account": s.createPasswordAccount,
-		"reset_password":          s.resetPassword,
-		"disable_user":            s.disableUser,
-		"enable_user":             exec1(`SELECT lattis.enable_user($1::uuid)`, "Compte réactivé.", false, "id"),
-		"invite_server":           inviteServer,
-		"revoke_invitation":       exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
-		"drop_workbook":           exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
-		"create_team":             exec1(`SELECT lattis.create_team($1)`, "Équipe créée.", false, "name"),
-		"rename_team":             exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
-		"drop_team":               exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
-		"add_team_member":         addTeamMember,
-		"remove_team_member":      exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
-		"grant_team":              exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
-		"invite_workbook":         inviteWorkbook,
-		"create_role":             createRole,
-		"drop_role":               exec1(`SELECT lattis.drop_role($1::uuid)`, "Rôle supprimé.", true, "id"),
-		"set_level":               setLevel,
-		"grant_role":              grantRole,
-		"revoke_role":             exec1(`SELECT lattis.revoke_role($1::uuid, $2::uuid)`, "Membre retiré.", false, "role_id", "user_id"),
-		"add_restriction":         addRestriction,
-		"drop_restriction":        exec1(`SELECT lattis.drop_restriction($1::uuid)`, "Restriction supprimée.", false, "id"),
+		"server_settings":    s.saveSettings,
+		"add_provider":       addProvider,
+		"update_provider":    updateProvider,
+		"remove_provider":    exec1(`SELECT lattis.remove_provider($1::uuid)`, "Fournisseur supprimé.", true, "id"),
+		"allow_tenant":       allowTenant,
+		"disallow_tenant":    exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", false, "id"),
+		"add_user":           s.addUser,
+		"reset_password":     s.resetPassword,
+		"disable_user":       s.disableUser,
+		"enable_user":        exec1(`SELECT lattis.enable_user($1::uuid)`, "Compte réactivé.", false, "id"),
+		"revoke_invitation":  exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
+		"drop_workbook":      exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
+		"create_team":        exec1(`SELECT lattis.create_team($1)`, "Équipe créée.", false, "name"),
+		"rename_team":        exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
+		"drop_team":          exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
+		"add_team_member":    addTeamMember,
+		"remove_team_member": exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
+		"grant_team":         exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
+		"invite_workbook":    inviteWorkbook,
+		"create_role":        createRole,
+		"drop_role":          exec1(`SELECT lattis.drop_role($1::uuid)`, "Rôle supprimé.", true, "id"),
+		"set_level":          setLevel,
+		"grant_role":         grantRole,
+		"revoke_role":        exec1(`SELECT lattis.revoke_role($1::uuid, $2::uuid)`, "Membre retiré.", false, "role_id", "user_id"),
+		"add_restriction":    addRestriction,
+		"drop_restriction":   exec1(`SELECT lattis.drop_restriction($1::uuid)`, "Restriction supprimée.", false, "id"),
 	}
 }
 
@@ -242,13 +241,21 @@ func allowTenant(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 
 func (s *Service) setupLink(token string) string { return s.Config.URL("/setup?token=" + token) }
 
-func (s *Service) createPasswordAccount(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+// addUser : seul ajout manuel, un compte à mot de passe et son lien
+// pré-signé. Propriétaire du serveur : par une invitation, acceptée à la
+// première connexion.
+func (s *Service) addUser(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	var token string
 	if err := tx.QueryRow(ctx, `SELECT lattis.create_password_account($1, $2)`, f.s("email"), f.s("display_name")).
 		Scan(&token); err != nil {
 		return "", err
 	}
-	return "Compte créé. Lien à transmettre pour choisir le mot de passe : " + s.setupLink(token), nil
+	if f.checked("server_owner") {
+		if _, err := tx.Exec(ctx, `SELECT lattis.invite($1, NULL, '{server_owner}')`, f.s("email")); err != nil {
+			return "", err
+		}
+	}
+	return "Compte créé pour " + strings.ToLower(f.s("email")) + ". Lien à lui transmettre : " + s.setupLink(token), nil
 }
 
 func (s *Service) resetPassword(ctx context.Context, tx pgx.Tx, f form) (string, error) {
@@ -270,15 +277,6 @@ func (s *Service) disableUser(ctx context.Context, tx pgx.Tx, f form) (string, e
 		fg.Forget(f.s("id"))
 	}
 	return "Compte désactivé : connexions fermées et sessions révoquées.", nil
-}
-
-func inviteServer(ctx context.Context, tx pgx.Tx, f form) (string, error) {
-	roles := []string{}
-	if f.checked("server_owner") {
-		roles = append(roles, "server_owner")
-	}
-	_, err := tx.Exec(ctx, `SELECT lattis.invite($1, NULL, $2::text[])`, f.s("email"), roles)
-	return "Invitation enregistrée pour " + strings.ToLower(f.s("email")) + ".", err
 }
 
 // --- Droits d'un classeur -------------------------------------------------------------------

@@ -22,16 +22,12 @@
 </table>
 
 <section class="panel">
-<h2>Inviter</h2>
-<form method="post" action="/admin/do/invite_server" class="row">
-{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr">
-<label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
-<button class="ok">Inviter</button>
-</form>
-<h2>Créer un compte à mot de passe</h2>
-<form method="post" action="/admin/do/create_password_account" class="row">
+<h2>Ajouter un utilisateur</h2>
+<p>Lattis crée le compte et un lien personnel, valable 7 jours, à transmettre à la personne : elle y choisit son mot de passe. Les personnes qui se connectent par un fournisseur (Google, Microsoft…) n'ont rien à recevoir : en entrée libre elles arrivent seules, sur invitation elles sont invitées depuis un classeur.</p>
+<form method="post" action="/admin/do/add_user" class="row">
 {{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr"><input name="display_name" placeholder="Nom affiché">
-<button class="ok">Créer</button>
+<label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
+<button class="ok">Créer le lien</button>
 </form>
 </section>
 
