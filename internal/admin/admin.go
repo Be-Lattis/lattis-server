@@ -294,6 +294,9 @@ func (s *Service) logout(w http.ResponseWriter, r *http.Request) {
 	s.message(w, r, http.StatusOK, "Déconnecté", "Vous êtes déconnecté de l'administration.")
 }
 
+// Session renvoie l'utilisateur connecté au site (édition web, liens).
+func (s *Service) Session(r *http.Request) (store.User, error) { return s.session(r) }
+
 // session renvoie l'utilisateur connecté, encore actif.
 func (s *Service) session(r *http.Request) (store.User, error) {
 	c, err := r.Cookie(sessionCookie)
@@ -472,7 +475,7 @@ func (s *Service) takeFlash(w http.ResponseWriter, r *http.Request) (string, str
 
 // safeBack n'accepte qu'un chemin local de l'administration.
 func safeBack(p string) string {
-	if !(strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/w/")) || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") {
+	if !(strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/w/") || strings.HasPrefix(p, "/app/")) || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") {
 		return ""
 	}
 	return p

@@ -16,6 +16,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
+	"github.com/Be-Lattis/lattis-server/internal/webapp"
 )
 
 // Version de lattisd, fixée à la compilation (-ldflags -X).
@@ -30,6 +31,8 @@ type Server struct {
 	Admin  *admin.Service // nil : pas d'interface d'administration
 	// Replicas choisit les points ro annoncés ; nil : ceux de la configuration.
 	Replicas *replicas.Monitor
+	// Web : moteurs de l'édition web ; nil hors édition web.
+	Web *webapp.Manager
 }
 
 // Handler renvoie le routeur avec ses intergiciels.
@@ -47,6 +50,9 @@ func (s *Server) Handler() http.Handler {
 	s.Auth.Routes(mux)
 	if s.Admin != nil {
 		s.Admin.Routes(mux)
+	}
+	if s.Web != nil {
+		s.Web.Routes(mux)
 	}
 
 	limiter := newLimiter(max(s.Config.RateLimit, 1), time.Minute)
@@ -192,7 +198,13 @@ func securityHeaders(https bool, next http.HandlerFunc) http.Handler {
 		if https {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		if strings.HasPrefix(r.URL.Path, "/app/") {
+			// Application web (SvelteKit) : script d'amorçage en ligne,
+			// styles de composants, WebSocket vers la même origine.
+			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'")
+		} else {
+			h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		}
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")

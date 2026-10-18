@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,6 +33,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/upstream"
 	"github.com/Be-Lattis/lattis-server/internal/userdb"
+	"github.com/Be-Lattis/lattis-server/internal/webapp"
 )
 
 func main() {
@@ -189,6 +191,18 @@ func serve(doMigrate bool) error {
 	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version}
 	authSvc.AdminURL = "/admin/"
 	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc, Replicas: reps}
+	if cfg.Edition == config.EditionWeb {
+		tokenURL, err := webTokenURL(cfg)
+		if err != nil {
+			return err
+		}
+		srv.Web = &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: adminSvc.Session, TokenURL: tokenURL}
+		defer func() {
+			sctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
+			defer cancel()
+			srv.Web.Stop(sctx)
+		}()
+	}
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
@@ -244,4 +258,20 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 			}
 		}
 	}
+}
+
+// webTokenURL : adresse de /engine/token pour les moteurs, en bouclage local
+// sur l'écoute de lattisd (LATTIS_WEB_TOKEN_URL la remplace).
+func webTokenURL(cfg *config.Config) (string, error) {
+	if v := os.Getenv("LATTIS_WEB_TOKEN_URL"); v != "" {
+		return v, nil
+	}
+	if cfg.TLSCertFile != "" {
+		return "", errors.New("édition web avec TLS dans lattisd : préciser LATTIS_WEB_TOKEN_URL")
+	}
+	_, port, err := net.SplitHostPort(cfg.ListenAddr)
+	if err != nil {
+		return "", fmt.Errorf("LATTIS_LISTEN_ADDR : %w", err)
+	}
+	return "http://127.0.0.1:" + port + "/engine/token", nil
 }

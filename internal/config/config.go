@@ -51,6 +51,10 @@ type Config struct {
 	MinClient      string
 	WebCacheDir    string
 	WebMaxEngines  int
+	// WebEngine : binaire lattis-engine lancé pour chaque session web ;
+	// WebIdle : inactivité avant son arrêt.
+	WebEngine string
+	WebIdle   time.Duration
 	// TrustProxy : faire confiance à X-Forwarded-For pour la limitation de débit.
 	TrustProxy bool
 	// ExtraRedirects : URI de redirection supplémentaires acceptées pour le
@@ -93,7 +97,8 @@ func parse(get func(string) string) (*Config, error) {
 		SecretsDir:     def("LATTIS_SECRETS_DIR", ""),
 		BootstrapOwner: strings.ToLower(def("LATTIS_BOOTSTRAP_OWNER", "")),
 		MinClient:      def("LATTIS_MIN_CLIENT_VERSION", "0.0.0"),
-		WebCacheDir:    def("LATTIS_WEB_CACHE_DIR", ""),
+		WebCacheDir:    def("LATTIS_WEB_CACHE_DIR", "/var/lib/lattis/web"),
+		WebEngine:      def("LATTIS_WEB_ENGINE", ""),
 		ExtraRedirects: splitList(def("LATTIS_EXTRA_REDIRECT_URIS", "")),
 		DownloadURL:    def("LATTIS_DOWNLOAD_URL", ""),
 		ShutdownGrace:  15 * time.Second,
@@ -101,8 +106,8 @@ func parse(get func(string) string) (*Config, error) {
 	if c.Edition != EditionAdmin && c.Edition != EditionWeb {
 		errs = append(errs, fmt.Errorf("LATTIS_EDITION : admin ou web, pas %q", c.Edition))
 	}
-	if c.Edition == EditionWeb {
-		errs = append(errs, errors.New("LATTIS_EDITION=web : l'application web n'est pas encore disponible"))
+	if c.Edition == EditionWeb && c.WebEngine == "" {
+		errs = append(errs, errors.New("LATTIS_EDITION=web : LATTIS_WEB_ENGINE (chemin de lattis-engine) manquant"))
 	}
 	pub := def("LATTIS_PUBLIC_URL", "")
 	if pub == "" {
@@ -149,8 +154,15 @@ func parse(get func(string) string) (*Config, error) {
 	} else {
 		errs = append(errs, errors.New("LATTIS_REPLICA_MAX_LAG : durée positive attendue (10s)"))
 	}
-	if n, err := strconv.Atoi(def("LATTIS_WEB_MAX_ENGINES", "0")); err == nil {
+	if n, err := strconv.Atoi(def("LATTIS_WEB_MAX_ENGINES", "50")); err == nil && n > 0 {
 		c.WebMaxEngines = n
+	} else {
+		errs = append(errs, errors.New("LATTIS_WEB_MAX_ENGINES : entier positif attendu"))
+	}
+	if d, err := time.ParseDuration(def("LATTIS_WEB_IDLE", "30m")); err == nil && d > 0 {
+		c.WebIdle = d
+	} else {
+		errs = append(errs, errors.New("LATTIS_WEB_IDLE : durée positive attendue (30m)"))
 	}
 	c.TrustProxy = def("LATTIS_TRUST_PROXY", "false") == "true"
 	if n, err := strconv.Atoi(def("LATTIS_RATE_LIMIT", "120")); err == nil && n > 0 {

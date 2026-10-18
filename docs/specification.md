@@ -307,7 +307,8 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 
 ## 14. Version web
 
-- `lattisd` sert le frontend SvelteKit de Lattis et ouvre, pour chaque utilisateur connecté, un **moteur Lattis** (le code Go de l'application, compilé sans Wails) avec son cache SQLite dans `LATTIS_WEB_CACHE_DIR/<user>/<workbook>`.
+- `lattisd` ouvre, pour chaque utilisateur connecté, un **moteur Lattis** : un processus `lattis-engine` (le code Go de l'application, compilé sans Wails, avec le frontend web embarqué) qui écoute en bouclage local, cache SQLite dans `LATTIS_WEB_CACHE_DIR/<user>`. `lattisd` lui relaie `/app/` (frontend, `/app/ws`, envois, téléchargements) après contrôle de la session et de l'origine. Un processus par utilisateur isole les sessions (le moteur garde des états globaux). Environnement minimal : aucun secret de `lattisd` n'est transmis.
+- Jetons du moteur : `GET /engine/token` (bouclage local, secret propre au processus en `Authorization: Bearer`) renvoie un jeton d'accès PostgreSQL de 5 minutes de l'utilisateur ; compte désactivé : 403.
 - Le moteur se connecte à PostgreSQL **sous l'identité de l'utilisateur** (jeton `lattisd` de l'utilisateur), donc la RLS s'applique comme sur un poste de bureau.
 - Canal : WebSocket authentifié (cookie de session), appels JSON-RPC vers les mêmes méthodes que les services Wails, et événements poussés.
 - **Comportement identique au bureau**, avec équivalents navigateur : ouvrir et enregistrer = envoi et téléchargement de fichiers ; presse-papiers du navigateur ; secrets des connexions externes chiffrés côté serveur (clé de `lattisd`) au lieu du trousseau ; raccourcis clavier interceptés par la page quand le navigateur le permet.
@@ -338,7 +339,7 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 | `LATTIS_PG_PUBLIC_RW`, `LATTIS_PG_PUBLIC_RO` | Points annoncés aux clients dans la découverte. |
 | `LATTIS_SIGNING_KEY_FILE` | Clé privée de signature des jetons (rotation : plusieurs clés acceptées, publiées dans `/jwks.json`, copiées pour `lattis_oauth`). |
 | `LATTIS_SECRETS_DIR` ou fournisseur de secrets | Secrets des clients OAuth. |
-| `LATTIS_WEB_CACHE_DIR`, `LATTIS_WEB_MAX_ENGINES` | Version web. |
+| `LATTIS_WEB_ENGINE`, `LATTIS_WEB_CACHE_DIR`, `LATTIS_WEB_MAX_ENGINES`, `LATTIS_WEB_IDLE`, `LATTIS_WEB_TOKEN_URL` | Version web. |
 | `LATTIS_METRICS_ADDR` | Adresse d'écoute de `/metrics`. |
 | `LATTIS_BOOTSTRAP_OWNER` | Adresse du premier propriétaire de serveur (invité au premier démarrage). |
 

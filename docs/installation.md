@@ -131,7 +131,12 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `LATTIS_EDITION` | `admin` | Édition. `web` n'est pas encore disponible. |
+| `LATTIS_EDITION` | `admin` | Édition : `admin`, ou `web` (application dans le navigateur, demande `LATTIS_WEB_ENGINE`). |
+| `LATTIS_WEB_ENGINE` | vide | Édition web : chemin du binaire `lattis-engine` (dépôt de l'application), lancé une fois par utilisateur connecté. |
+| `LATTIS_WEB_CACHE_DIR` | `/var/lib/lattis/web` | Édition web : un répertoire par utilisateur (cache SQLite, fichiers envoyés). |
+| `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs simultanés (au-delà : 503). |
+| `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
+| `LATTIS_WEB_TOKEN_URL` | `http://127.0.0.1:<port>/engine/token` | Édition web : adresse où les moteurs demandent leurs jetons (à préciser si `lattisd` sert lui-même le TLS). |
 | `LATTIS_PUBLIC_URL` | (obligatoire) | URL publique, émetteur des jetons. |
 | `LATTIS_PG_RW_URL` | (obligatoire) | Connexion de service au parent (`lattis_service`), par exemple `postgres://lattis_service:<mdp>@postgres:5432/lattis?sslmode=require`. |
 | `LATTIS_PG_RO_URLS` | vide | Connexions de service aux réplicas, séparées par des virgules : `lattisd` mesure leur retard et ne les annonce que s'ils suivent. Même nombre et même ordre que `LATTIS_PG_PUBLIC_RO`. |
