@@ -1,9 +1,9 @@
 {{define "body"}}
 {{if .Token}}
-<p>Compte : <strong>{{.Email}}</strong></p>
 <form method="post" action="/setup">
 <input type="hidden" name="token" value="{{.Token}}">
 <input type="hidden" name="csrf" value="{{.CSRF}}">
+<label>Adresse e-mail<input type="email" name="email" value="{{.Email}}" autocomplete="username" required></label>
 <label>Nouveau mot de passe ({{.MinLength}} caractères au moins)<input type="password" name="password" autocomplete="new-password" minlength="{{.MinLength}}" required autofocus></label>
 <label>Confirmation<input type="password" name="confirm" autocomplete="new-password" required></label>
 <button type="submit" class="ok">Enregistrer</button>

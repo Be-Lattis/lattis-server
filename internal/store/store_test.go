@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,35 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 }
 
+// La personne qui tient le lien choisit son adresse : le compte, son rôle et
+// l'invitation de propriétaire la suivent.
+func TestSetupChangesEmail(t *testing.T) {
+	ctx := context.Background()
+	db := testpg.New(t)
+	st := db.Store
+	token, err := st.Bootstrap(ctx, testpg.Email("planned"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	chosen := testpg.Email("chosen")
+	uid, err := st.SetPasswordWithToken(ctx, token, "$argon2id$fake", "  "+strings.ToUpper(chosen)+" ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.User(ctx, uid)
+	if err != nil || u.Email != chosen || u.PGRole != chosen {
+		t.Fatalf("compte : %+v %v", u, err)
+	}
+	acct, err := st.PasswordAccount(ctx, chosen)
+	if err != nil || acct.UserID != uid {
+		t.Fatalf("compte à mot de passe : %+v %v", acct, err)
+	}
+	e, err := st.Enroll(ctx, store.Identity{ProviderID: acct.ProviderID, Subject: uid, Email: chosen, EmailVerified: true})
+	if err != nil || e.Status != "ok" || !isOwner(t, db, e.PGRole) {
+		t.Fatalf("inscription : %+v %v", e, err)
+	}
+}
+
 func TestBootstrapOwnerWithPassword(t *testing.T) {
 	ctx := context.Background()
 	db := testpg.New(t)
@@ -72,11 +102,11 @@ func TestBootstrapOwnerWithPassword(t *testing.T) {
 	if got, ok, err := st.SetupTokenValid(ctx, token); err != nil || !ok || got != email {
 		t.Fatalf("jeton : %q %v %v", got, ok, err)
 	}
-	uid, err := st.SetPasswordWithToken(ctx, token, "$argon2id$fake")
+	uid, err := st.SetPasswordWithToken(ctx, token, "$argon2id$fake", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.SetPasswordWithToken(ctx, token, "$argon2id$fake"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.SetPasswordWithToken(ctx, token, "$argon2id$fake", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("jeton réutilisé : %v", err)
 	}
 	acct, err := st.PasswordAccount(ctx, email)
@@ -281,7 +311,7 @@ func TestCodesAndRefreshTokens(t *testing.T) {
 	db := testpg.New(t)
 	st := db.Store
 	tok, _ := st.Bootstrap(ctx, testpg.Email("o"))
-	uid, err := st.SetPasswordWithToken(ctx, tok, "h")
+	uid, err := st.SetPasswordWithToken(ctx, tok, "h", "")
 	if err != nil {
 		t.Fatal(err)
 	}

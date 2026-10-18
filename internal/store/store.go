@@ -317,11 +317,12 @@ func (s *Store) PasswordSucceeded(ctx context.Context, userID string) error {
 	return err
 }
 
-// SetPasswordWithToken consomme un jeton de choix de mot de passe.
-func (s *Store) SetPasswordWithToken(ctx context.Context, token, hash string) (string, error) {
+// SetPasswordWithToken consomme un jeton de choix de mot de passe. email,
+// s'il diffère de l'adresse du compte, la remplace (vide : inchangée).
+func (s *Store) SetPasswordWithToken(ctx context.Context, token, hash, email string) (string, error) {
 	var id *string
 	err := s.AsActor(ctx, "lattisd", func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT lattis.set_password_with_token($1, $2)::text`, token, hash).Scan(&id)
+		return tx.QueryRow(ctx, `SELECT lattis.set_password_with_token($1, $2, $3)::text`, token, hash, email).Scan(&id)
 	})
 	if err != nil {
 		return "", err

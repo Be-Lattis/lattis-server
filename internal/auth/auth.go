@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/oauth2"
 
 	"github.com/Be-Lattis/lattis-server/internal/config"
@@ -551,6 +552,10 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 			Error: "Ce lien n'est plus valable. Demandez-en un nouveau à l'administrateur du serveur."})
 		return
 	}
+	// L'adresse prévue n'est qu'une suggestion : celle saisie la remplace.
+	if e := strings.ToLower(strings.TrimSpace(r.PostFormValue("email"))); e != "" {
+		email = e
+	}
 	pw := r.PostFormValue("password")
 	retry := func(msg string) {
 		s.render(w, r, http.StatusBadRequest, "setup", view{Title: "Choisir un mot de passe", Token: token, Email: email,
@@ -569,10 +574,15 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	uid, err := s.Store.SetPasswordWithToken(r.Context(), token, hash)
+	uid, err := s.Store.SetPasswordWithToken(r.Context(), token, hash, email)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			retry("Ce lien n'est plus valable.")
+			return
+		}
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) && (pe.Code == "22023" || pe.Code == "23505") {
+			retry(strings.ToUpper(pe.Message[:1]) + pe.Message[1:] + ".")
 			return
 		}
 		s.fail(w, r, err)

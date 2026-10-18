@@ -140,10 +140,15 @@ func TestSetupSignsOwnerIn(t *testing.T) {
 	}
 	b := e.browser()
 	_, body := b.get("/setup?token=" + token)
+	// L'adresse prévue n'est qu'une suggestion : on en choisit une autre.
+	chosen := testpg.Email("chosen")
 	resp, body := b.post("/setup", url.Values{"token": {field(body, "token")}, "csrf": {field(body, "csrf")},
-		"password": {pw}, "confirm": {pw}})
+		"email": {chosen}, "password": {pw}, "confirm": {pw}})
 	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom affiché") {
 		t.Fatalf("après le choix du mot de passe : %d %s", resp.StatusCode, resp.Request.URL)
+	}
+	if !strings.Contains(body, chosen) {
+		t.Fatalf("connecté sous l'adresse choisie attendu : %s", chosen)
 	}
 	// Le passe-droit ne sert qu'une fois : une nouvelle connexion redemande le mot de passe.
 	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/admin"}})
