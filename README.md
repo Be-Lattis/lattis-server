@@ -14,7 +14,7 @@ Jalons 1 à 6 (édition « gestion des rôles ») :
 |---|---|
 | Schéma `lattis` (catalogue, journal, jetons) et API SQL du serveur (§9.1) | Flux « device code » pour `psql` |
 | `lattisd` : découverte, émetteur OIDC (EdDSA), PKCE, rafraîchissement avec rotation, révocation | Mesures de durée des requêtes et de synchronisation |
-| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Variante Helm sur CloudNativePG (bascule, sauvegardes) |
+| Comptes à mot de passe (Argon2id, verrouillage), Google, Google Workspace, Microsoft, Keycloak, OIDC générique, tenants autorisés | Possibilité future, non confirmée : variante Helm sur CloudNativePG (bascule, sauvegardes) |
 | Inscription sur invitation ou entrée libre, premier propriétaire | Application web (jalon 7) |
 | Classeurs figés : publication, republication d'un coup, lecteurs | |
 | Classeurs collaboratifs : rôles fournis, RLS compilée, deltas, pierres tombales, `why_not`, `NOTIFY` | |

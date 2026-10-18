@@ -123,7 +123,7 @@ Points à connaître :
 - **Retirer un réplica** : réduire `replicas.count`, puis supprimer son emplacement sur le parent, sinon le parent garde ses WAL : `SELECT pg_drop_replication_slot('lattis_replica_2');` (nom = nom du pod, tirets en `_`).
 - **Plusieurs `lattisd`** (`lattisd.replicaCount`) : possible, tout l'état est en base ; la limite de débit est comptée par instance.
 - **Clé de signature** : les pods PostgreSQL en tirent la clé publique au démarrage. Après une rotation (§8), redémarrer `lattisd` puis les pods PostgreSQL (`kubectl rollout restart statefulset`).
-- **Bascule** : le chart ne promeut pas un réplica tout seul. Si le parent est perdu : `kubectl exec` dans un réplica, `pg_ctl promote`, puis faire pointer le parent sur lui (ou restaurer une sauvegarde). Pour une bascule automatique et des sauvegardes gérées, l'intégration à l'opérateur CloudNativePG reste à faire (spécification §17).
+- **Bascule** : le chart ne promeut pas un réplica tout seul. Si le parent est perdu : `kubectl exec` dans un réplica, `pg_ctl promote`, puis faire pointer le parent sur lui (ou restaurer une sauvegarde). Pour une bascule automatique et des sauvegardes gérées, une intégration à l'opérateur CloudNativePG est une possibilité future, non confirmée (spécification §17).
 
 Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/helm/lattis/values.yaml).
 
