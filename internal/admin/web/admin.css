@@ -19,16 +19,28 @@ h1 { font-size: 20px; margin: 8px 0 16px; } h2 { font-size: 16px; margin: 0 0 12
 label { display: block; font-weight: 500; } label small { display: block; font-weight: 400; color: var(--muted); }
 label.inline { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; }
 input, select { display: block; width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: inherit; font: inherit; }
+select { appearance: none; -webkit-appearance: none; padding-right: 30px; cursor: pointer; color-scheme: light dark;
+  background-color: var(--card);
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+select:hover { border-color: var(--muted); }
+select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+select option, select optgroup { background: var(--card); color: var(--text); }
+select option:checked { background: var(--accent); color: #fff; }
+select:disabled { opacity: .6; cursor: not-allowed; }
 input[type=checkbox] { display: inline-block; width: auto; margin: 0; }
 .row input, .row select { margin-top: 0; }
 fieldset { border: 1px solid var(--border); border-radius: 4px; } fieldset label { margin-right: 12px; }
 button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
 button.ok { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.danger { display: inline-flex; align-items: center; gap: 10px; }
+.danger label.inline { color: var(--muted); font-size: 13px; }
 .danger button { border-color: var(--error); color: var(--error); }
+.danger button:hover { background: var(--error); color: var(--card); }
 table { width: 100%; border-collapse: collapse; background: var(--card); margin-bottom: 12px; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 tbody tr:nth-child(even) { background: var(--stripe); }
-.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .levels td.depth1 { padding-left: 24px; } .levels td.depth2 { padding-left: 44px; }
 .scroll { overflow-x: auto; }
 .tag { display: inline-block; padding: 0 6px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; font-weight: 400; color: var(--muted); }
