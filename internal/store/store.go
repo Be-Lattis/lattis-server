@@ -344,6 +344,22 @@ func (s *Store) SetupTokenValid(ctx context.Context, token string) (string, bool
 	return email, err == nil, err
 }
 
+// ServerOwner dit si l'utilisateur est propriétaire du serveur, ou le
+// deviendra à sa première connexion (invitation en attente).
+func (s *Store) ServerOwner(ctx context.Context, userID string) (bool, error) {
+	var owner bool
+	err := s.DB.QueryRow(ctx, `
+		SELECT pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER')
+		    OR EXISTS (SELECT 1 FROM lattis.invitations i
+		               WHERE i.email = u.email AND 'server_owner' = ANY (i.roles) AND i.accepted_at IS NULL
+		                 AND i.revoked_at IS NULL AND i.expires_at > now())
+		FROM lattis.users u WHERE u.id::text = $1 AND NOT u.disabled`, userID).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return owner, err
+}
+
 // --- Amorçage --------------------------------------------------------------------
 
 // Bootstrap invite le premier propriétaire de serveur s'il n'y en a aucun.

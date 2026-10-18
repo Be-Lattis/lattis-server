@@ -50,7 +50,8 @@ func setup(t *testing.T) *env {
 	cfg := &config.Config{Edition: config.EditionAdmin, PublicURL: pub, PGDatabase: "lattis", PGSSLMode: "verify-full",
 		PGPublicRW: config.Endpoint{Host: "pg.example.test", Port: 5432}, RateLimit: 10000}
 	a := &auth.Service{Config: cfg, Store: db.Store, Keys: keys, Metrics: metrics.New("test", db.Store.DB),
-		Upstream: &upstream.Registry{CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }}}
+		Upstream: &upstream.Registry{CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }},
+		AdminURL: "/admin/"}
 	ad := &admin.Service{Config: cfg, Store: db.Store, Keys: keys, Users: userdb.SessionAuth{Pool: db.Super}, Version: "test"}
 	h = (&httpserver.Server{Config: cfg, Store: db.Store, Keys: keys, Auth: a, Admin: ad}).Handler()
 	return &env{t: t, db: db, srv: srv}
@@ -128,6 +129,28 @@ func (b *browser) login(email, pw, path string) (*http.Response, string) {
 }
 
 const pw = "un mot de passe solide"
+
+// Le propriétaire qui vient de choisir son mot de passe arrive connecté dans
+// l'administration, sans repasser par le formulaire de connexion.
+func TestSetupSignsOwnerIn(t *testing.T) {
+	e := setup(t)
+	token, err := e.db.Store.Bootstrap(context.Background(), testpg.Email("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := e.browser()
+	_, body := b.get("/setup?token=" + token)
+	resp, body := b.post("/setup", url.Values{"token": {field(body, "token")}, "csrf": {field(body, "csrf")},
+		"password": {pw}, "confirm": {pw}})
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom affiché") {
+		t.Fatalf("après le choix du mot de passe : %d %s", resp.StatusCode, resp.Request.URL)
+	}
+	// Le passe-droit ne sert qu'une fois : une nouvelle connexion redemande le mot de passe.
+	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/admin"}})
+	if _, body := b.get("/admin/server"); !strings.Contains(body, `type="password"`) {
+		t.Fatal("formulaire de connexion attendu une fois la session fermée")
+	}
+}
 
 func TestAdminConsole(t *testing.T) {
 	ctx := context.Background()

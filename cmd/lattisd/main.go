@@ -187,6 +187,7 @@ func serve(doMigrate bool) error {
 	m.Registry.MustRegister(reps)
 	go reps.Run(ctx)
 	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version}
+	authSvc.AdminURL = "/admin/"
 	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc, Replicas: reps}
 	go func() {
 		t := time.NewTicker(time.Minute)

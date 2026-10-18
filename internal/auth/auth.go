@@ -47,6 +47,10 @@ const (
 	requestTTL   = 10 * time.Minute
 	loginCookie  = "lattis_login"
 	csrfCookie   = "lattis_csrf"
+	// freshCookie : mot de passe choisi à l'instant sur /setup ; la connexion
+	// suivante à l'administration ne le redemande pas.
+	freshCookie = "lattis_fresh"
+	audFresh    = "lattisd:fresh-login"
 )
 
 //go:embed web/*.html web/lattis.css
@@ -68,6 +72,9 @@ type Service struct {
 	Upstream *upstream.Registry
 	Metrics  *metrics.Metrics
 	Now      func() time.Time
+	// AdminURL : où envoyer un propriétaire qui vient de choisir son mot de
+	// passe, déjà connecté (vide : pas d'interface d'administration).
+	AdminURL string
 }
 
 // Routes enregistre les points d'accès.
@@ -179,6 +186,9 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if req.ClientID == AdminClientID && s.freshLogin(w, r, req) {
+		return
+	}
 	providers, err := s.Store.Providers(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
@@ -224,6 +234,36 @@ func (s *Service) parseRequest(signed string) (authRequest, error) {
 	}
 	err = json.Unmarshal(c.Data, &req)
 	return req, err
+}
+
+// freshLogin termine la demande sans formulaire si le navigateur vient de
+// choisir son mot de passe sur /setup (cookie à usage unique). Faux : rien
+// fait, la connexion habituelle suit.
+func (s *Service) freshLogin(w http.ResponseWriter, r *http.Request, req authRequest) bool {
+	ck, err := r.Cookie(freshCookie)
+	if err != nil {
+		return false
+	}
+	s.clearCookie(w, freshCookie, "/oauth/authorize")
+	claims, err := s.Keys.Verify(ck.Value, tokens.TypeState, s.Config.Issuer(), audFresh, s.now())
+	if err != nil {
+		return false
+	}
+	ctx := r.Context()
+	u, err := s.Store.User(ctx, claims.Subject)
+	if err != nil {
+		return false
+	}
+	acct, err := s.Store.PasswordAccount(ctx, u.Email)
+	if err != nil || acct.UserID != u.ID || acct.Hash == "" {
+		return false
+	}
+	p, err := s.Store.Provider(ctx, acct.ProviderID)
+	if err != nil || p.Kind != "password" {
+		return false
+	}
+	s.complete(w, r, p, req, store.Identity{ProviderID: acct.ProviderID, Subject: acct.UserID, Email: u.Email, EmailVerified: true})
+	return true
 }
 
 // --- Connexion auprès d'un fournisseur ----------------------------------------------
@@ -529,13 +569,32 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if _, err := s.Store.SetPasswordWithToken(r.Context(), token, hash); err != nil {
+	uid, err := s.Store.SetPasswordWithToken(r.Context(), token, hash)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			retry("Ce lien n'est plus valable.")
 			return
 		}
 		s.fail(w, r, err)
 		return
+	}
+	// Un propriétaire arrive directement dans l'administration, connecté.
+	if s.AdminURL != "" {
+		owner, err := s.Store.ServerOwner(r.Context(), uid)
+		if err != nil {
+			slog.Error("propriétaire après choix du mot de passe", "err", err)
+		}
+		if owner {
+			now := s.now()
+			fresh, err := s.Keys.Sign(tokens.TypeState, tokens.Claims{Issuer: s.Config.Issuer(), Audience: tokens.Audience{audFresh},
+				Subject: uid, IssuedAt: now.Unix(), ExpiresAt: now.Add(requestTTL).Unix()})
+			if err == nil {
+				s.setCookie(w, freshCookie, fresh, "/oauth/authorize", requestTTL)
+				http.Redirect(w, r, s.AdminURL, http.StatusSeeOther)
+				return
+			}
+			slog.Error("connexion après choix du mot de passe", "err", err)
+		}
 	}
 	s.render(w, r, http.StatusOK, "message", view{Title: "Mot de passe enregistré",
 		Message: "Vous pouvez maintenant vous connecter à ce serveur depuis Lattis."})
