@@ -66,7 +66,12 @@ type providerField struct {
 	Required                 bool
 }
 
+// SourceURL : code source proposé au pied des pages (AGPL-3.0, §13) ; fixé
+// par lattisd au démarrage (LATTIS_SOURCE_URL).
+var SourceURL = "https://github.com/Be-Lattis/lattis-server"
+
 var funcs = template.FuncMap{
+	"sourceURL": func() string { return SourceURL },
 	"pf": func(label, name, value, help string, required bool) providerField {
 		return providerField{Label: label, Name: name, Value: value, Help: help, Required: required}
 	},

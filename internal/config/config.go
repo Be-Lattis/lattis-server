@@ -62,7 +62,10 @@ type Config struct {
 	ExtraRedirects []string
 	// DownloadURL : page de téléchargement de l'application, proposée par
 	// les liens vers un classeur (vide : rien).
-	DownloadURL   string
+	DownloadURL string
+	// SourceURL : code source de ce serveur, proposé à ses utilisateurs
+	// (AGPL-3.0, §13). À changer pour une version modifiée.
+	SourceURL     string
 	ShutdownGrace time.Duration
 	// RateLimit : requêtes par minute et par adresse sur /oauth/*, /login/*, /setup.
 	RateLimit int
@@ -101,6 +104,7 @@ func parse(get func(string) string) (*Config, error) {
 		WebEngine:      def("LATTIS_WEB_ENGINE", ""),
 		ExtraRedirects: splitList(def("LATTIS_EXTRA_REDIRECT_URIS", "")),
 		DownloadURL:    def("LATTIS_DOWNLOAD_URL", ""),
+		SourceURL:      def("LATTIS_SOURCE_URL", "https://github.com/Be-Lattis/lattis-server"),
 		ShutdownGrace:  15 * time.Second,
 	}
 	if c.Edition != EditionAdmin && c.Edition != EditionWeb {

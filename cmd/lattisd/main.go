@@ -190,6 +190,7 @@ func serve(doMigrate bool) error {
 	go reps.Run(ctx)
 	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version}
 	authSvc.AdminURL = "/admin/"
+	auth.SourceURL, admin.SourceURL = cfg.SourceURL, cfg.SourceURL
 	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc, Replicas: reps}
 	if cfg.Edition == config.EditionWeb {
 		tokenURL, err := webTokenURL(cfg)

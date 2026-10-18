@@ -16,6 +16,7 @@
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 {{if .Message}}<p class="message">{{.Message}}</p>{{end}}
 {{template "body" .}}
+<p class="source"><a href="{{sourceURL}}">Code source</a> · AGPL-3.0</p>
 </main>
 </body>
 </html>{{end}}

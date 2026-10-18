@@ -88,3 +88,4 @@ td.who { width: 170px; max-width: 170px; } td.who small { display: block; color:
 .team[class*="depth"]:not(.depth0):not(.depth1):not(.depth2):not(.depth3) { margin-left: 96px; }
 .team .crumbs { font-weight: 400; } .team .grid { margin-bottom: 8px; }
 @media (max-width: 640px) { .team[class*="depth"] { margin-left: 0; } }
+.foot { max-width: 1100px; margin: 0 auto; padding: 8px 16px 24px; font-size: 12px; color: var(--muted); } .foot a { color: inherit; }

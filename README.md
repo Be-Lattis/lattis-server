@@ -80,3 +80,26 @@ LATTIS_TEST_PG_URL=postgres://postgres:pg@127.0.0.1:55432/postgres go test ./...
 ```
 
 Les tests de `internal/e2e` visent un serveur équipé de `lattis_oauth` (variables décrites en tête des fichiers) : connexion `OAUTHBEARER` réelle, jetons refusés, et parcours complet d'un poste contre le Docker Compose.
+
+## Licence
+
+Le Serveur Lattis (`lattisd`, le schéma SQL, le module `lattis_oauth` et les fichiers de déploiement) est un logiciel libre sous **GNU Affero General Public License v3.0** (AGPL-3.0) : voir [LICENSE](LICENSE). Vous pouvez l'utiliser, l'étudier, le modifier et le redistribuer. Si vous proposez une version modifiée à des utilisateurs à travers le réseau, vous devez leur offrir son code source (article 13) : chaque page servie par `lattisd` porte un lien « Code source », à faire pointer vers votre version avec `LATTIS_SOURCE_URL`.
+
+L'application Lattis ([lattis-app](https://github.com/Be-Lattis/lattis-app)) est sous Mozilla Public License 2.0 ; son paquet `protocol`, importé par `lattisd`, l'est aussi, ce qui est compatible avec l'AGPL-3.0.
+
+Dépendances, toutes compatibles avec l'AGPL-3.0 :
+
+| Composant | Licence |
+|---|---|
+| `github.com/jackc/pgx` et ses modules | MIT |
+| `golang.org/x/crypto`, `x/oauth2`, `x/sync`, `x/sys`, `x/text`, `google.golang.org/protobuf` | BSD-3-Clause |
+| `github.com/coreos/go-oidc`, `github.com/go-jose/go-jose`, `github.com/prometheus/*` | Apache-2.0 |
+| `github.com/cespare/xxhash`, `github.com/beorn7/perks`, `github.com/munnerz/goautoneg`, `github.com/kylelemons/godebug` | MIT, BSD ou Apache-2.0 |
+| `github.com/lalamefine/lattis/protocol` | MPL-2.0 |
+| Module `lattis_oauth` : PostgreSQL (en-têtes, chargement) | PostgreSQL License |
+| Module `lattis_oauth` : OpenSSL 3 (`libcrypto`) | Apache-2.0 |
+| Images : PostgreSQL 18 (Debian), distroless | PostgreSQL License, licences Debian, Apache-2.0 |
+
+## Marques
+
+« Lattis », « Be Lattis » et leurs logos sont des marques réservées par leur titulaire. La licence AGPL-3.0 porte sur le code et ne donne aucun droit sur ces noms et logos : une version modifiée distribuée ou proposée en service doit porter un autre nom, sauf accord écrit. Mentionner que votre version est « basée sur le Serveur Lattis » reste permis.

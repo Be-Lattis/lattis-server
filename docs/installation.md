@@ -156,6 +156,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_MIN_CLIENT_VERSION` | `0.0.0` | Version minimale de Lattis acceptée (publiée dans la découverte). |
 | `LATTIS_EXTRA_REDIRECT_URIS` | vide | URI de redirection supplémentaires pour l'application de bureau (en plus du bouclage local). |
 | `LATTIS_DOWNLOAD_URL` | vide | Page de téléchargement de l'application, proposée sur les liens vers un classeur (`/w/<id>`). |
+| `LATTIS_SOURCE_URL` | `https://github.com/Be-Lattis/lattis-server` | Lien « Code source » au pied des pages (AGPL-3.0, article 13) : à faire pointer vers le code de votre version si vous l'avez modifiée. |
 
 Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres commandes : `lattisd migrate`, `lattisd keygen FICHIER`, `lattisd public-keys [FICHIER]`, `lattisd init-dev DIR [HÔTE…]`, `lattisd version`.
 

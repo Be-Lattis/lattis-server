@@ -60,9 +60,14 @@ var webFS embed.FS
 
 var pages = map[string]*template.Template{}
 
+// SourceURL : code source proposé au pied des pages (AGPL-3.0, §13) ; fixé
+// par lattisd au démarrage (LATTIS_SOURCE_URL).
+var SourceURL = "https://github.com/Be-Lattis/lattis-server"
+
 func init() {
+	funcs := template.FuncMap{"sourceURL": func() string { return SourceURL }}
 	for _, name := range []string{"choose", "password", "setup", "message"} {
-		pages[name] = template.Must(template.ParseFS(webFS, "web/page.html", "web/"+name+".html"))
+		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/page.html", "web/"+name+".html"))
 	}
 }
 
