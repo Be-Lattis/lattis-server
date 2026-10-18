@@ -328,7 +328,7 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatal("catalogue")
 	}
 	if _, body = b.post("/admin/do/add_data_audience", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "dataset_id": {ds},
-		"kind": {"user"}, "email": {ownerEmail}, "predicate": {`"Région" = 'Nord'`}}); !strings.Contains(body, "Ajouté à l'audience.") {
+		"kind": {"user"}, "email": {ownerEmail}, "predicate": {`"Région" = 'Nord'`}}); !strings.Contains(body, "Ajouté à l&#39;audience.") {
 		t.Fatalf("audience : %s", body)
 	}
 	if _, body = b.post("/admin/do/drop_dataset", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "id": {ds}, "confirm": {"on"}}); !strings.Contains(body, "Partage retiré.") {
