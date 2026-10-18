@@ -64,7 +64,9 @@ type setting struct {
 	// Unit, Scale : durée affichée dans cette unité, enregistrée en secondes.
 	Unit  string
 	Scale float64
-	Value any
+	// ShowIf : n'afficher que si un autre champ a cette valeur (data-show-if).
+	ShowIf string
+	Value  any
 }
 
 // settingGroup regroupe les réglages par thème, du plus courant au plus
@@ -91,7 +93,7 @@ var settingGroups = []settingGroup{
 			Help:    "Sur invitation : seules les personnes invitées ou créées ici entrent."},
 		{Key: "default_role", Label: "Rôle des arrivants (entrée libre)", Kind: "select",
 			Options: [][2]string{{"none", "Aucun"}, {"reader", "Lecteur"}, {"participant", "Participant"}, {"editor", "Éditeur"}},
-			Help:    "Rôle donné sur les classeurs ouverts aux arrivants."},
+			Help:    "Rôle donné sur les classeurs ouverts aux arrivants.", ShowIf: "access_mode=open"},
 		{Key: "workbook_creators", Label: "Qui publie des classeurs", Kind: "select",
 			Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs"}},
 			Help:    "Le rôle « créateur de classeurs » se donne sur la page Utilisateurs."},

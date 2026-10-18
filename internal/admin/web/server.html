@@ -1,5 +1,5 @@
 {{define "setting"}}
-<div class="field">
+<div class="field"{{with .ShowIf}} data-show-if="{{.}}"{{end}}>
 <span class="flabel">{{.Label}}</span>
 {{if eq .Kind "select"}}{{$v := str .Value}}<div class="control select"><select name="{{.Key}}" aria-label="{{.Label}}">{{range .Options}}<option value="{{index . 0}}"{{if eq (index . 0) $v}} selected{{end}}>{{index . 1}}</option>{{end}}</select>{{template "pen" .Label}}</div>
 {{else if eq .Kind "bool"}}<div class="control check"><label class="inline"><input type="checkbox" name="{{.Key}}"{{if eq (str .Value) "true"}} checked{{end}}> Activé</label>{{template "pen" .Label}}</div>

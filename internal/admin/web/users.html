@@ -5,7 +5,7 @@
 <form method="post" action="/admin/do/add_user" class="row">
 {{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr"><input name="display_name" placeholder="Nom affiché">
 <label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
-<label class="inline"><input type="checkbox" name="workbook_creator"> Créateur de classeurs</label>
+<label class="inline" data-show-if="server_owner!=on"><input type="checkbox" name="workbook_creator"> Créateur de classeurs</label>
 <button class="ok">Créer le lien</button>
 </form>
 </section>

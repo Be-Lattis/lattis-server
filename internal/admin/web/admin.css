@@ -73,3 +73,4 @@ details.panel > summary { cursor: pointer; list-style: none; display: flex; flex
 details.panel > summary::-webkit-details-marker { display: none; }
 details.panel > summary h2 { margin: 0; } details.panel > summary h2::before { content: "▸ "; color: var(--muted); }
 details.panel[open] > summary { margin-bottom: 12px; } details.panel[open] > summary h2::before { content: "▾ "; }
+[hidden] { display: none !important; }

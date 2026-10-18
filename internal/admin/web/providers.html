@@ -8,12 +8,12 @@
 {{template "pfield" (pf "Libellé" "label" .Label "" true)}}
 {{template "pfield" (pf "Ordre d'affichage" "position" (str .Position) "" false)}}
 {{if ne .Kind "password"}}
-{{template "pfield" (pf "Émetteur (issuer)" "issuer" .Issuer "" false)}}
+{{if not (or (eq .Kind "google") (eq .Kind "google_workspace"))}}{{template "pfield" (pf "Émetteur (issuer)" "issuer" .Issuer "" false)}}{{end}}
 {{template "pfield" (pf "Identifiant client" "client_id" .ClientID "" false)}}
 {{template "pfield" (pf "Référence du secret" "secret_ref" .SecretRef "Nom du fichier dans le dossier des secrets, jamais le secret lui-même." false)}}
 {{template "pfield" (pf "Scopes" "scopes" (join .Scopes) "" false)}}
-{{template "pfield" (pf "Revendication exigée" "claim_name" .ClaimName "Par exemple groups." false)}}
-{{template "pfield" (pf "Valeur exigée" "claim_value" .ClaimValue "" false)}}
+{{if or (eq .Kind "keycloak") (eq .Kind "oidc")}}{{template "pfield" (pf "Revendication exigée" "claim_name" .ClaimName "Par exemple groups." false)}}
+{{template "pfield" (pf "Valeur exigée" "claim_value" .ClaimValue "" false)}}{{end}}
 {{end}}
 <div class="field"><span class="flabel">État</span>
 <div class="control check"><label class="inline"><input type="checkbox" name="enabled"{{if .Enabled}} checked{{end}}> Activé</label>{{template "pen" "État"}}</div></div>
@@ -27,8 +27,8 @@
 </tbody></table>{{else}}<p class="muted">Aucun tenant : personne n'entre par ce fournisseur.</p>{{end}}
 <form method="post" action="/admin/do/allow_tenant" class="row">
 {{template "csrf" $}}<input type="hidden" name="provider_id" value="{{.ID}}">
-<select name="kind"><option value="domain">Domaine</option><option value="tid">Tenant Microsoft (tid)</option><option value="realm">Realm</option><option value="email">Adresse</option><option value="any">Tous</option></select>
-<input name="value" placeholder="exemple.fr">
+<select name="kind" aria-label="Type de tenant"><option value="domain">Domaine</option>{{if eq .Kind "microsoft"}}<option value="tid">Tenant Microsoft (tid)</option>{{end}}{{if or (eq .Kind "keycloak") (eq .Kind "oidc")}}<option value="realm">Realm</option>{{end}}<option value="email">Adresse</option><option value="any">Tous</option></select>
+<input name="value" placeholder="exemple.fr" aria-label="Valeur" data-show-if="kind!=any">
 <select name="default_role"><option value="">Rôle des arrivants : celui du serveur</option><option value="none">Aucun</option><option value="reader">Lecteur</option><option value="participant">Participant</option><option value="editor">Éditeur</option></select>
 <button>Autoriser</button>
 </form>
@@ -44,7 +44,7 @@
 {{template "csrf" $}}
 <label>Type <select name="kind">{{range .Data.Kinds}}<option value="{{index . 0}}">{{index . 1}}</option>{{end}}</select></label>
 <label>Libellé <input name="label" required placeholder="Se connecter avec…"></label>
-<label>Émetteur (issuer) <input name="issuer" placeholder="Par défaut pour Google et Microsoft"></label>
+<label data-show-if="kind=microsoft,keycloak,oidc">Émetteur (issuer) <input name="issuer" placeholder="https://…"><small data-show-if="kind=microsoft">Vide : tous les tenants Microsoft (à restreindre ensuite par tenant).</small></label>
 <label>Identifiant client <input name="client_id" required></label>
 <label>Référence du secret <input name="secret_ref"></label>
 <label>Scopes <input name="scopes" placeholder="openid email profile"></label>
