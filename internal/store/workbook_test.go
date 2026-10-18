@@ -285,3 +285,56 @@ func TestWorkbookCreatorRole(t *testing.T) {
 		t.Fatalf("rôle retiré : %v", err)
 	}
 }
+
+// Activité d'un classeur : dernier éditeur (lignes des tableaux) et dernier
+// lecteur (record_open), visibles dans admin_workbooks.
+func TestWorkbookActivity(t *testing.T) {
+	ctx := context.Background()
+	db := testpg.New(t)
+	us := openUsers(t, db, "auteur", "lecteur", "intrus")
+	author, reader, stranger := us[0], us[1], us[2]
+	var wb, schema string
+	if err := db.AsUser(t, author.PGRole, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook('Activité', 'collaborative')::text`).Scan(&wb); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT lattis.create_table($1::uuid, 'Notes', '[{"name":"Texte","type":"text"}]')`, wb); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.my_capabilities($1::uuid) ->> 'schema'`, wb).Scan(&schema); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb).Scan(new(int)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT lattis.invite($1, $2::uuid, ARRAY['reader'])`, reader.Email, wb); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO `+pgx.Identifier{schema, "Notes"}.Sanitize()+` (lattis_id, lattis_pos, "Texte") VALUES (gen_random_uuid(), 'a0', 'ok')`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AsUser(t, reader.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.record_open($1::uuid)`, wb)
+		return err
+	}); err != nil {
+		t.Fatalf("ouverture : %v", err)
+	}
+	if err := db.AsUser(t, stranger.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.record_open($1::uuid)`, wb)
+		return err
+	}); pgCode(err) != "42501" {
+		t.Fatalf("ouverture sans accès : %v", err)
+	}
+	var edit, read string
+	if err := db.Store.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT w -> 'last_edit' ->> 'email', w -> 'last_read' ->> 'email'
+			FROM jsonb_array_elements(lattis.admin_workbooks()) w WHERE w ->> 'id' = $1`, wb).Scan(&edit, &read)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if edit != author.Email || read != reader.Email {
+		t.Fatalf("activité : modifié par %q, lu par %q", edit, read)
+	}
+}
