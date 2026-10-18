@@ -73,8 +73,7 @@ services:
       LATTIS_PUBLIC_URL: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
       LATTIS_PG_RW_URL: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@postgres:5432/lattis?sslmode=require
       LATTIS_PG_PUBLIC_RW: localhost:5432
-      # Réplica du profil « replicas » : surveillé, annoncé seulement s'il
-      # répond et suit le parent.
+      # Réplica du profil « replicas » : surveillé, annoncé seulement s'il répond et suit le parent.
       LATTIS_PG_RO_URLS: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@replica:5432/lattis?sslmode=require&connect_timeout=3
       LATTIS_PG_PUBLIC_RO: localhost:5433
       LATTIS_PG_SSLMODE: require
