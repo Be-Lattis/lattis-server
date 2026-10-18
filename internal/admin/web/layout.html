@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · {{.Server}}</title>
 <link rel="stylesheet" href="/admin/static/admin.css">
+<script src="/admin/static/admin.js" defer></script>
 </head>
 <body>
 <header class="top">
@@ -31,5 +32,5 @@
 </body>
 </html>{{end}}
 {{define "csrf"}}<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="back" value="{{.Path}}">{{end}}
-{{define "pen"}}<label class="pen" title="Modifier"><input type="checkbox" aria-label="Modifier{{with .}} : {{.}}{{end}}"></label>{{end}}
+{{define "pen"}}<button type="button" class="pen" title="Modifier" aria-label="Modifier{{with .}} : {{.}}{{end}}"></button>{{end}}
 {{define "confirm"}}<label class="inline"><input type="checkbox" name="confirm"> Confirmer</label>{{end}}

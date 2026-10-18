@@ -16,8 +16,7 @@
 {{template "pfield" (pf "Valeur exigée" "claim_value" .ClaimValue "" false)}}
 {{end}}
 <div class="field"><span class="flabel">État</span>
-<div class="view"><span class="val">{{if .Enabled}}Activé{{else}}Désactivé{{end}}</span>{{template "pen" "État"}}</div>
-<div class="edit"><label class="inline"><input type="checkbox" name="enabled"{{if .Enabled}} checked{{end}}> Activé</label></div></div>
+<div class="control check"><label class="inline"><input type="checkbox" name="enabled"{{if .Enabled}} checked{{end}}> Activé</label>{{template "pen" "État"}}</div></div>
 <p class="actions save"><button class="ok">Enregistrer</button></p>
 </form>
 {{if ne .Kind "password"}}
@@ -54,6 +53,5 @@
 </details>
 {{end}}
 {{define "pfield"}}<div class="field"><span class="flabel">{{.Label}}</span>
-<div class="view"><span class="val">{{if .Value}}{{.Value}}{{else}}<span class="muted">—</span>{{end}}</span>{{template "pen" .Label}}</div>
-<div class="edit"><input name="{{.Name}}" value="{{.Value}}" aria-label="{{.Label}}"{{if .Required}} required{{end}}></div>
+<div class="control"><input name="{{.Name}}" value="{{.Value}}" aria-label="{{.Label}}"{{if .Required}} required{{end}}>{{template "pen" .Label}}</div>
 {{if .Help}}<small>{{.Help}}</small>{{end}}</div>{{end}}

@@ -46,7 +46,7 @@ const (
 	audLogin      = "lattisd:admin-login"
 )
 
-//go:embed web/*.html web/admin.css
+//go:embed web/*.html web/admin.css web/admin.js
 var webFS embed.FS
 
 var pages = map[string]*template.Template{}
@@ -177,6 +177,12 @@ func (s *Service) Routes(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		b, _ := webFS.ReadFile("web/admin.css")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("GET /admin/static/admin.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		b, _ := webFS.ReadFile("web/admin.js")
 		_, _ = w.Write(b)
 	})
 	mux.HandleFunc("GET /admin/server", s.page("server", "Serveur", loadServer))

@@ -19,13 +19,10 @@
 <h3>Niveaux</h3>
 <table class="levels"><thead><tr><th>Nœud</th><th>Niveau et filtres</th></tr></thead><tbody>
 {{range .Nodes}}<tr><td class="depth{{.Depth}}">{{.Label}}</td>
-<td><div class="field">
-<div class="view"><span class="val">{{if str .Level}}{{levelName .Level}}{{else}}<span class="muted">Hérité</span>{{end}}{{if str .ReadFilter}} · lecture <code>{{str .ReadFilter}}</code>{{end}}{{if str .WriteFilter}} · écriture <code>{{str .WriteFilter}}</code>{{end}}</span>{{template "pen" .Label}}</div>
-<form method="post" action="/admin/do/set_level" class="row edit">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="node" value="{{.Kind}}:{{.ID}}">
-<select name="level" aria-label="Niveau">{{if ne .Kind "workbook"}}<option value="">Hérité</option>{{end}}{{$lv := str .Level}}{{range $d.Levels}}<option value="{{.}}"{{if eq . $lv}} selected{{end}}>{{levelName .}}</option>{{end}}</select>
-{{if eq .Kind "table"}}<input name="read_filter" value="{{str .ReadFilter}}" placeholder="Filtre de lecture (SQL)" aria-label="Filtre de lecture"><input name="write_filter" value="{{str .WriteFilter}}" placeholder="Filtre d'écriture (SQL)" aria-label="Filtre d'écriture">{{end}}
-<button class="ok">Enregistrer</button></form>
-</div></td></tr>{{end}}
+<td><form method="post" action="/admin/do/set_level" class="row editform">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="node" value="{{.Kind}}:{{.ID}}">
+<div class="control select"><select name="level" aria-label="Niveau : {{.Label}}">{{if ne .Kind "workbook"}}<option value="">Hérité</option>{{end}}{{$lv := str .Level}}{{range $d.Levels}}<option value="{{.}}"{{if eq . $lv}} selected{{end}}>{{levelName .}}</option>{{end}}</select>{{template "pen" .Label}}</div>
+{{if eq .Kind "table"}}<div class="control"><input name="read_filter" value="{{str .ReadFilter}}" placeholder="Filtre de lecture (SQL)" aria-label="Filtre de lecture">{{template "pen" "filtre de lecture"}}</div><div class="control"><input name="write_filter" value="{{str .WriteFilter}}" placeholder="Filtre d'écriture (SQL)" aria-label="Filtre d'écriture">{{template "pen" "filtre d'écriture"}}</div>{{end}}
+<span class="actions save"><button class="ok">Enregistrer</button></span></form></td></tr>{{end}}
 </tbody></table>
 {{end}}
 {{if not $r.builtin}}<form method="post" action="/admin/do/drop_role" class="row danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$r.id}}">{{template "confirm"}}<button>Supprimer ce rôle</button></form>{{end}}

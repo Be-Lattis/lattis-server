@@ -2,10 +2,10 @@
 <p class="lead">Une équipe se donne à un rôle de classeur comme une personne : ses membres reçoivent le rôle. Dans un filtre, <code>"Équipe" IN (SELECT lattis.my_teams())</code> garde les lignes des équipes de la personne qui lit.</p>
 {{range .Data.Teams}}{{$t := .}}
 <section class="panel">
-<div class="field title">
-<div class="view"><h2 class="val">{{$t.name}} <span class="tag">{{str $t.member_count}} membre(s)</span></h2>{{template "pen" "nom de l'équipe"}}</div>
-<form method="post" action="/admin/do/rename_team" class="row edit">{{template "csrf" $}}<input type="hidden" name="id" value="{{$t.id}}"><input name="name" required value="{{$t.name}}" aria-label="Nom de l'équipe"><button class="ok">Renommer</button></form>
-</div>
+<h2>{{$t.name}} <span class="tag">{{str $t.member_count}} membre(s)</span></h2>
+<form method="post" action="/admin/do/rename_team" class="row editform">{{template "csrf" $}}<input type="hidden" name="id" value="{{$t.id}}">
+<div class="field grow"><span class="flabel">Nom de l'équipe</span><div class="control"><input name="name" required value="{{$t.name}}" aria-label="Nom de l'équipe">{{template "pen" "nom de l'équipe"}}</div></div>
+<span class="actions save"><button class="ok">Renommer</button></span></form>
 <table class="compact"><tbody>
 {{range $t.members}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}</td><td><form method="post" action="/admin/do/remove_team_member">{{template "csrf" $}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
 {{else}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}

@@ -192,7 +192,7 @@ func securityHeaders(https bool, next http.HandlerFunc) http.Handler {
 		if https {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
