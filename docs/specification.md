@@ -56,7 +56,7 @@ Composants livrés :
 | `lattis_oauth` | C (ou Rust/pgrx) | Module de validation OAuth de PostgreSQL 18 (`oauth_validator_libraries`). Ne vérifie que les jetons émis par `lattisd` (§7.3). |
 | `schema/` | SQL | Migrations du schéma `lattis` (catalogue, fonctions d'administration, déclencheurs). |
 | Image `be-lattis/server` | Docker | PostgreSQL 18 + `lattis_oauth` + migrations ; `lattisd` dans une image séparée `be-lattis/lattisd`. |
-| `deploy/` | YAML | Docker Compose (parent + réplicas + lattisd) et chart Helm pour Kubernetes (CloudNativePG + lattisd). |
+| `deploy/` | YAML | Docker Compose (parent + réplicas + lattisd) et chart Helm autonome pour Kubernetes. |
 
 ## 4. Deux versions
 
@@ -347,7 +347,7 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 - **Images** : `be-lattis/server:<version>-pg18` (PostgreSQL 18 officiel + `lattis_oauth` + migrations au démarrage) et `be-lattis/lattisd:<version>`.
 - **Docker Compose** : parent, N réplicas, `lattisd`, volume de données, certificats.
 - **Kubernetes** (jalon 6, `deploy/helm/lattis`) : chart Helm **autonome** : parent et réplicas en StatefulSets avec l'image `be-lattis/server` (réplication en flux, un emplacement par réplica), `lattisd` (Deployment, Service, Ingress, ServiceMonitor), secrets fournis par l'exploitant. Pas de bascule automatique ni de sauvegardes gérées.
-- **Plus tard** : variante sur l'opérateur **CloudNativePG** (`Cluster`, `instances: 1 + réplicas`, sauvegardes, bascule). Elle demande une image dérivée de celle de CloudNativePG, un amorçage sans le script `initdb` de l'image (pg_hba, TLS et paramètres gérés par l'opérateur) et la clé publique des jetons en secret projeté. Exemple KEDA (`ScaledObject` sur `lattis_queries_waiting`) avec elle. **[à vérifier]** paramètres OAuth acceptés par l'opérateur, sous-ressource `scale` du `Cluster`.
+- **Possibilité future, non confirmée** : variante sur l'opérateur **CloudNativePG** (`Cluster`, `instances: 1 + réplicas`, sauvegardes, bascule). Elle demande une image dérivée de celle de CloudNativePG, un amorçage sans le script `initdb` de l'image (pg_hba, TLS et paramètres gérés par l'opérateur) et la clé publique des jetons en secret projeté. Exemple KEDA (`ScaledObject` sur `lattis_queries_waiting`) avec elle. **[à vérifier]** paramètres OAuth acceptés par l'opérateur, sous-ressource `scale` du `Cluster`.
 - **Sauvegardes** : `pg_basebackup` + archivage WAL (ou celles de CloudNativePG avec la variante à venir). Restauration testée en CI.
 - Guide d'installation et de configuration : `docs/installation.md`.
 - **Mises à jour** : migrations SQL versionnées, appliquées par `lattisd --migrate` ; compatibilité ascendante d'une version mineure entre `lattisd` et les clients (la découverte publie la version minimale du client).
@@ -385,5 +385,8 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 3. **Classeurs collaboratifs** : colonnes système, déclencheurs, `changes_since`, `why_not`, rôles fournis, `compile_acl`.
 4. **Droits avancés** : rôles personnalisés, filtres, restrictions, « Voir en tant que… », écarts.
 5. **Administration web** (édition `admin`) et mesures.
-6. **Réplicas** et routage, chart Helm (autonome ; variante CloudNativePG plus tard).
+6. **Réplicas** et routage, chart Helm autonome.
 7. **Application web** (édition `web`).
+
+Possibilités futures, **non confirmées** (rien de prévu tant que Louis ne les a pas validées) :
+- Variante du chart Helm sur l'opérateur **CloudNativePG** : bascule automatique sur un réplica, sauvegardes gérées (§17).
