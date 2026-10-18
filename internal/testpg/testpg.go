@@ -76,9 +76,9 @@ func New(t *testing.T) *DB {
 			t.Fatalf("amorçage : %v", err)
 		}
 	}
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_unlock(7357)`); err != nil {
-		t.Fatal(err)
-	}
+	// Le verrou court jusqu'aux migrations, qui créent aussi des rôles
+	// communs (lattis_server_owners, lattis_workbook_creators).
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock(7357)`)
 	superURL := withDB(t, admin, name, "", "")
 	svcURL := withDB(t, admin, name, "lattis_service", ServicePassword)
 	super, err := pgxpool.New(ctx, superURL)
