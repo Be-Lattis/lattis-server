@@ -134,9 +134,9 @@ func TestComposeLogin(t *testing.T) {
 	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin/status" || !strings.Contains(body, "Serveur Acme") {
 		t.Fatalf("console : %d %s\n%s", resp.StatusCode, resp.Request.URL, body)
 	}
-	resp, body = read(c.PostForm(base+"/admin/do/invite_server", url.Values{"csrf": {field(body, "csrf")},
-		"back": {"/admin/users"}, "email": {"invite.e2e@example.com"}}))
-	if !strings.Contains(body, "Invitation enregistrée") {
+	resp, body = read(c.PostForm(base+"/admin/do/add_user", url.Values{"csrf": {field(body, "csrf")},
+		"back": {"/admin/users"}, "email": {"invite.e2e@example.com"}, "server_owner": {"on"}}))
+	if !strings.Contains(body, "Compte créé pour") {
 		t.Fatalf("invitation depuis la console : %d", resp.StatusCode)
 	}
 	var actor string
