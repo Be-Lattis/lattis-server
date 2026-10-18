@@ -93,7 +93,7 @@ var settingGroups = []settingGroup{
 			Options: [][2]string{{"none", "Aucun"}, {"reader", "Lecteur"}, {"participant", "Participant"}, {"editor", "Éditeur"}},
 			Help:    "Rôle donné sur les classeurs ouverts aux arrivants."},
 		{Key: "workbook_creators", Label: "Qui publie des classeurs", Kind: "select",
-			Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs de classeurs"}},
+			Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs"}},
 			Help:    "Le rôle « créateur de classeurs » se donne sur la page Utilisateurs."},
 		{Key: "invitation_ttl", Label: "Validité des invitations", Kind: "duration", Unit: "jours", Scale: day},
 	}},
