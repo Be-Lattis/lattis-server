@@ -52,6 +52,20 @@ jobs:
           TOKEN=$(docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env logs lattisd | grep -o 'token=[0-9a-f]*' | head -1 | cut -d= -f2)
           LATTIS_E2E_LATTISD_URL=http://localhost:8080 LATTIS_E2E_SETUP_TOKEN=$TOKEN \
           LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run Compose ./internal/e2e/
+      - name: Moteur web (lattis-app, main)
+        uses: actions/checkout@v4
+        with:
+          repository: Be-Lattis/lattis-app
+          path: _app
+      - name: Édition web
+        run: |
+          docker build -f _app/build/engine/Dockerfile -t be-lattis/lattis-engine:ci _app
+          docker build -f docker/lattisd/Dockerfile --target web --build-arg ENGINE_IMAGE=be-lattis/lattis-engine:ci -t be-lattis/lattisd:web .
+          cd deploy/compose
+          LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web docker compose up -d --no-build lattisd
+          for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
+          cd ../..
+          LATTIS_E2E_WEB_URL=http://localhost:8080 LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run ComposeWeb ./internal/e2e/
       - if: failure()
         working-directory: deploy/compose
         run: docker compose logs

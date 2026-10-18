@@ -65,11 +65,12 @@ services:
       retries: 40
 
   lattisd:
-    image: be-lattis/lattisd:dev
+    # Édition web : LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web
+    image: ${LATTIS_IMAGE:-be-lattis/lattisd:dev}
     depends_on:
       postgres: { condition: service_healthy }
     environment:
-      LATTIS_EDITION: admin
+      LATTIS_EDITION: ${LATTIS_EDITION:-admin}
       LATTIS_PUBLIC_URL: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
       LATTIS_PG_RW_URL: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@postgres:5432/lattis?sslmode=require
       LATTIS_PG_PUBLIC_RW: localhost:5432
@@ -84,11 +85,13 @@ services:
     command: ["--migrate"]
     volumes:
       - secrets:/etc/lattis:ro
+      - web:/var/lib/lattis/web
     ports:
       - "8080:8080"
       - "127.0.0.1:9464:9464"
 
 volumes:
+  web:
   pgdata:
   replicadata:
   secrets:
