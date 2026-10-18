@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lalamefine/lattis/protocol"
+
 	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
@@ -70,31 +72,12 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 
-// Discovery est le document /.well-known/lattis.json lu par l'application.
+// Discovery est le document /.well-known/lattis.json lu par l'application :
+// le type partagé avec elle (protocol), points PostgreSQL au format objet
+// {"host", "port"} du contrat (§1).
 type Discovery struct {
-	Name             string              `json:"name"`
-	Logo             string              `json:"logo,omitempty"`
-	Version          string              `json:"version"`
-	MinClientVersion string              `json:"min_client_version"`
-	Edition          string              `json:"edition"`
-	AccessMode       string              `json:"access_mode"`
-	Issuer           string              `json:"issuer"`
-	ClientID         string              `json:"client_id"`
-	Scope            string              `json:"scope"`
-	AuthorizationURL string              `json:"authorization_endpoint"`
-	TokenURL         string              `json:"token_endpoint"`
-	RevocationURL    string              `json:"revocation_endpoint"`
-	PreviewURL       string              `json:"preview_endpoint"`
-	Providers        []DiscoveryProvider `json:"providers"`
-	Postgres         DiscoveryPostgres   `json:"postgres"`
-}
-
-// DiscoveryProvider est un fournisseur affiché sur la page de connexion de Lattis.
-type DiscoveryProvider struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Kind  string `json:"kind"`
-	Icon  string `json:"icon"`
+	protocol.Discovery
+	Postgres DiscoveryPostgres `json:"postgres"`
 }
 
 // DiscoveryPostgres décrit les points de connexion PostgreSQL.
@@ -118,17 +101,19 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := Discovery{
-		Name: cfg.DisplayName, Logo: cfg.LogoURL, Version: Version, MinClientVersion: s.Config.MinClient,
-		Edition: string(s.Config.Edition), AccessMode: cfg.AccessMode, Issuer: s.Config.Issuer(),
-		ClientID: auth.DesktopClientID, Scope: auth.DefaultScope,
-		AuthorizationURL: s.Config.URL("/oauth/authorize"), TokenURL: s.Config.URL("/oauth/token"),
-		RevocationURL: s.Config.URL("/oauth/revoke"), PreviewURL: s.Config.URL("/api/preview"),
-		Providers: []DiscoveryProvider{},
+		Discovery: protocol.Discovery{
+			Name: cfg.DisplayName, Logo: cfg.LogoURL, Version: Version, MinClientVersion: s.Config.MinClient,
+			Edition: string(s.Config.Edition), AccessMode: cfg.AccessMode, Issuer: s.Config.Issuer(),
+			ClientID: protocol.DesktopClientID, Scope: protocol.DefaultScope,
+			AuthorizationEndpoint: s.Config.URL(protocol.PathAuthorize), TokenEndpoint: s.Config.URL(protocol.PathToken),
+			RevocationEndpoint: s.Config.URL(protocol.PathRevoke), PreviewEndpoint: s.Config.URL("/api/preview"),
+			Providers: []protocol.Provider{},
+		},
 		Postgres: DiscoveryPostgres{Database: s.Config.PGDatabase, SSLMode: s.Config.PGSSLMode,
 			RW: s.Config.PGPublicRW, RO: s.readEndpoints()},
 	}
 	for _, p := range providers {
-		d.Providers = append(d.Providers, DiscoveryProvider{ID: p.ID, Label: p.Label, Kind: p.Kind, Icon: p.Kind})
+		d.Providers = append(d.Providers, protocol.Provider{ID: p.ID, Label: p.Label, Kind: p.Kind, Icon: p.Kind})
 	}
 	w.Header().Set("Cache-Control", "public, max-age=10") // court : la liste ro suit le retard des réplicas
 	writeJSON(w, d)

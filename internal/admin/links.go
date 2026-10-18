@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lalamefine/lattis/protocol"
 
 	"github.com/Be-Lattis/lattis-server/internal/config"
 )
@@ -23,11 +24,13 @@ const openCookie = "lattis_open"
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // WorkbookLink est l'adresse à partager pour un classeur.
-func WorkbookLink(cfg *config.Config, id string) string { return cfg.URL("/w/" + id) }
+func WorkbookLink(cfg *config.Config, id string) string {
+	return protocol.WorkbookLink(cfg.Issuer(), id)
+}
 
 // DesktopLink est le lien qui ouvre le classeur dans l'application de bureau.
 func DesktopLink(cfg *config.Config, id string) string {
-	return "lattis://open?" + url.Values{"server": {cfg.Issuer()}, "workbook": {id}}.Encode()
+	return protocol.DesktopLink(cfg.Issuer(), id)
 }
 
 type linkData struct {

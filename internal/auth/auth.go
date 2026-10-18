@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lalamefine/lattis/protocol"
 	"golang.org/x/oauth2"
 
 	"github.com/Be-Lattis/lattis-server/internal/config"
@@ -32,7 +33,7 @@ import (
 )
 
 // DesktopClientID est le client public de l'application de bureau.
-const DesktopClientID = "lattis-desktop"
+const DesktopClientID = protocol.DesktopClientID
 
 // AdminClientID est le client interne de l'interface d'administration. Ses
 // codes ne s'échangent pas sur /oauth/token : lattisd les consomme lui-même
@@ -43,7 +44,7 @@ const AdminClientID = "lattis-admin"
 var knownScopes = []string{"openid", "lattis", "offline_access", "email", "profile"}
 
 const (
-	DefaultScope = "openid lattis"
+	DefaultScope = protocol.DefaultScope
 	codeTTL      = 2 * time.Minute
 	requestTTL   = 10 * time.Minute
 	loginCookie  = "lattis_login"
@@ -612,17 +613,9 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 
 // --- Point de jeton --------------------------------------------------------------
 
-// TokenResponse est la réponse de /oauth/token. pg_role est le nom du rôle
-// PostgreSQL à utiliser à la connexion.
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	IDToken      string `json:"id_token,omitempty"`
-	Scope        string `json:"scope"`
-	PGRole       string `json:"pg_role"`
-}
+// TokenResponse est la réponse de /oauth/token, partagée avec
+// l'application (protocol). PGRole est le rôle PostgreSQL de la connexion.
+type TokenResponse = protocol.TokenResponse
 
 func (s *Service) token(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -723,7 +716,7 @@ func (s *Service) issue(u store.User, clientID, scope, nonce string, authTime in
 	if err != nil {
 		return TokenResponse{}, "", err
 	}
-	return TokenResponse{AccessToken: access, TokenType: "Bearer", ExpiresIn: int(ttl.Seconds()),
+	return TokenResponse{AccessToken: access, TokenType: "Bearer", ExpiresIn: int64(ttl.Seconds()),
 		IDToken: id, Scope: scope, PGRole: u.PGRole}, randomToken(), nil
 }
 

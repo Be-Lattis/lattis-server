@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/lalamefine/lattis v0.0.0-20261018212232-2d1de70adfc5
 	github.com/prometheus/client_golang v1.25.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/oauth2 v0.37.0

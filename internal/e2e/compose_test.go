@@ -76,14 +76,14 @@ func TestComposeLogin(t *testing.T) {
 
 	verifier := strings.Repeat("v", 50)
 	sum := sha256.Sum256([]byte(verifier))
-	resp, body := read(c.Get(d.AuthorizationURL + "?" + url.Values{
+	resp, body := read(c.Get(d.AuthorizationEndpoint + "?" + url.Values{
 		"client_id": {d.ClientID}, "redirect_uri": {redirect}, "response_type": {"code"}, "scope": {d.Scope},
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"}, "state": {"s"},
 	}.Encode()))
 	resp, _ = read(c.PostForm(base+resp.Request.URL.Path, url.Values{"req": {field(body, "req")}, "csrf": {field(body, "csrf")},
 		"email": {owner}, "password": {pw}}))
 	loc, _ := url.Parse(resp.Header.Get("Location"))
-	resp, body = read(c.PostForm(d.TokenURL, url.Values{"grant_type": {"authorization_code"}, "client_id": {d.ClientID},
+	resp, body = read(c.PostForm(d.TokenEndpoint, url.Values{"grant_type": {"authorization_code"}, "client_id": {d.ClientID},
 		"code": {loc.Query().Get("code")}, "redirect_uri": {redirect}, "code_verifier": {verifier}}))
 	var tr struct {
 		AccessToken string `json:"access_token"`
