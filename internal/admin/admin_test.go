@@ -246,7 +246,25 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatal("aperçu")
 	}
 
-	for _, p := range []string{"/admin/providers", "/admin/users?q=autre", "/admin/audit?action=set_level", "/admin/status"} {
+	// Équipes : création, membre, rôle donné à l'équipe.
+	if _, body = b.post("/admin/do/create_team", url.Values{"csrf": {csrf}, "back": {"/admin/teams"}, "name": {"Nord"}}); !strings.Contains(body, "Équipe créée.") {
+		t.Fatal("création d'équipe")
+	}
+	var team string
+	if err := e.db.Super.QueryRow(ctx, `SELECT id::text FROM lattis.teams WHERE name = 'Nord'`).Scan(&team); err != nil {
+		t.Fatal(err)
+	}
+	if _, body = b.post("/admin/do/add_team_member", url.Values{"csrf": {csrf}, "back": {"/admin/teams"}, "team_id": {team}, "email": {ownerEmail}}); !strings.Contains(body, "ajouté à l&#39;équipe") || !strings.Contains(body, ownerEmail) {
+		t.Fatal("membre d'équipe")
+	}
+	if _, body = b.post("/admin/do/grant_team", url.Values{"csrf": {csrf}, "back": {page}, "role_id": {custom}, "team_id": {team}}); !strings.Contains(body, "Équipe ajoutée au rôle.") || !strings.Contains(body, "Équipe Nord") {
+		t.Fatal("équipe ajoutée au rôle")
+	}
+	if _, body = b.post("/admin/do/drop_team", url.Values{"csrf": {csrf}, "back": {"/admin/teams"}, "id": {team}, "confirm": {"on"}}); !strings.Contains(body, "Équipe supprimée.") || !strings.Contains(body, "Aucune équipe.") {
+		t.Fatal("suppression d'équipe")
+	}
+
+	for _, p := range []string{"/admin/providers", "/admin/users?q=autre", "/admin/audit?action=set_level", "/admin/status", "/admin/teams"} {
 		if resp, body := b.get(p); resp.StatusCode != http.StatusOK || strings.Contains(body, `class="error"`) {
 			t.Fatalf("%s : %d", p, resp.StatusCode)
 		}

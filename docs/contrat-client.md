@@ -97,18 +97,24 @@ Colonnes système de chaque tableau : `lattis_id`, `lattis_pos`, `lattis_xid`, `
 
 | Besoin | Appel |
 |---|---|
-| Écran « Droits d'un classeur » | `workbook_acl(workbook_id) → jsonb` : `roles` (`id`, `name`, `builtin`, `grants`, `members`), `restrictions`, `invitations` en attente |
-| Rôle personnalisé | `create_role(workbook_id, name) → uuid` (aucun droit tant qu'aucun niveau n'est posé), `drop_role(role_id)`, `grant_role(role_id, user_id)`, `revoke_role(role_id, user_id)` |
+| Écran « Droits d'un classeur » | `workbook_acl(workbook_id) → jsonb` : `roles` (`id`, `name`, `builtin`, `grants`, `members`, `teams` : `[{"team_id", "name"}]`), `restrictions`, `invitations` en attente |
+| Rôle personnalisé | `create_role(workbook_id, name) → uuid` (aucun droit tant qu'aucun niveau n'est posé), `drop_role(role_id)`, `grant_role(role_id, user_id ou team_id)`, `revoke_role(role_id, user_id ou team_id)` |
 | Niveau d'un rôle | `set_level(role_id, 'workbook'\|'sheet'\|'table', node_id, 'none'\|'reader'\|'participant'\|'editor', read_filter, write_filter)`. Le niveau d'un nœud s'hérite vers le bas ; `NULL` comme niveau retire celui du nœud. Filtres : expressions SQL booléennes sur les colonnes du tableau (`"Région" = 'Nord'`), tableaux seulement. |
 | Restriction | `add_restriction(workbook_id, table_id, 'select'\|'insert'\|'update'\|'delete'\|'all', role_ids, predicate, label) → uuid` (`role_ids` vide = tous les rôles du classeur sauf propriétaires et concepteurs), `drop_restriction(id)`. Combinées en ET avec les niveaux. |
 | Écarts | `check_drift(workbook_id) → jsonb` : tableaux dont les règles ou droits ont changé hors de Lattis, avec `foreign_policies` (règles hors `lattis_*`) et `foreign_grants` (droits donnés à d'autres que les rôles du classeur, `PUBLIC` compris). `compile_acl(workbook_id)` (propriétaire ou concepteur) recompile et remet d'aplomb les règles et droits générés, sans republier ; il ne retire pas les règles et droits étrangers, qui restent signalés tant qu'ils sont là. |
 | Inviter à un rôle personnalisé | `invite(email, workbook_id, roles)` : `roles` mêle rôles fournis (`reader`…) et noms de rôles personnalisés (sans casse). Une adresse inconnue reçoit un compte en attente : `grant_role` vaut ensuite pour elle aussi. |
-| Membres (propriétaire ou concepteur) | `workbook_members(workbook_id) → jsonb` : `[{"user_id", "email", "display_name", "pg_role", "roles"}]`, pour choisir qui voir dans « Voir en tant que… ». |
+| Membres (propriétaire ou concepteur) | `workbook_members(workbook_id) → jsonb` : `[{"user_id", "email", "display_name", "pg_role", "roles", "teams"}]`, pour choisir qui voir dans « Voir en tant que… ». Les membres par une équipe y sont aussi : `roles` réunit leurs rôles en personne et par leurs équipes, `teams` nomme les équipes par lesquelles ils sont membres. |
 | Tableau rattaché à une feuille | `create_table(workbook_id, name, columns, sheet_id)` : `set_level(…, 'sheet', sheet_id, …)` s'applique à ses tableaux. Sans `sheet_id`, le tableau n'hérite que du classeur. |
 
 `my_capabilities` : `read_filtered` vaut vrai quand un filtre de lecture ou une restriction `select`/`all` me vise (je ne vois peut-être pas toutes les lignes), `write_filtered` quand un filtre d'écriture ou une restriction `insert`/`update`/`delete`/`all` me vise. `filtered` (l'un ou l'autre filtre de niveau) reste pour compatibilité.
 
-Pas encore : groupes d'annuaire et équipes comme membres (`members.principal` ne désigne que des utilisateurs).
+**Équipes.** Créées par les propriétaires du serveur (administration web, écran « Équipes », ou `create_team(name) → uuid`, `rename_team(id, name)`, `drop_team(id)`, `add_team_member(team_id, user_id)`, `remove_team_member(team_id, user_id)`). Pour tous :
+- `list_teams() → jsonb` : `[{"id", "name", "member_count", "members"}]`, où `members` est `null` sauf pour un propriétaire du serveur. C'est la liste où choisir une équipe dans « Partager ».
+- Une équipe est membre d'un rôle comme une personne : `grant_role(role_id, team_id)`. Ses membres reçoivent le rôle tant qu'ils sont dans l'équipe. `my_capabilities`, les règles et « Voir en tant que… » en tiennent compte sans rien de plus.
+- Un membre ajouté ou retiré d'une équipe envoie `*acl` sur le canal de chaque classeur où l'équipe a un rôle.
+- « Mon équipe » dans un filtre : `"Équipe" IN (SELECT lattis.my_teams())`. `my_teams()` rend les noms des équipes de la personne qui lit, et il est permis dans les filtres et les restrictions.
+- Le nom d'une équipe est unique, sans casse. Le renommer change ce que rend `my_teams()`, donc les filtres qui comparent une colonne à ce nom.
+- Les groupes d'annuaire ne sont pas encore traités. Ils pourront alimenter ces équipes plus tard.
 
 Un filtre refusé (point-virgule, `$`, commentaire, parenthèses déséquilibrées, colonne inconnue, expression non booléenne) lève `invalid_parameter_value` (22023) avec la raison.
 

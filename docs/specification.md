@@ -82,7 +82,8 @@ L'interface d'administration et l'application appellent les **fonctions SQL `lat
 | `workbooks` | `id`, `schema_name` (`wb_<slug>`), `title`, `mode` (`frozen`, `collaborative`), `version` (classeur figé), `created_by`, `created_at`. |
 | `roles` | `id`, `workbook_id`, `name`, `builtin` (`owner`, `designer`, `editor`, `participant`, `reader` ou NULL), `pg_role`. |
 | `role_grants` | `role_id`, `node_kind` (`workbook`, `sheet`, `table`), `node_id`, `level` (`none`, `reader`, `participant`, `editor`), `read_filter` (SQL, facultatif), `write_filter` (SQL, facultatif). |
-| `members` | `role_id`, `principal` (`user_id` ou groupe d'annuaire), `granted_by`, `granted_at`. |
+| `members` | `role_id`, `principal` (`user_id`), `granted_by`, `granted_at`. |
+| `teams`, `team_members`, `team_roles` | Équipes Lattis (`id`, `name`, rôle PostgreSQL `NOLOGIN` `lattis_team_<id>`), leurs membres, et les rôles de classeur donnés à une équipe. Les groupes d'annuaire pourront les alimenter. |
 | `restrictions` | `id`, `table_id`, `command` (`select`, `insert`, `update`, `delete`, `all`), `applies_to` (rôles, vide = tous), `predicate` (SQL), `label`. |
 | `tombstones` | `workbook_id`, `table_id`, `row_id` (uuid), `xid` (`xid8`), `deleted_by`, `deleted_at`. |
 | `audit` | Journal des actions d'administration (qui, quoi, quand, avant/après). |
@@ -194,7 +195,7 @@ Rôles **personnalisés** : créés par un propriétaire ; un niveau (`none`, `r
 
 ### 8.2 Cumul et restrictions
 
-- Un utilisateur (ou un groupe d'annuaire) reçoit **plusieurs rôles** ; ses droits sont leur **union** (droits PostgreSQL cumulés, règles permissives combinées en OU).
+- Un utilisateur (ou une équipe, dont les membres héritent) reçoit **plusieurs rôles** ; ses droits sont leur **union** (droits PostgreSQL cumulés, règles permissives combinées en OU).
 - Les **restrictions** retirent des droits : règles `AS RESTRICTIVE` (combinées en ET), pour tous ou pour certains rôles.
 
 ### 8.3 Compilation

@@ -194,6 +194,13 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 	return map[string]any{"Q": q, "Users": users, "Invitations": invitations, "Me": u.ID}, nil
 }
 
+// --- Équipes -------------------------------------------------------------------------------
+
+func loadTeams(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
+	teams, err := queryJSON(ctx, tx, `SELECT lattis.list_teams()`)
+	return map[string]any{"Teams": teams}, err
+}
+
 // --- Classeurs -----------------------------------------------------------------------------
 
 func loadWorkbooks(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
@@ -267,7 +274,11 @@ func (s *Service) loadWorkbook(ctx context.Context, tx pgx.Tx, r *http.Request, 
 		}
 		roles = append(roles, rv)
 	}
-	out := map[string]any{"ACL": acl, "Workbook": wb, "Tables": tables, "Roles": roles, "Levels": levels}
+	teams, err := queryJSON(ctx, tx, `SELECT lattis.list_teams()`)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{"ACL": acl, "Workbook": wb, "Tables": tables, "Roles": roles, "Levels": levels, "Teams": teams}
 	if wb["mode"] == "collaborative" && wb["state"] == "published" {
 		drift, err := queryJSON(ctx, tx, `SELECT lattis.check_drift($1::uuid)`, id)
 		if err != nil {

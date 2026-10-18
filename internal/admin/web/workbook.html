@@ -2,17 +2,19 @@
 <p class="lead"><strong>{{$wb.title}}</strong> · {{if eq (str $wb.mode) "frozen"}}figé{{else}}collaboratif{{end}} · version {{str $wb.version}} · schéma <code>{{$wb.schema}}</code></p>
 
 {{if $d.Drift}}<section class="panel warn"><h2>Écarts détectés</h2>
-<p>Les règles de ces tableaux ont été modifiées hors de Lattis. Enregistrer un niveau recompile les droits du classeur.</p>
-<ul>{{range $d.Drift}}<li>{{.name}}{{if .foreign_policies}} : règles étrangères {{range .foreign_policies}}<code>{{.}}</code> {{end}}{{end}}</li>{{end}}</ul></section>{{end}}
+<p>Les règles de ces tableaux ont été modifiées hors de Lattis. Enregistrer un niveau recompile les règles générées ; les règles et droits étrangers restent signalés tant qu'ils ne sont pas retirés à la main.</p>
+<ul>{{range $d.Drift}}<li>{{.name}}{{if .foreign_policies}} : règles étrangères {{range .foreign_policies}}<code>{{.}}</code> {{end}}{{end}}{{if .foreign_grants}} ; droits donnés à {{range .foreign_grants}}<code>{{.}}</code> {{end}}{{end}}</li>{{end}}</ul></section>{{end}}
 
 {{range $d.Roles}}{{$r := .Role}}
 <section class="panel">
 <h2>{{if $r.builtin}}{{builtinName $r.builtin}}{{else}}{{$r.name}} <span class="tag">personnalisé</span>{{end}}</h2>
 <table class="compact"><tbody>
 {{range $r.members}}<tr><td>{{.email}}</td><td><form method="post" action="/admin/do/revoke_role">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
-{{else}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}
+{{end}}{{range $r.teams}}<tr><td>Équipe {{.name}}</td><td><form method="post" action="/admin/do/revoke_role">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="user_id" value="{{.team_id}}"><button>Retirer</button></form></td></tr>
+{{end}}{{if and (not $r.members) (not $r.teams)}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}
 </tbody></table>
 <form method="post" action="/admin/do/grant_role" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant"><button>Ajouter</button></form>
+{{if $d.Teams}}<form method="post" action="/admin/do/grant_team" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><select name="team_id" aria-label="Équipe">{{range $d.Teams}}<option value="{{.id}}">{{.name}}</option>{{end}}</select><button>Ajouter l'équipe</button></form>{{end}}
 {{if .Nodes}}
 <h3>Niveaux</h3>
 <table class="levels"><thead><tr><th>Nœud</th><th>Niveau</th><th>Filtre de lecture</th><th>Filtre d'écriture</th><th></th></tr></thead><tbody>
