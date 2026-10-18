@@ -154,4 +154,44 @@ func TestSyncFeedback(t *testing.T) {
 	if !covered(after) {
 		t.Fatal("point de reprise récent non couvert")
 	}
+
+	// Transaction longue pendant un rechargement : sync_point reste sous la
+	// purge, l'instantané du rechargement dit que tout était déjà pris.
+	long, err := db.Super.Begin(ctx)
+	must(err)
+	defer long.Rollback(ctx)
+	_, err = long.Exec(ctx, `SELECT pg_current_xact_id()`)
+	must(err)
+	must(db.AsUser(t, editor.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM `+tbl+` WHERE v = 3`)
+		return err
+	}))
+	reload := func() (since, snap string) {
+		t.Helper()
+		must(db.AsUser(t, editor.PGRole, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT lattis.sync_point()::text, pg_current_snapshot()::text`).Scan(&since, &snap)
+		}))
+		return since, snap
+	}
+	_, before := reload()
+	_, err = db.Super.Exec(ctx, `UPDATE lattis.tombstones SET deleted_at = now() - interval '400 days'`)
+	must(err)
+	must(db.Store.Purge(ctx))
+	since2, snap := reload()
+	coveredFrom := func(s, snap string) (ok bool) {
+		t.Helper()
+		must(db.AsUser(t, reader.PGRole, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT lattis.since_covered($1::xid8, $2::pg_snapshot)`, s, snap).Scan(&ok)
+		}))
+		return ok
+	}
+	if covered(since2) {
+		t.Fatal("transaction longue : since2 devrait être sous la purge")
+	}
+	if !coveredFrom(since2, snap) {
+		t.Fatal("rechargement postérieur à la purge non couvert")
+	}
+	if coveredFrom(since2, before) {
+		t.Fatal("rechargement antérieur à la purge couvert")
+	}
 }
