@@ -167,6 +167,40 @@ func TestAdvancedRights(t *testing.T) {
 	if len(drift) != 1 || !strings.Contains(strings.Join(anyStrings(drift[0]["foreign_policies"]), ","), "bricolage") {
 		t.Fatalf("écart non détecté : %v", drift)
 	}
+	// Recompiler ne l'absorbe pas : la règle étrangère reste signalée, comme un
+	// droit donné à la main.
+	_, err = db.Super.Exec(ctx, `GRANT SELECT ON `+tbl+` TO PUBLIC`)
+	must(err)
+	compile := func() {
+		must(as(owner, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `SELECT lattis.compile_acl($1::uuid)`, wb)
+			return err
+		}))
+	}
+	compile()
+	checkDrift()
+	if len(drift) != 1 || !strings.Contains(strings.Join(anyStrings(drift[0]["foreign_policies"]), ","), "bricolage") ||
+		strings.Join(anyStrings(drift[0]["foreign_grants"]), ",") != "PUBLIC" {
+		t.Fatalf("écart absorbé par compile_acl : %v", drift)
+	}
+	_, err = db.Super.Exec(ctx, `DROP POLICY bricolage ON `+tbl+`; REVOKE SELECT ON `+tbl+` FROM PUBLIC`)
+	must(err)
+	checkDrift()
+	if len(drift) != 0 {
+		t.Fatalf("écart après retrait des ajouts : %v", drift)
+	}
+	// Une règle générée retirée à la main est signalée, et la recompilation la remet.
+	_, err = db.Super.Exec(ctx, `DROP POLICY lattis_owner ON `+tbl)
+	must(err)
+	checkDrift()
+	if len(drift) != 1 {
+		t.Fatalf("règle générée retirée non détectée : %v", drift)
+	}
+	compile()
+	checkDrift()
+	if len(drift) != 0 {
+		t.Fatalf("écart après recompilation : %v", drift)
+	}
 	// Un éditeur ne consulte pas les écarts.
 	if _, err := exec(north, `SELECT lattis.check_drift($1::uuid)`, wb); pgCode(err) != "42501" {
 		t.Fatalf("check_drift par un éditeur : %v", err)
