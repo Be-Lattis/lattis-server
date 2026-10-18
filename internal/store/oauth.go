@@ -120,10 +120,15 @@ func (s *Store) RevokeRefresh(ctx context.Context, token string) error {
 	return err
 }
 
-// Purge supprime les codes et jetons expirés.
+// Purge supprime les codes et jetons expirés, et les anciennes versions des
+// classeurs figés une fois leur délai de grâce passé.
 func (s *Store) Purge(ctx context.Context) error {
 	_, err := s.DB.Exec(ctx, `
 		DELETE FROM lattis.oauth_codes WHERE expires_at < now() - interval '1 day';
 		DELETE FROM lattis.refresh_tokens WHERE expires_at < now() - interval '1 day'`)
+	if err != nil {
+		return err
+	}
+	_, err = s.DB.Exec(ctx, `SELECT lattis.drop_expired_versions()`)
 	return err
 }

@@ -195,7 +195,7 @@ func serve(doMigrate bool) error {
 }
 
 func purgeLoop(ctx context.Context, st *store.Store) {
-	t := time.NewTicker(time.Hour)
+	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for {
 		select {
