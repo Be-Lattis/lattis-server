@@ -74,3 +74,6 @@ details.panel > summary::-webkit-details-marker { display: none; }
 details.panel > summary h2 { margin: 0; } details.panel > summary h2::before { content: "▸ "; color: var(--muted); }
 details.panel[open] > summary { margin-bottom: 12px; } details.panel[open] > summary h2::before { content: "▾ "; }
 [hidden] { display: none !important; }
+.control.editing input:not([type=checkbox]), .control.editing select { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.control.editing.check { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.control.changed input:not([type=checkbox]), .control.changed select { background-color: color-mix(in srgb, var(--accent) 12%, transparent); }

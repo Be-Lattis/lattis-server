@@ -13,6 +13,12 @@ for (const c of document.querySelectorAll(".control")) {
     c.closest("form")?.classList.add("dirty");
     inputs[0]?.focus();
   });
+  // Reste en vert jusqu'à l'enregistrement ; teinté si la valeur a changé.
+  const initial = [...inputs].map((i) => (i.type === "checkbox" ? i.checked : i.value));
+  const mark = () => c.classList.toggle("changed",
+    [...inputs].some((i, n) => (i.type === "checkbox" ? i.checked : i.value) !== initial[n]));
+  c.addEventListener("input", mark);
+  c.addEventListener("change", mark);
 }
 // Un champ bloqué part quand même avec le formulaire (valeur inchangée).
 document.addEventListener("submit", (e) => {
