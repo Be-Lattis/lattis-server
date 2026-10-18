@@ -63,6 +63,12 @@ func (s *Service) actions() map[string]actionFunc {
 		"invite_server":           inviteServer,
 		"revoke_invitation":       exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
 		"drop_workbook":           exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
+		"create_team":             exec1(`SELECT lattis.create_team($1)`, "Équipe créée.", false, "name"),
+		"rename_team":             exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
+		"drop_team":               exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
+		"add_team_member":         addTeamMember,
+		"remove_team_member":      exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
+		"grant_team":              exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
 		"invite_workbook":         inviteWorkbook,
 		"create_role":             createRole,
 		"drop_role":               exec1(`SELECT lattis.drop_role($1::uuid)`, "Rôle supprimé.", true, "id"),
@@ -302,19 +308,35 @@ func setLevel(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	return "Niveau enregistré.", err
 }
 
-func grantRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
-	email := strings.ToLower(f.s("email"))
+// userByEmail : compte le plus récemment connecté pour une adresse.
+func userByEmail(ctx context.Context, tx pgx.Tx, email string) (string, error) {
 	var uid string
 	err := tx.QueryRow(ctx, `SELECT id::text FROM lattis.users WHERE email = $1
 		ORDER BY last_login_at DESC NULLS LAST LIMIT 1`, email).Scan(&uid)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", inputError("Aucun compte pour " + email + " : invitez-le d'abord.")
 	}
+	return uid, err
+}
+
+func grantRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	email := strings.ToLower(f.s("email"))
+	uid, err := userByEmail(ctx, tx, email)
 	if err != nil {
 		return "", err
 	}
 	_, err = tx.Exec(ctx, `SELECT lattis.grant_role($1::uuid, $2::uuid)`, f.s("role_id"), uid)
 	return email + " ajouté au rôle.", err
+}
+
+func addTeamMember(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	email := strings.ToLower(f.s("email"))
+	uid, err := userByEmail(ctx, tx, email)
+	if err != nil {
+		return "", err
+	}
+	_, err = tx.Exec(ctx, `SELECT lattis.add_team_member($1::uuid, $2::uuid)`, f.s("team_id"), uid)
+	return email + " ajouté à l'équipe.", err
 }
 
 func addRestriction(ctx context.Context, tx pgx.Tx, f form) (string, error) {
