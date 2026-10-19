@@ -16,16 +16,16 @@ import (
 var publicAPI = []string{
 	"abort_publish", "actor", "add_column", "alter_column_type", "create_index", "drop_column", "drop_index", "drop_table", "add_data_audience", "add_data_audience_by_email", "add_provider", "add_restriction",
 	"add_team_member", "admin_pipelines", "admin_status", "admin_workbooks", "allow_tenant", "can_create_workbooks",
-	"can_publish_data", "changes_since", "check_drift", "compile_acl", "create_data_folder", "create_dataset",
+	"can_publish_data", "changes_since", "check_drift", "compile_acl", "create_data_folder", "create_dataset", "create_form",
 	"create_password_account", "create_pipeline", "create_pushed_source", "create_role", "create_table", "create_team", "create_workbook",
-	"data_catalog", "dataset_audience_history", "dataset_changed_ids", "dataset_tombstones", "disable_user", "disallow_tenant", "drop_data_folder", "drop_dataset",
-	"drop_pipeline", "drop_pushed_source", "drop_restriction", "drop_role", "drop_team", "drop_workbook", "enable_user", "finish_publish",
-	"grant_role", "insert_column", "invite", "is_server_owner", "link_dataset", "list_teams", "login_summary", "move_data_folder",
+	"data_catalog", "dataset_audience_history", "dataset_changed_ids", "dataset_tombstones", "disable_user", "disallow_tenant", "drop_data_folder", "drop_dataset", "drop_form",
+	"drop_pipeline", "drop_pushed_source", "drop_restriction", "drop_role", "drop_team", "drop_workbook", "enable_user", "finish_publish", "form_audience_add", "form_audience_add_by_email", "form_audience_remove", "form_begin", "form_preview_url", "form_record", "form_set_image", "form_stats", "forms_settings",
+	"grant_role", "insert_column", "invite", "is_server_owner", "link_dataset", "list_forms", "list_teams", "login_summary", "move_data_folder",
 	"my_capabilities", "my_pushed_sources", "my_teams", "my_workbooks", "pipeline_targets", "publish_script", "push_pipeline", "pushed_run", "record_open",
 	"remove_data_audience", "remove_provider", "remove_team_member", "rename_column", "rename_data_folder", "rename_table", "rename_team", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "run_pipeline", "save_meta", "set_config",
-	"set_data_publisher", "set_key", "set_level", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
-	"table_indexes", "table_ref", "tombstones_since", "trg_notify", "trg_stamp", "unlink_dataset", "update_dataset", "update_pipeline",
+	"set_data_publisher", "set_form_state", "set_key", "set_level", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
+	"table_indexes", "table_ref", "tombstones_since", "trg_notify", "trg_stamp", "unlink_dataset", "update_dataset", "update_form", "update_pipeline",
 	"update_provider", "update_pushed_source", "why_not", "workbook_acl", "workbook_members",
 }
 
