@@ -45,9 +45,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /jwks.json", s.jwks)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /readyz", s.readyz)
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/.well-known/lattis.json", http.StatusFound)
-	})
 	mux.HandleFunc("POST /api/preview", s.preview)
 	s.Auth.Routes(mux)
 	if s.Admin != nil {

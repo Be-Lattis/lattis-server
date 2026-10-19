@@ -160,6 +160,17 @@ func TestSetupSignsOwnerIn(t *testing.T) {
 	if resp, body := b.login(chosen, pw, "/admin/server"); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom du serveur") {
 		t.Fatalf("connexion avec une ancienne session : %d %s", resp.StatusCode, resp.Request.URL)
 	}
+	// Accueil à la racine, puis déconnexion depuis une page du site.
+	if _, body := b.get("/"); !strings.Contains(body, "Adresse du serveur") {
+		t.Fatal("page d'accueil attendue à la racine")
+	}
+	req, _ := http.NewRequest("POST", e.srv.URL+"/logout", strings.NewReader("next=%2Fadmin%2Fserver"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", e.srv.URL)
+	if resp, err := b.c.Do(req); err != nil || !strings.Contains(resp.Request.URL.String(), "/login/") {
+		t.Fatalf("déconnexion : %v %v", resp.Request.URL, err)
+	}
+	b.login(chosen, pw, "/admin/server")
 	// Le passe-droit ne sert qu'une fois : une nouvelle connexion redemande le mot de passe.
 	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/"}})
 	if _, body := b.get("/admin/server"); !strings.Contains(body, `type="password"`) {

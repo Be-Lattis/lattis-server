@@ -93,6 +93,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /login/{provider}", s.passwordLogin)
 	mux.HandleFunc("GET /callback/{provider}", s.callback)
 	mux.HandleFunc("GET /setup", s.setupForm)
+	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("POST /setup", s.setupSubmit)
 	mux.HandleFunc("GET /static/lattis.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -401,7 +402,8 @@ func (s *Service) loginError(w http.ResponseWriter, r *http.Request, p store.Pro
 	s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultError).Inc()
 	slog.Warn("échec de connexion", "provider", p.Label, "err", err)
 	s.render(w, r, http.StatusBadGateway, "message", view{Title: "Connexion",
-		Error: "La connexion avec " + p.Label + " a échoué. Réessayez depuis Lattis."})
+		Error: "La connexion avec " + p.Label + " a échoué. Recommencez depuis l'application Lattis, ou ci-dessous pour la console.",
+		Links: s.restartLinks()})
 }
 
 // complete inscrit l'utilisateur et renvoie un code d'autorisation au client.
@@ -616,7 +618,8 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, r, http.StatusOK, "message", view{Title: "Mot de passe enregistré",
-		Message: "Vous pouvez maintenant vous connecter à ce serveur depuis Lattis."})
+		Message: "Vous pouvez maintenant vous connecter à ce serveur avec " + email + ".",
+		Address: s.Config.Issuer(), Links: s.welcomeLinks()})
 }
 
 // --- Point de jeton --------------------------------------------------------------
@@ -765,6 +768,10 @@ type view struct {
 	Action, Req, CSRF, Email, Back      string
 	Token                               string
 	MinLength                           int
+	// Links : boutons sous un message ; Address : adresse du serveur à saisir
+	// dans l'application.
+	Links   []providerLink
+	Address string
 }
 
 func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, page string, v view) {
@@ -780,8 +787,9 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, pag
 }
 
 func (s *Service) expired(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, http.StatusBadRequest, "message", view{Title: "Session expirée",
-		Error: "La demande de connexion a expiré. Relancez la connexion depuis Lattis."})
+	s.render(w, r, http.StatusBadRequest, "message", view{Title: "Page expirée",
+		Error: "Cette page de connexion était restée ouverte trop longtemps. Recommencez depuis l'application Lattis, ou ci-dessous pour la console.",
+		Links: s.restartLinks()})
 }
 
 func (s *Service) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -882,4 +890,32 @@ func allowFormTarget(w http.ResponseWriter, redirectURI string) {
 	if csp := h.Get("Content-Security-Policy"); csp != "" && !strings.Contains(csp, "form-action 'self' "+origin) {
 		h.Set("Content-Security-Policy", strings.Replace(csp, "form-action 'self'", "form-action 'self' "+origin, 1))
 	}
+}
+
+// restartLinks : recommencer une connexion à la console (celle de
+// l'application se relance depuis l'application).
+func (s *Service) restartLinks() []providerLink {
+	return []providerLink{{Label: "Se connecter à l'administration", URL: "/admin/login"}}
+}
+
+// welcomeLinks : où aller avec un compte prêt (application, navigateur).
+func (s *Service) welcomeLinks() []providerLink {
+	var out []providerLink
+	if s.Config.Edition == config.EditionWeb {
+		out = append(out, providerLink{Label: "Ouvrir Lattis dans le navigateur", URL: "/app/"})
+	}
+	if s.Config.DownloadURL != "" {
+		out = append(out, providerLink{Label: "Télécharger l'application Lattis", URL: s.Config.DownloadURL})
+	}
+	return out
+}
+
+// home : page d'accueil à la racine du serveur (le document de découverte
+// reste sous /.well-known/lattis.json, que l'application lit directement).
+func (s *Service) home(w http.ResponseWriter, r *http.Request) {
+	links := s.welcomeLinks()
+	links = append(links, providerLink{Label: "Administration du serveur", URL: "/admin/"})
+	s.render(w, r, http.StatusOK, "message", view{Title: "Bienvenue",
+		Message: "Ce serveur partage des classeurs Lattis. Pour vous y connecter depuis l'application, ajoutez un « Serveur Lattis » avec l'adresse ci-dessous.",
+		Address: s.Config.Issuer(), Links: links})
 }

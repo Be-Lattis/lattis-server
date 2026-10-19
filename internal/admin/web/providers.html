@@ -23,13 +23,13 @@
 <h3>Tenants autorisés</h3>
 {{if .Tenants}}<table><thead><tr><th>Type</th><th>Valeur</th><th>Rôle des arrivants</th><th></th></tr></thead><tbody>
 {{range .Tenants}}<tr><td>{{tenantKind .kind}}</td><td>{{.value}}</td><td>{{levelName .default_role}}</td>
-<td><form method="post" action="/admin/do/disallow_tenant">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}
+<td><form method="post" action="/admin/do/disallow_tenant" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button aria-label="Retirer le tenant {{.value}}">Retirer</button></form></td></tr>{{end}}
 </tbody></table>{{else}}<p class="muted">Aucun tenant : personne n'entre par ce fournisseur.</p>{{end}}
 <form method="post" action="/admin/do/allow_tenant" class="row">
 {{template "csrf" $}}<input type="hidden" name="provider_id" value="{{.ID}}">
 <select name="kind" aria-label="Type de tenant"><option value="domain">Domaine</option>{{if eq .Kind "microsoft"}}<option value="tid">Tenant Microsoft (tid)</option>{{end}}{{if or (eq .Kind "keycloak") (eq .Kind "oidc")}}<option value="realm">Realm</option>{{end}}<option value="email">Adresse</option><option value="any">Tous</option></select>
-<input name="value" placeholder="exemple.fr" aria-label="Valeur" data-show-if="kind!=any">
-<select name="default_role"><option value="">Rôle des arrivants : celui du serveur</option><option value="none">Aucun</option><option value="reader">Lecteur</option><option value="participant">Participant</option><option value="editor">Éditeur</option></select>
+<input name="value" placeholder="exemple.fr" aria-label="Valeur du tenant" data-show-if="kind!=any">
+<select name="default_role" aria-label="Rôle des arrivants"><option value="">Rôle des arrivants : celui du serveur</option><option value="none">Aucun</option><option value="reader">Lecteur</option><option value="participant">Participant</option><option value="editor">Éditeur</option></select>
 <button>Autoriser</button>
 </form>
 <form method="post" action="/admin/do/remove_provider" class="row danger">

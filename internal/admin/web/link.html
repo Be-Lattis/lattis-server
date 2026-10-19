@@ -3,7 +3,8 @@
 {{if $d.NoAccess}}
 <section class="panel link">
 <p>Ce classeur n'existe pas, ou <strong>{{$d.Email}}</strong> n'y a pas accès.</p>
-<p class="muted">Demandez à son propriétaire de vous inviter avec cette adresse, puis rouvrez le lien.</p>
+<p class="muted">Demandez à son propriétaire de vous inviter avec cette adresse, puis rouvrez le lien. Connecté avec le mauvais compte ?</p>
+<form method="post" action="/logout"><input type="hidden" name="next" value="/w/{{$d.ID}}"><button>Changer de compte</button></form>
 </section>
 {{else}}
 <section class="panel link">
@@ -15,6 +16,7 @@
 </div>
 <p class="muted">Votre choix est retenu sur ce navigateur.{{if $d.Choice}} <a href="/w/{{$d.ID}}?open=choose">Changer</a>{{end}}</p>
 {{if $d.Download}}<p>Pas encore Lattis ? <a href="{{$d.Download}}">Télécharger l'application</a></p>{{end}}
+<form method="post" action="/logout" class="muted"><input type="hidden" name="next" value="/w/{{$d.ID}}">Connecté en {{$d.Email}}. <button>Changer de compte</button></form>
 </section>
 {{end}}
 {{end}}

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -100,8 +101,8 @@ var settingGroups = []settingGroup{
 		{Key: "invitation_ttl", Label: "Validité des invitations", Kind: "duration", Unit: "jours", Scale: day},
 	}},
 	{Title: "Connexion et sécurité", Help: "Durée des sessions et protection des comptes à mot de passe.", Settings: []setting{
-		{Key: "refresh_token_ttl", Label: "Durée d'une session", Kind: "duration", Unit: "jours", Scale: day,
-			Help: "Sans usage pendant ce temps, il faut se reconnecter."},
+		{Key: "refresh_token_ttl", Label: "Durée d'une session de l'application", Kind: "duration", Unit: "jours", Scale: day,
+			Help: "Application de bureau : sans usage pendant ce temps, il faut se reconnecter. Dans le navigateur (console, édition web), la session dure 8 heures."},
 		{Key: "access_token_ttl", Label: "Durée des jetons d'accès", Kind: "duration", Unit: "minutes", Scale: minute,
 			Help: "Renouvelés sans rien demander ; plus court, un compte désactivé est coupé plus vite."},
 		{Key: "password_max_failures", Label: "Essais de mot de passe avant verrouillage", Kind: "number"},
@@ -242,7 +243,9 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"Q": q, "Users": users, "Invitations": invitations, "Me": u.ID}, nil
+	var creators string
+	_ = tx.QueryRow(ctx, `SELECT coalesce((SELECT value #>> '{}' FROM lattis.server_config WHERE key = 'workbook_creators'), 'everyone')`).Scan(&creators)
+	return map[string]any{"Q": q, "Users": users, "Invitations": invitations, "Me": u.ID, "Creators": creators == "owners"}, nil
 }
 
 // --- Équipes -------------------------------------------------------------------------------
@@ -356,8 +359,8 @@ func (s *Service) loadWorkbook(ctx context.Context, tx pgx.Tx, r *http.Request, 
 			sheets = append(sheets, sid)
 		}
 	}
-	for _, sid := range sheets {
-		nodes = append(nodes, node{"sheet", sid, "Feuille " + sid, 1})
+	for i, sid := range sheets {
+		nodes = append(nodes, node{"sheet", sid, fmt.Sprintf("Feuille %d", i+1), 1})
 		for _, t := range tables {
 			tm := t.(map[string]any)
 			if tm["sheet_id"] == sid {

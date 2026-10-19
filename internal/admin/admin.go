@@ -205,6 +205,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/login", s.login)
 	mux.HandleFunc("GET /admin/callback", s.callback)
 	mux.HandleFunc("POST /admin/logout", s.logout)
+	mux.HandleFunc("POST /logout", s.siteLogout)
 	mux.HandleFunc("GET /admin/static/admin.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -317,7 +318,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) logout(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCSRF(r) {
-		s.message(w, r, http.StatusForbidden, "Demande refusée", "Jeton de formulaire invalide : rechargez la page.")
+		s.message(w, r, http.StatusForbidden, "Demande refusée", "Cette page était restée ouverte trop longtemps : revenez-y et recommencez.")
 		return
 	}
 	if u, err := s.session(r); err == nil {
@@ -383,6 +384,8 @@ type view struct {
 	Data      any
 	Version   string
 	Edition   string
+	// Back : lien de retour d'une page de message.
+	Back string
 }
 
 func (s *Service) page(name, title string, load loader) http.HandlerFunc {
@@ -443,10 +446,18 @@ func (s *Service) render(w http.ResponseWriter, status int, name string, v view)
 }
 
 func (s *Service) message(w http.ResponseWriter, r *http.Request, status int, title, msg string) {
-	v := view{Title: title, Page: "message", Server: "Serveur Lattis", Error: msg}
+	v := view{Title: title, Page: "message", Server: "Serveur Lattis", Error: msg, Version: s.Version}
 	if status < 400 {
 		v.Error, v.Flash = "", msg
 	}
+	// Connecté : le menu reste là ; sinon, un lien pour se (re)connecter.
+	if s.Store != nil && s.Keys != nil {
+		if u, err := s.session(r); err == nil {
+			v.User = u
+			v.CSRF = s.csrf(w, r)
+		}
+	}
+	v.Back = safeBack(r.PostFormValue("back"))
 	s.render(w, status, "message", v)
 }
 
@@ -462,9 +473,21 @@ func userMessage(err error) (string, bool) {
 	if !errors.As(err, &pe) {
 		return "", false
 	}
+	switch pe.Code {
+	case "23514":
+		return "Valeur refusée : un champ obligatoire manque ou ne convient pas (" + pe.ConstraintName + ").", true
+	case "22P02":
+		return "Valeur refusée : un choix ou un nombre attendu est vide ou mal écrit.", true
+	case "42601":
+		return "Filtre mal écrit : vérifiez les guillemets, les parenthèses et les opérateurs.", true
+	case "23505":
+		if strings.Contains(pe.Message, "duplicate key") {
+			return "Cet élément existe déjà.", true
+		}
+	}
 	switch pe.Code[:2] {
 	case "42", "22", "23", "P0", "55", "2B":
-		return pe.Message, true
+		return upperFirst(pe.Message), true
 	}
 	return "", false
 }
@@ -547,4 +570,44 @@ func splitSetupLink(msg string) (string, string) {
 		return msg, ""
 	}
 	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(msg[:loc[0]]), ":")), msg[loc[0]:loc[1]]
+}
+
+// upperFirst met une majuscule au début d'un message de PostgreSQL.
+func upperFirst(s string) string {
+	for i, r := range s {
+		return strings.ToUpper(string(r)) + s[i+len(string(r)):]
+	}
+	return s
+}
+
+// siteLogout : déconnexion depuis les pages hors console (lien vers un
+// classeur, accès refusé, édition web). Pas de jeton de formulaire ici :
+// la requête doit venir du site lui-même (Origin ou Referer).
+func (s *Service) siteLogout(w http.ResponseWriter, r *http.Request) {
+	if !s.sameSite(r) {
+		s.message(w, r, http.StatusForbidden, "Demande refusée", "Déconnexion refusée : elle doit venir d'une page de ce serveur.")
+		return
+	}
+	if u, err := s.session(r); err == nil {
+		if f, ok := s.Users.(interface{ Forget(string) }); ok {
+			f.Forget(u.ID)
+		}
+	}
+	s.clearCookie(w, sessionCookie, "/")
+	s.clearCookie(w, sessionCookie, "/admin")
+	next := safeBack(r.PostFormValue("next"))
+	if next == "" {
+		next = "/"
+	}
+	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
+// sameSite : la requête vient d'une page de ce serveur.
+func (s *Service) sameSite(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = r.Header.Get("Referer")
+	}
+	u, err := url.Parse(origin)
+	return err == nil && u.Scheme == s.Config.PublicURL.Scheme && strings.EqualFold(u.Host, s.Config.PublicURL.Host)
 }

@@ -100,3 +100,4 @@ details.sub { margin-bottom: 12px; } details.sub > summary { cursor: pointer; co
 .tree-tools { display: flex; gap: 8px; justify-content: flex-end; margin: 0 0 8px; }
 @media (max-width: 640px) { details.tree details.tree { margin-left: 0; } }
 .linkbox { border-color: var(--accent); } .copy button { flex: none; } .js [data-copy] { display: inline-block; } [data-copy] { display: none; }
+a.button { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; color: inherit; text-decoration: none; }

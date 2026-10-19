@@ -57,7 +57,7 @@ func (s *Service) actions() map[string]actionFunc {
 		"update_provider":      updateProvider,
 		"remove_provider":      exec1(`SELECT lattis.remove_provider($1::uuid)`, "Fournisseur supprimé.", true, "id"),
 		"allow_tenant":         allowTenant,
-		"disallow_tenant":      exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", false, "id"),
+		"disallow_tenant":      exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", true, "id"),
 		"add_user":             s.addUser,
 		"reset_password":       s.resetPassword,
 		"disable_user":         s.disableUser,
@@ -101,7 +101,7 @@ func (s *Service) actions() map[string]actionFunc {
 func (s *Service) do(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err != nil || !s.checkCSRF(r) {
-		s.message(w, r, http.StatusForbidden, "Demande refusée", "Jeton de formulaire invalide : rechargez la page.")
+		s.message(w, r, http.StatusForbidden, "Demande refusée", "Cette page était restée ouverte trop longtemps : revenez-y et recommencez.")
 		return
 	}
 	fn, ok := s.actions()[r.PathValue("action")]
@@ -380,6 +380,9 @@ func addTeamMember(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 }
 
 func addRestriction(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	if f.s("table_id") == "" {
+		return "", inputError("Ce classeur n'a pas encore de tableau.")
+	}
 	_, err := tx.Exec(ctx, `SELECT lattis.add_restriction($1::uuid, $2::uuid, $3, $4::uuid[], $5, $6)`,
 		f.s("workbook_id"), f.s("table_id"), f.s("command"), f.list("roles"), f.s("predicate"), f.s("label"))
 	return "Restriction ajoutée.", err
@@ -387,6 +390,9 @@ func addRestriction(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 
 func addDataAudience(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	principal := f.s("team_id")
+	if f.s("kind") == "team" && principal == "" {
+		return "", inputError("Choisissez une équipe (page Équipes pour en créer une).")
+	}
 	if f.s("kind") != "team" {
 		uid, err := userByEmail(ctx, tx, strings.ToLower(f.s("email")))
 		if err != nil {
@@ -426,6 +432,12 @@ func createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 		if k = strings.TrimSpace(k); k != "" {
 			keys = append(keys, k)
 		}
+	}
+	if f.s("mode") == "upsert" && len(keys) == 0 {
+		return "", inputError("Mise à jour par clé : indiquez au moins une colonne clé (par exemple « Code article »).")
+	}
+	if f.s("name") == "" {
+		return "", inputError("Donnez un nom au pipeline.")
 	}
 	cmap := map[string]string{}
 	for _, line := range strings.Split(f.r.PostFormValue("column_map"), "\n") {

@@ -14,7 +14,7 @@
 {{range $t.members}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}</td><td><form method="post" action="/admin/do/remove_team_member">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
 {{else}}<tr><td class="muted">Aucun membre direct.</td></tr>{{end}}
 </tbody></table>
-<form method="post" action="/admin/do/add_team_member" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant"><button>Ajouter</button></form>
+<form method="post" action="/admin/do/add_team_member" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant" aria-label="Adresse du membre à ajouter"><button>Ajouter</button></form>
 <form method="post" action="/admin/do/drop_team" class="row danger">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">{{template "confirm"}}<button>Supprimer l'équipe</button></form>
 {{range .Node.Children}}{{template "teamnode" (node $p . $all)}}{{end}}
 </details>

@@ -33,6 +33,8 @@
 <p class="copy"><input id="flashlink" readonly value="{{.}}" aria-label="Lien à transmettre"><button type="button" data-copy="flashlink">Copier</button></p></div>{{end}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 {{if .Data}}{{template "body" .}}{{end}}
+{{if and (eq .Page "message") (eq .Title "Accès réservé")}}<form method="post" action="/logout"><input type="hidden" name="next" value="/admin/"><button>Changer de compte</button></form>{{end}}
+{{if eq .Page "message"}}<p class="actions">{{if .User.ID}}<a class="button" href="{{if .Back}}{{.Back}}{{else}}/admin/server{{end}}">Retour à l'administration</a>{{else}}<a class="button" href="/admin/login{{with .Back}}?next={{.}}{{end}}">Se connecter</a>{{end}}</p>{{end}}
 </main>
 <footer class="foot">Serveur Lattis {{.Version}} · <a href="{{sourceURL}}">Code source</a> (AGPL-3.0)</footer>
 </body>

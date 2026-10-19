@@ -1,17 +1,17 @@
 {{define "body"}}
 <form method="get" action="/admin/audit" class="row">
-<input name="actor" value="{{.Data.Actor}}" placeholder="Auteur">
-<select name="action"><option value="">Toutes les actions</option>{{$a := .Data.Action}}{{range .Data.Actions}}<option{{if eq . $a}} selected{{end}}>{{.}}</option>{{end}}</select>
-<input type="date" name="since" value="{{.Data.Since}}">
+<input name="actor" aria-label="Auteur" value="{{.Data.Actor}}" placeholder="Auteur">
+<select name="action" aria-label="Action"><option value="">Toutes les actions</option>{{$a := .Data.Action}}{{range .Data.Actions}}<option{{if eq . $a}} selected{{end}}>{{.}}</option>{{end}}</select>
+<input type="date" name="since" aria-label="Depuis le" value="{{.Data.Since}}">
 <button>Filtrer</button>
 </form>
-<table class="compact">
+<div class="scroll"><table class="compact">
 <thead><tr><th>Date</th><th>Auteur</th><th>Action</th><th>Cible</th><th>Avant</th><th>Après</th></tr></thead>
 <tbody>
 {{range .Data.Entries}}<tr><td>{{.At.Local.Format "02/01/2006 15:04:05"}}</td><td>{{.Actor}}</td><td>{{.Action}}</td><td><code>{{.Target}}</code></td>
 <td><code class="json">{{json .Before}}</code></td><td><code class="json">{{json .After}}</code></td></tr>
 {{else}}<tr><td colspan="6" class="muted">Aucune entrée.</td></tr>{{end}}
 </tbody>
-</table>
+</table></div>
 {{if .Data.Next}}<p><a href="{{.Data.Next}}">Entrées plus anciennes</a></p>{{end}}
 {{end}}

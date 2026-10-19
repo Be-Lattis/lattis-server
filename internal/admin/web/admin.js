@@ -22,36 +22,47 @@ for (const c of document.querySelectorAll(".control")) {
 }
 // Un champ bloqué part quand même avec le formulaire (valeur inchangée).
 document.addEventListener("submit", (e) => {
-  for (const i of e.target.querySelectorAll(".control :disabled")) i.disabled = false;
+  for (const i of e.target.querySelectorAll(".control :disabled")) if (!i.dataset.off) i.disabled = false;
 }, true);
 
 // data-show-if="champ=a,b" (ou "champ!=a") : l'élément ne s'affiche que si
 // le champ du même formulaire vaut l'une des valeurs. Une case cochée vaut
 // sa valeur (« on »), décochée « ». Sur une <option>, la masque aussi.
 function fieldValue(scope, name) {
-  const els = scope.querySelectorAll(`[name="${name}"]`);
-  for (const el of els) {
+  // Un champ masqué ne compte pas : les conditions en cascade restent justes.
+  for (const el of scope.querySelectorAll(`[name="${name}"]`)) {
+    if (el.closest("[hidden]")) continue;
     if (el.type === "checkbox" || el.type === "radio") { if (el.checked) return el.value; continue; }
     return el.value;
   }
   return "";
 }
 function applyShowIf() {
-  for (const el of document.querySelectorAll("[data-show-if]")) {
-    const m = el.dataset.showIf.match(/^([\w-]+)(!?=)(.*)$/);
-    if (!m) continue;
-    const scope = el.closest("form") || document;
-    const hit = m[3].split(",").includes(fieldValue(scope, m[1]));
-    const show = m[2] === "=" ? hit : !hit;
-    el.hidden = !show;
-    if (el.tagName === "OPTION") {
-      const sel = el.parentElement;
-      if (!show && el.selected) {
-        const first = [...sel.options].find((o) => !o.hidden && o !== el);
-        if (first) first.selected = true;
+  // Plusieurs passes : afficher un champ peut en révéler d'autres.
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (const el of document.querySelectorAll("[data-show-if]")) {
+      const m = el.dataset.showIf.match(/^([\w-]+)(!?=)(.*)$/);
+      if (!m) continue;
+      const scope = el.closest("form") || document;
+      const hit = m[3].split(",").includes(fieldValue(scope, m[1]));
+      const show = m[2] === "=" ? hit : !hit;
+      if (el.hidden !== !show) { el.hidden = !show; changed = true; }
+      if (el.tagName === "OPTION") {
+        const sel = el.parentElement;
+        if (!show && el.selected) {
+          const first = [...sel.options].find((o) => !o.hidden && o !== el);
+          if (first) first.selected = true;
+        }
       }
-    } else {
     }
+    if (!changed) break;
+  }
+  // Les champs masqués ne partent pas avec le formulaire.
+  for (const el of document.querySelectorAll("form input, form select, form textarea")) {
+    const off = !!el.closest("[hidden]");
+    if (off && !el.disabled) { el.disabled = true; el.dataset.off = "1"; }
+    else if (!off && el.dataset.off) { el.disabled = false; delete el.dataset.off; }
   }
 }
 document.addEventListener("change", applyShowIf);

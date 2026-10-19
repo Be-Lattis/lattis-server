@@ -1,1 +1,3 @@
-{{define "body"}}{{end}}
+{{define "body"}}{{with .Address}}<p class="address">Adresse du serveur : <code>{{.}}</code></p>{{end}}
+{{range .Links}}<a class="button" href="{{.URL}}">{{.Label}}</a>
+{{end}}{{end}}

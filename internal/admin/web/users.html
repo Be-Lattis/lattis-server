@@ -3,25 +3,25 @@
 <h2>Ajouter un utilisateur</h2>
 <p>Lattis crée le compte et un lien personnel, valable 7 jours, à transmettre à la personne : elle y choisit son mot de passe. Les personnes qui se connectent par un fournisseur (Google, Microsoft…) n'ont rien à recevoir : en entrée libre elles arrivent seules, sur invitation elles sont invitées depuis un classeur.</p>
 <form method="post" action="/admin/do/add_user" class="row">
-{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr"><input name="display_name" placeholder="Nom affiché">
+{{template "csrf" $}}<input type="email" name="email" required placeholder="adresse@exemple.fr" aria-label="Adresse de la personne"><input name="display_name" placeholder="Nom affiché" aria-label="Nom affiché">
 <label class="inline"><input type="checkbox" name="server_owner"> Propriétaire du serveur</label>
-<label class="inline" data-show-if="server_owner!=on"><input type="checkbox" name="workbook_creator"> Créateur de classeurs</label>
+{{if .Data.Creators}}<label class="inline" data-show-if="server_owner!=on"><input type="checkbox" name="workbook_creator"> Créateur de classeurs</label>{{end}}
 <button class="ok">Créer le lien</button>
 </form>
 </section>
-<form method="get" action="/admin/users" class="row"><input type="search" name="q" value="{{.Data.Q}}" placeholder="Rechercher une adresse ou un nom"><button>Rechercher</button></form>
-<table>
+<form method="get" action="/admin/users" class="row"><input type="search" name="q" aria-label="Rechercher un utilisateur" value="{{.Data.Q}}" placeholder="Rechercher une adresse ou un nom"><button>Rechercher</button></form>
+<div class="scroll"><table>
 <thead><tr><th>Utilisateur</th><th>Connexion</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Users}}
 <tr>
-<td>{{.email}}{{if .display_name}}<br><small>{{.display_name}}</small>{{end}}{{if .server_owner}} <span class="tag">propriétaire</span>{{end}}{{if .workbook_creator}} <span class="tag">créateur de classeurs</span>{{end}}{{if .data_publisher}} <span class="tag">publieur au Data Lake</span>{{end}}{{if not .email_verified}} <span class="tag warn" title="Adresse choisie par la personne au premier mot de passe : elle ne reçoit pas les invitations adressées à cette adresse">adresse non vérifiée</span>{{end}}</td>
+<td>{{.email}}{{if .display_name}}<br><small>{{.display_name}}</small>{{end}}{{if .server_owner}} <span class="tag">propriétaire</span>{{end}}{{if and $.Data.Creators .workbook_creator}} <span class="tag">créateur de classeurs</span>{{end}}{{if .data_publisher}} <span class="tag">publieur au Data Lake</span>{{end}}{{if not .email_verified}} <span class="tag warn" title="Adresse choisie par la personne au premier mot de passe : elle ne reçoit pas les invitations adressées à cette adresse">adresse non vérifiée</span>{{end}}</td>
 <td>{{if .provider}}{{.provider}}{{else}}<span class="muted">invité</span>{{end}}</td>
 <td>{{if .last_login_at}}{{date .last_login_at}}{{else}}<span class="muted">jamais</span>{{end}}</td>
 <td>{{if .disabled}}<span class="tag off">désactivé</span>{{else if .pending}}<span class="tag">en attente</span>{{else}}actif{{end}}</td>
 <td><div class="buttons">
 {{if and (eq (str .kind) "password") (ne (str .id) $.Data.Me)}}<form method="post" action="/admin/do/reset_password" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button title="Efface le mot de passe actuel, ferme ses sessions et donne un nouveau lien">Réinitialiser le mot de passe</button></form>{{end}}
-{{if .workbook_creator}}<form method="post" action="/admin/do/workbook_creator_off">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer « créateur de classeurs »</button></form>
+{{if not $.Data.Creators}}{{else if .workbook_creator}}<form method="post" action="/admin/do/workbook_creator_off">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer « créateur de classeurs »</button></form>
 {{else if not .server_owner}}<form method="post" action="/admin/do/workbook_creator_on">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Rendre créateur de classeurs</button></form>{{end}}
 {{if .data_publisher}}<form method="post" action="/admin/do/data_publisher_off">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer « publieur au Data Lake »</button></form>
 {{else if not .server_owner}}<form method="post" action="/admin/do/data_publisher_on">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Rendre publieur au Data Lake</button></form>{{end}}
@@ -33,16 +33,16 @@
 </tr>
 {{else}}<tr><td colspan="5" class="muted">Aucun utilisateur.</td></tr>{{end}}
 </tbody>
-</table>
+</table></div>
 
 
 
 <section class="panel">
 <h2>Invitations en attente</h2>
-{{if .Data.Invitations}}<table><thead><tr><th>Adresse</th><th>Classeur</th><th>Rôles</th><th>Par</th><th>Expire le</th><th></th></tr></thead><tbody>
+{{if .Data.Invitations}}<div class="scroll"><table><thead><tr><th>Adresse</th><th>Classeur</th><th>Rôles</th><th>Par</th><th>Expire le</th><th></th></tr></thead><tbody>
 {{range .Data.Invitations}}<tr><td>{{.email}}</td><td>{{if .workbook}}{{.workbook}}{{else}}<span class="muted">serveur</span>{{end}}</td>
 <td>{{range .roles}}{{.}} {{end}}</td><td>{{.invited_by}}</td><td>{{date .expires_at}}</td>
 <td><form method="post" action="/admin/do/revoke_invitation">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><button>Retirer</button></form></td></tr>{{end}}
-</tbody></table>{{else}}<p class="muted">Aucune.</p>{{end}}
+</tbody></table></div>{{else}}<p class="muted">Aucune.</p>{{end}}
 </section>
 {{end}}
