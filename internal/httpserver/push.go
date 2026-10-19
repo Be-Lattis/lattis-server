@@ -120,7 +120,7 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	for {
 		var run json.RawMessage
 		err := s.Store.DB.QueryRow(ctx, `SELECT to_jsonb(x) - 'pipeline_id' FROM lattis.pipeline_runs x
-			WHERE x.pipeline_id = $1 AND x.started_at >= $2 - interval '1 second' AND x.finished_at IS NOT NULL
+			WHERE x.pipeline_id = $1 AND x.started_at >= $2::timestamptz - interval '1 second' AND x.finished_at IS NOT NULL
 			ORDER BY x.started_at DESC LIMIT 1`, id, since).Scan(&run)
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
