@@ -1,8 +1,8 @@
 package admin
 
 import (
-	"html/template"
 	"errors"
+	"html/template"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -35,7 +35,7 @@ func DesktopLink(cfg *config.Config, id string) string {
 }
 
 type linkData struct {
-	ID, Title   string
+	ID, Title string
 	// Desktop : lien lattis:// (type URL : html/template refuserait ce
 	// schéma dans un href).
 	Desktop     template.URL
