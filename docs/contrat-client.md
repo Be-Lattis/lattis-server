@@ -172,3 +172,36 @@ Publieur de données ou propriétaire du serveur (`login_summary().can_publish_d
 Au catalogue, la donnée d'une source poussée porte, pour qui la gère, `source.kind = "source"`, `source.pipeline_id` et `source.origin` (classeur et tableau d'origine) ; `source.title` reste le nom du classeur technique (« Source : <nom> »).
 
 Quand envoyer : à la demande (« Mettre à jour la source »), et au choix de l'application à l'enregistrement du classeur local. Les écritures passent sous l'identité technique du pipeline (« Pipeline : <nom> », visible dans `lattis_author`) ; l'administration les montre dans Pipelines, avec la source d'origine.
+
+## 10. Formulaires
+
+Un tableau d'un classeur collaboratif publié se partage comme une page `<émetteur>/f/<code>` servie par lattisd (conception côté application : `docs/conception/partager-comme-formulaire.md`). Chaque réponse devient une ligne du tableau, écrite sous l'identité technique du formulaire (« Formulaire : <titre> », `lattis_author`), qui ne peut qu'ajouter des lignes et relire ou modifier celles qu'elle a écrites. Ce rôle n'apparaît ni parmi les rôles ni parmi les membres ; une restriction « tous les rôles » le vise aussi. Les colonnes sont citées par leur `column_id` (`lattis_meta_columns`).
+
+| Besoin | Appel |
+|---|---|
+| Disponibilité | `forms_settings() → {"forms": true, "forms_public"}` (fonction absente : `42883`, serveur sans formulaires) |
+| Créer | `create_form(workbook_id, table_id, p) → {"id", "code", "path", "url"}` (propriétaire ou concepteur ; brouillon). `p` : `definition`, `access` (`members` par défaut, `audience`, `server_accounts`, `public`), `audience` (identifiants de personnes ou d'équipes), `opens_at`, `closes_at`, `max_responses`, `max_per_respondent` (`null` : sans limite), `edit` (`none`, `until_close`, `7 days`), `daily_limit` (1 000). Erreurs : `55000` classeur figé ou non publié, `P0002` tableau inconnu, `22023` définition invalide (`DETAIL` = `{"fields": {"<chemin ou column_id>": "raison"}}`), `42501` lien public non permis. |
+| Modifier | `update_form(id, p, version) → {"version"}` (champs facultatifs de `p`) ; `40001` : modifié entre-temps. |
+| État | `set_form_state(id, 'open'\|'paused'\|'closed')` ; `open` revérifie la définition sur la structure actuelle (`22023`). |
+| Supprimer | `drop_form(id)` : identité désactivée, rôle interne supprimé, lignes gardées. |
+| Lister | `list_forms(workbook_id)` : `[{"id", "code", "path", "url", "table_id", "title", "state", "pause_reason", "access", "manageable", "version", "responses", "last_response_at", "definition", "max_per_respondent", "audience": [{"principal", "kind", "name"}], "options"}]` ; chiffres, définition, version et audience pour les propriétaires et concepteurs seulement ; les autres membres ne voient que les formulaires ouverts auxquels ils peuvent répondre. |
+| Statistiques | `form_stats(id, days) → {"total", "last_at", "throttled", "by_day": [{"day", "n"}]}` |
+| Aperçu | `form_preview_url(id) → "/f/<code>?p=<jeton>"`, valable 10 minutes, ouvert même en brouillon ; les envois ne sont pas enregistrés. |
+| Audience | `form_audience_add(id, principal)`, `form_audience_add_by_email(id, email) → user_id` (`P0002` : pas de compte), `form_audience_remove(id, principal)` |
+| Images | `POST <émetteur>/api/forms/<id>/images?kind=logo\|banner`, jeton d'accès en `Bearer`, corps PNG ou JPEG (5 Mo au plus) → `{"id", "content_type", "bytes"}` ; l'image est réduite (logo 512 px, bannière 1600 × 600) et réencodée (métadonnées retirées). `401`, `403`, `404`, `413`, `415`. La définition cite `appearance.logo` et `appearance.banner` par cet identifiant. |
+
+**Définition** (`format` 1) : `lang` (`fr`, `en`), `appearance` (`title` obligatoire, `intro`, `logo`, `banner`, `accent` : `green`, `teal`, `blue`, `indigo`, `purple`, `red`, `orange`, `slate`, `submit_label`, `thanks`, `another`, `closed_message`, `privacy`), `fields` et `server_values`.
+
+- Champ : `{"column", "label", "help", "placeholder", "required", "widget", "default", "min", "max", "step", "max_length", "format", "unit", "list", "param", "locked", "hidden"}`. `widget` : vide ou `list` (selon le type et la liste : boutons jusqu'à 7 valeurs, liste au-delà), `text`, `textarea`, `number`, `date`, `datetime`, `checkbox`, `yesno`. `format` : `free`, `email`, `phone`, `url`. `list` : `{"values": […]}` (avec `copied_at`, `source` libres) ou `{"table_id", "column"}` (colonne d'un tableau du classeur, relue à chaque affichage, 1 000 valeurs au plus). `default` : `{"token": "today"\|"now"\|"year"\|"respondent"}` ou `{"fixed": …}`. `param` : nom court (`^[a-z][a-z0-9_]{0,39}$`) pour pré-remplir par l'adresse (`/f/<code>?site=Nord`) ; `locked` : valeur du lien imposée, affichée en lecture seule et reprise de l'adresse à l'envoi. `hidden` : valeur par défaut, sans champ.
+- Intertitre : `{"kind": "section", "title", "description"}`.
+- Position : `{"kind": "position", "latitude", "longitude"}` (deux colonnes décimales) ou `{"kind": "position", "column"}` (texte « lat, lon ») ; rempli par le bouton « Ma position » du navigateur, jamais automatiquement.
+- `server_values` : `{"column", "value": {"token": "received_at"\|"respondent"\|"form_title"\|"next_number"}}` ou `{"column", "value": {"fixed": …}}`. `next_number` : maximum + 1 sous verrou du tableau.
+- `intro`, `privacy` et les descriptions d'intertitres sont en Markdown réduit (gras, italique, liens `https`, listes) ; `thanks` : gras et italique. Le reste est du texte.
+
+**Page** (`/f/<code>`) : HTML d'abord pour téléphone, envoi sans JavaScript ; le script ajoute la position, le brouillon gardé sur l'appareil et « Réessayer » sans réseau. Modes membres, audience et tout compte : connexion par la session du site (`/admin/login?next=/f/<code>`). Contrôles à l'envoi : jeton signé (anti-CSRF, délai minimal de 3 s, 24 h au plus), pot de miel, 64 Kio, 10 envois par minute et par adresse, limite quotidienne par formulaire, plafond, réponses par personne, types, listes, bornes, champs obligatoires et clé (`23505` : « Une valeur saisie existe déjà »). Réponses : `303` vers `/f/<code>/merci` ; `400` page avec les erreurs sous chaque champ ; `404` inconnu ou interdit (même page) ; `409` déjà répondu ou clé prise ; `410` fermé, pas encore ouvert ou complet ; `429`.
+
+**Notifications** : `*form:<id>` sur le canal du classeur à la création, à la modification, au changement d'état (pause automatique comprise : `pause_reason` `spike`, `column_dropped`, `type_changed`, `manual`) et à la suppression. Les réponses ne notifient que l'identifiant du tableau, comme toute écriture.
+
+**Structure** : renommer une colonne ne change rien ; supprimer une colonne retire ses champs et met le formulaire en pause si le champ était obligatoire ou posé par le serveur ; convertir une colonne revérifie la définition (pause si elle n'est plus valide) ; supprimer le tableau supprime ses formulaires.
+
+**Administration** (propriétaires du serveur) : page Formulaires (tous les formulaires, accès, état, débit, pause et reprise) et réglage du lien public (`forms_public`, coupé par défaut).

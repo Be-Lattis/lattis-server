@@ -1,0 +1,28 @@
+{{define "body"}}{{$d := .Data}}
+<section class="panel">
+<h2>Lien public</h2>
+<p class="muted">Un formulaire à lien public met une page du serveur sur internet, ouverte à toute personne qui a le lien, sans compte. Les protections restent actives (débit par adresse et par formulaire, pot de miel, délai minimal, pause automatique sur un pic). Les concepteurs choisissent ensuite ce mode formulaire par formulaire.</p>
+<form method="post" action="/admin/do/forms_public" class="row">{{template "csrf" $}}
+{{if $d.Public}}<input type="hidden" name="public" value="false"><span class="tag warn">permis</span> <button>Ne plus permettre le lien public</button>
+{{else}}<input type="hidden" name="public" value="true"><span class="tag">non permis</span> <button>Permettre le lien public</button>{{end}}
+</form>
+</section>
+<div class="scroll"><table>
+<thead><tr><th>Formulaire</th><th>Classeur › tableau</th><th>Accès</th><th>État</th><th>Réponses</th><th>24 h</th><th>Dernière</th><th></th></tr></thead>
+<tbody>
+{{range $d.Forms}}
+<tr>
+<td><a href="{{.url}}">{{.title}}</a><br><small>{{.created_by}}</small></td>
+<td><a href="/admin/workbooks/{{.workbook_id}}">{{.workbook}}</a> › {{.table}}</td>
+<td>{{if eq (str .access) "members"}}Membres du classeur{{else if eq (str .access) "audience"}}Personnes et équipes{{else if eq (str .access) "server_accounts"}}Tout compte du serveur{{else}}<span class="tag warn">lien public</span>{{end}}</td>
+<td>{{if eq (str .state) "open"}}<span class="tag">ouvert</span>{{else if eq (str .state) "paused"}}<span class="tag warn">en pause{{with .pause_reason}} ({{if eq (str .) "spike"}}pic de réponses{{else if eq (str .) "column_dropped"}}colonne supprimée{{else if eq (str .) "type_changed"}}type changé{{else}}{{.}}{{end}}){{end}}</span>{{else if eq (str .state) "closed"}}<span class="tag off">fermé</span>{{else}}<span class="tag">brouillon</span>{{end}}</td>
+<td>{{str .responses}}</td>
+<td>{{str .last_day}} <small>/ {{str .daily_limit}}</small></td>
+<td>{{with .last_response_at}}{{date .}}{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if eq (str .state) "open"}}<form method="post" action="/admin/do/form_state">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><input type="hidden" name="state" value="paused"><button>Mettre en pause</button></form>
+{{else if eq (str .state) "paused"}}<form method="post" action="/admin/do/form_state">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}"><input type="hidden" name="state" value="open"><button>Reprendre</button></form>{{end}}</td>
+</tr>
+{{else}}<tr><td colspan="8" class="muted">Aucun formulaire. Les formulaires se créent depuis l'application (Insertion › Tableaux › Formulaire).</td></tr>{{end}}
+</tbody>
+</table></div>
+{{end}}

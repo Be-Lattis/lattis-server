@@ -355,3 +355,24 @@ END
 $$;
 
 REVOKE EXECUTE ON FUNCTION lattis.form_url(text) FROM PUBLIC;
+
+-- Administration : tous les formulaires du serveur (propriétaires du serveur).
+CREATE FUNCTION lattis.admin_forms() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM lattis.require_server_owner();
+    RETURN (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'id', f.id, 'code', f.code, 'url', lattis.form_url(f.code), 'title', f.definition #>> '{appearance,title}',
+                'workbook_id', f.workbook_id, 'workbook', w.title,
+                'table', (SELECT t.name FROM lattis.data_tables(w.schema_name) t WHERE t.table_id = f.table_id),
+                'state', f.state, 'pause_reason', f.pause_reason, 'access', f.access, 'created_by', f.created_by,
+                'responses', (SELECT count(*) FROM lattis.form_submissions s WHERE s.form_id = f.id),
+                'last_day', (SELECT count(*) FROM lattis.form_submissions s WHERE s.form_id = f.id AND s.submitted_at > now() - interval '1 day'),
+                'last_response_at', (SELECT max(submitted_at) FROM lattis.form_submissions s WHERE s.form_id = f.id),
+                'daily_limit', f.daily_limit)
+            ORDER BY w.title, f.created_at), '[]')
+            FROM lattis.forms f JOIN lattis.workbooks w ON w.id = f.workbook_id);
+END
+$$;
+GRANT EXECUTE ON FUNCTION lattis.admin_forms() TO PUBLIC;

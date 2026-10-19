@@ -172,3 +172,16 @@ func (s *Service) simulateUpload(ctx context.Context, id, name string, f io.Read
 	}
 	return "Simulation (rien n'a été écrit) : " + res.Summary(), nil
 }
+
+// loadForms : tous les formulaires du serveur et le réglage du lien public.
+func (s *Service) loadForms(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
+	forms, err := queryJSON(ctx, tx, `SELECT lattis.admin_forms()`)
+	if err != nil {
+		return nil, err
+	}
+	var public bool
+	if err := tx.QueryRow(ctx, `SELECT (lattis.forms_settings() ->> 'forms_public')::boolean`).Scan(&public); err != nil {
+		return nil, err
+	}
+	return map[string]any{"Forms": forms, "Public": public}, nil
+}

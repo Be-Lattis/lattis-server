@@ -25,6 +25,7 @@
 <a href="/admin/workbooks"{{if or (eq .Page "workbooks") (eq .Page "workbook")}} aria-current="page"{{end}}>Classeurs</a>
 <a href="/admin/data"{{if eq .Page "data"}} aria-current="page"{{end}}>Data Lake</a>
 <a href="/admin/pipelines"{{if eq .Page "pipelines"}} aria-current="page"{{end}}>Pipelines</a>
+<a href="/admin/forms"{{if eq .Page "forms"}} aria-current="page"{{end}}>Formulaires</a>
 </nav>
 <form method="post" action="/admin/logout" class="me"><span class="who" title="{{.User.Email}}">{{.User.Email}}</span>{{template "csrf" .}}<button>Se déconnecter</button></form>
 </aside>

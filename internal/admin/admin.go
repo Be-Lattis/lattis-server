@@ -174,7 +174,7 @@ func trimFloat(f float64) string {
 }
 
 func init() {
-	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data", "pipelines"} {
+	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data", "pipelines", "forms"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+name+".html"))
 	}
 }
@@ -234,6 +234,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/workbooks/{id}", s.page("workbook", "Droits du classeur", s.loadWorkbook))
 	mux.HandleFunc("GET /admin/data", s.page("data", "Data Lake Lattis", loadData))
 	mux.HandleFunc("GET /admin/pipelines", s.page("pipelines", "Pipelines d'ingestion", s.loadPipelines))
+	mux.HandleFunc("GET /admin/forms", s.page("forms", "Formulaires", s.loadForms))
 	mux.HandleFunc("POST /admin/pipelines/{id}/upload", s.uploadPipeline)
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))

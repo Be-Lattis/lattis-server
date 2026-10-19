@@ -81,6 +81,8 @@ func (s *Service) actions() map[string]actionFunc {
 		"create_workbook":      createWorkbook,
 		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
 		"toggle_pipeline":      exec1(`SELECT lattis.update_pipeline($1::uuid, jsonb_build_object('enabled', $2::boolean))`, "Pipeline mis à jour.", false, "id", "enabled"),
+		"form_state":           exec1(`SELECT lattis.set_form_state($1::uuid, $2)`, "Formulaire mis à jour.", false, "id", "state"),
+		"forms_public":         exec1(`SELECT lattis.set_config('forms_public', to_jsonb($1::boolean))`, "Réglage enregistré.", false, "public"),
 		"drop_pipeline":        exec1(`SELECT lattis.drop_pipeline($1::uuid)`, "Pipeline supprimé.", true, "id"),
 		"drop_pushed_source":   exec1(`SELECT lattis.drop_pushed_source($1::uuid)`, "Source poussée supprimée (donnée du Data Lake, pipeline et classeur technique).", true, "id"),
 		"set_team_parent":      exec1(`SELECT lattis.set_team_parent($1::uuid, $2::uuid)`, "Équipe déplacée.", false, "id", "parent_id"),
