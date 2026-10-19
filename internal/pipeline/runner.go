@@ -43,6 +43,9 @@ type Pipeline struct {
 	PendingFile, PendingTrigger     string
 	WebhookURL                      string
 	UserID                          string
+	// PendingRunID : identifiant réservé à la prochaine exécution (envoi
+	// depuis l'application, qui suit son exécution par lui).
+	PendingRunID string
 }
 
 // Result est le bilan d'une exécution.
@@ -228,12 +231,13 @@ func (r *Runner) RunDue(ctx context.Context) (bool, error) {
 				trigger = "file"
 			}
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO lattis.pipeline_runs (pipeline_id, trigger) VALUES ($1, $2) RETURNING id::text`,
-			p.ID, trigger).Scan(&runID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO lattis.pipeline_runs (id, pipeline_id, trigger)
+			VALUES (coalesce(nullif($3, '')::uuid, gen_random_uuid()), $1, $2) RETURNING id::text`,
+			p.ID, trigger, p.PendingRunID).Scan(&runID); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `UPDATE lattis.pipelines SET next_run_at = $2, pending_file = NULL, pending_trigger = NULL,
-			running_since = now() WHERE id = $1`, p.ID, r.next(p, r.now()))
+			pending_run_id = NULL, running_since = now() WHERE id = $1`, p.ID, r.next(p, r.now()))
 		return err
 	})
 	if err != nil || p == nil {
@@ -300,14 +304,14 @@ func (r *Runner) next(p *Pipeline, t time.Time) *time.Time {
 const selectPipeline = `SELECT id::text, name, workbook_id::text, table_id::text, table_name, source_kind, format, mode,
 	source, coalesce(secret_ref, ''), key_columns, column_map, schedule_kind, coalesce(schedule_minutes, 0),
 	coalesce(schedule_time, ''), coalesce(pending_file, ''), coalesce(pending_trigger, ''), coalesce(webhook_url, ''),
-	user_id::text FROM lattis.pipelines`
+	user_id::text, coalesce(pending_run_id::text, '') FROM lattis.pipelines`
 
 func scanPipeline(row pgx.Row) (*Pipeline, error) {
 	p := &Pipeline{}
 	var src, cmap []byte
 	err := row.Scan(&p.ID, &p.Name, &p.WorkbookID, &p.TableID, &p.TableName, &p.SourceKind, &p.Format, &p.Mode,
 		&src, &p.SecretRef, &p.KeyColumns, &cmap, &p.ScheduleKind, &p.ScheduleMinutes, &p.ScheduleTime,
-		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID)
+		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID)
 	if err != nil {
 		return nil, err
 	}

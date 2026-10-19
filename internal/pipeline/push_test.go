@@ -119,12 +119,43 @@ func TestPushedSource(t *testing.T) {
 	if code != http.StatusOK || res["status"] != "ok" || res["inserted"].(float64) != 2 || res["trigger"] != "push" {
 		t.Fatalf("premier envoi : %d %v", code, res)
 	}
+	get := func(path string) (int, string) {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token(author))
+		resp, err := http.DefaultClient.Do(req)
+		must(err)
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if code, body := get("/api/push/" + pid + "?run=" + res["id"].(string)); code != http.StatusOK || !strings.Contains(body, `"inserted": 2`) {
+		t.Fatalf("suivi de l'envoi : %d %s", code, body)
+	}
 	code, res = push(author, "Code;CA\nC1;1300\n")
 	if code != http.StatusOK || res["updated"].(float64) != 1 {
 		t.Fatalf("second envoi : %d %v", code, res)
 	}
 	if code, _ := push(other, "Code;CA\nX;1\n"); code != http.StatusForbidden {
 		t.Fatalf("envoi par un autre : %d", code)
+	}
+	// Mode et clé changés par le créateur, pas par un autre.
+	must(as(author, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.update_pushed_source($1::uuid, '{"mode": "replace", "key_columns": []}')`, pid)
+		return err
+	}))
+	if err := as(other, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.update_pushed_source($1::uuid, '{"enabled": false}')`, pid)
+		return err
+	}); err == nil {
+		t.Fatal("source modifiée par un autre")
+	}
+	var origin string
+	must(as(author, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT d -> 'source' ->> 'origin' FROM jsonb_array_elements(lattis.data_catalog() -> 'datasets') d
+			WHERE d ->> 'id' = $1`, created["dataset_id"]).Scan(&origin)
+	}))
+	if !strings.Contains(origin, "Ventes.lattis") {
+		t.Fatalf("origine au catalogue : %s", origin)
 	}
 	var schema string
 	must(db.Super.QueryRow(ctx, `SELECT schema_name FROM lattis.workbooks WHERE id = $1`, created["workbook_id"]).Scan(&schema))
@@ -133,14 +164,8 @@ func TestPushedSource(t *testing.T) {
 	if total != 1380 {
 		t.Fatalf("contenu de la source : %v", total)
 	}
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/push/"+pid, nil)
-	req.Header.Set("Authorization", "Bearer "+token(author))
-	resp, err := http.DefaultClient.Do(req)
-	must(err)
-	b, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), `"last_run"`) {
-		t.Fatalf("état : %d %s", resp.StatusCode, b)
+	if code, body := get("/api/push/" + pid); code != http.StatusOK || !strings.Contains(body, `"last_run"`) || !strings.Contains(body, `"mode":"replace"`) {
+		t.Fatalf("état : %d %s", code, body)
 	}
 
 	// Suppression : donnée, pipeline et classeur technique.

@@ -91,12 +91,9 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var since time.Time
+	var runID string
 	err = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(r.Context(), `SELECT lattis.push_pipeline($1::uuid, $2)`, id, name); err != nil {
-			return err
-		}
-		return tx.QueryRow(r.Context(), `SELECT clock_timestamp()`).Scan(&since)
+		return tx.QueryRow(r.Context(), `SELECT lattis.push_pipeline($1::uuid, $2)::text`, id, name).Scan(&runID)
 	})
 	if err != nil {
 		os.Remove(path)
@@ -120,8 +117,7 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	for {
 		var run json.RawMessage
 		err := s.Store.DB.QueryRow(ctx, `SELECT to_jsonb(x) - 'pipeline_id' FROM lattis.pipeline_runs x
-			WHERE x.pipeline_id = $1 AND x.started_at >= $2::timestamptz AND x.finished_at IS NOT NULL
-			ORDER BY x.started_at DESC LIMIT 1`, id, since).Scan(&run)
+			WHERE x.id = $1 AND x.finished_at IS NOT NULL`, runID).Scan(&run)
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(run)
@@ -135,7 +131,7 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "running"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "running", "id": runID, "run_id": runID})
 			return
 		case <-time.After(500 * time.Millisecond):
 		}
@@ -144,7 +140,8 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 
 var errTooBig = errors.New("trop gros")
 
-// pushStatus : état d'une source poussée de l'utilisateur (dernier envoi).
+// pushStatus : état d'une source poussée de l'utilisateur (dernier envoi),
+// ou d'un envoi précis (?run=<run_id> rendu par POST).
 func (s *Server) pushStatus(w http.ResponseWriter, r *http.Request) {
 	u, err := s.bearer(r)
 	if err != nil {
@@ -154,6 +151,29 @@ func (s *Server) pushStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Users == nil {
 		apiError(w, http.StatusServiceUnavailable, "unavailable", "pipelines indisponibles sur ce serveur")
+		return
+	}
+	if run := r.URL.Query().Get("run"); run != "" {
+		if !uuidRe.MatchString(run) || !uuidRe.MatchString(r.PathValue("id")) {
+			apiError(w, http.StatusNotFound, "not_found", "envoi inconnu")
+			return
+		}
+		var out json.RawMessage
+		err := s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
+			return tx.QueryRow(r.Context(), `SELECT lattis.pushed_run($1::uuid, $2::uuid)`, r.PathValue("id"), run).Scan(&out)
+		})
+		var pe *pgconn.PgError
+		switch {
+		case errors.As(err, &pe) && pe.Code == "42501":
+			apiError(w, http.StatusForbidden, "forbidden", pe.Message)
+		case errors.As(err, &pe) && pe.Code == "P0002", err == nil && (out == nil || string(out) == "null"):
+			apiError(w, http.StatusNotFound, "not_found", "envoi inconnu")
+		case err != nil:
+			s.unavailable(w, err)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(out)
+		}
 		return
 	}
 	var list []map[string]any
