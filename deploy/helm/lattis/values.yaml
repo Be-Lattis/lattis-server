@@ -95,3 +95,25 @@ metrics:
 # (/var/lib/lattis/pipelines). Vide : emptyDir.
 pipelines:
   persistentClaim: ""
+
+# Édition web : l'application dans le navigateur. Chaque utilisateur
+# connecté reçoit un pod lattis-engine, créé et supprimé par lattisd (droits
+# limités aux pods et volumes de l'espace de noms) et rattaché à son pod.
+web:
+  enabled: false
+  engineImage:
+    repository: ghcr.io/be-lattis/lattis-engine
+    tag: main
+  maxEngines: 50
+  idle: 30m
+  # Requêtes de chaque pod ; memory est aussi sa limite.
+  resources:
+    cpu: 250m
+    memory: 1Gi
+  # Cache de chaque utilisateur : volume persistant (size, ex. 1Gi), sinon
+  # emptyDir (perdu à l'arrêt du moteur, rechargé depuis le serveur).
+  cache:
+    size: ""
+    storageClass: ""
+  # Seul lattisd joint les moteurs.
+  networkPolicy: true

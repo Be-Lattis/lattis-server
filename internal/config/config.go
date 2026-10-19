@@ -34,6 +34,17 @@ type Endpoint struct {
 func (e Endpoint) String() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
 
 // Config est la configuration d'amorçage.
+// K8sEngines : pods des moteurs (LATTIS_WEB_K8S_*).
+type K8sEngines struct {
+	Image, Namespace, PullSecret string
+	CPU, Memory                  string // requêtes ; Memory est aussi la limite
+	// CacheSize : volume persistant par utilisateur (« 1Gi ») ; vide : emptyDir.
+	CacheSize, StorageClass string
+	// OwnerPod, OwnerUID : pod de lattisd (API descendante), propriétaire des
+	// pods des moteurs (supprimés avec lui).
+	OwnerPod, OwnerUID string
+}
+
 type Config struct {
 	Edition        Edition
 	PublicURL      *url.URL // émetteur OIDC
@@ -60,6 +71,20 @@ type Config struct {
 	// WebEngineUIDs : plage d'UID (et de GID) système des moteurs, un par
 	// moteur en cours ; [0, 0] : même utilisateur que lattisd.
 	WebEngineUIDs [2]int
+	// WebLauncher : process (processus de lattisd), docker (conteneurs par
+	// le mini lanceur lattis-launcher) ou kubernetes (pods).
+	WebLauncher string
+	// WebEngineListen : écoute interne de /engine/token pour les moteurs en
+	// conteneur ou en pod (vide en mode process).
+	WebEngineListen string
+	// WebTokenURL : adresse de /engine/token vue des moteurs (vide en mode
+	// process : bouclage local sur l'écoute publique).
+	WebTokenURL string
+	// Mode docker : adresse du mini lanceur et fichier de son jeton.
+	LauncherURL       string
+	LauncherTokenFile string
+	// Mode kubernetes : image du moteur et réglages des pods.
+	K8s K8sEngines
 	// TrustProxy : faire confiance à X-Forwarded-For pour la limitation de débit.
 	TrustProxy bool
 	// ExtraRedirects : URI de redirection supplémentaires acceptées pour le
@@ -128,8 +153,35 @@ func parse(get func(string) string) (*Config, error) {
 	if c.Edition != EditionAdmin && c.Edition != EditionWeb {
 		errs = append(errs, fmt.Errorf("LATTIS_EDITION : admin ou web, pas %q", c.Edition))
 	}
-	if c.Edition == EditionWeb && c.WebEngine == "" {
-		errs = append(errs, errors.New("LATTIS_EDITION=web : LATTIS_WEB_ENGINE (chemin de lattis-engine) manquant"))
+	c.WebLauncher = def("LATTIS_WEB_LAUNCHER", "process")
+	c.WebTokenURL = def("LATTIS_WEB_TOKEN_URL", "")
+	c.LauncherURL = strings.TrimRight(def("LATTIS_WEB_LAUNCHER_URL", ""), "/")
+	c.LauncherTokenFile = def("LATTIS_WEB_LAUNCHER_TOKEN_FILE", "")
+	c.K8s = K8sEngines{Image: def("LATTIS_WEB_K8S_IMAGE", ""), Namespace: def("LATTIS_WEB_K8S_NAMESPACE", ""),
+		PullSecret: def("LATTIS_WEB_K8S_PULL_SECRET", ""), CPU: def("LATTIS_WEB_K8S_CPU", "250m"),
+		Memory: def("LATTIS_WEB_K8S_MEMORY", "1Gi"), CacheSize: def("LATTIS_WEB_K8S_CACHE_SIZE", ""),
+		StorageClass: def("LATTIS_WEB_K8S_STORAGE_CLASS", ""), OwnerPod: def("LATTIS_WEB_K8S_OWNER_POD", ""),
+		OwnerUID: def("LATTIS_WEB_K8S_OWNER_UID", "")}
+	if c.Edition == EditionWeb {
+		switch c.WebLauncher {
+		case "process":
+			if c.WebEngine == "" {
+				errs = append(errs, errors.New("LATTIS_EDITION=web : LATTIS_WEB_ENGINE (chemin de lattis-engine) manquant"))
+			}
+		case "docker", "kubernetes":
+			c.WebEngineListen = def("LATTIS_WEB_ENGINE_LISTEN", ":8081")
+			if c.WebTokenURL == "" {
+				errs = append(errs, fmt.Errorf("LATTIS_WEB_LAUNCHER=%s : LATTIS_WEB_TOKEN_URL (adresse de /engine/token vue des moteurs, écoute LATTIS_WEB_ENGINE_LISTEN) manquant", c.WebLauncher))
+			}
+			if c.WebLauncher == "docker" && (c.LauncherURL == "" || c.LauncherTokenFile == "") {
+				errs = append(errs, errors.New("LATTIS_WEB_LAUNCHER=docker : LATTIS_WEB_LAUNCHER_URL et LATTIS_WEB_LAUNCHER_TOKEN_FILE manquants"))
+			}
+			if c.WebLauncher == "kubernetes" && c.K8s.Image == "" {
+				errs = append(errs, errors.New("LATTIS_WEB_LAUNCHER=kubernetes : LATTIS_WEB_K8S_IMAGE (image de lattis-engine) manquant"))
+			}
+		default:
+			errs = append(errs, fmt.Errorf("LATTIS_WEB_LAUNCHER : process, docker ou kubernetes, pas %q", c.WebLauncher))
+		}
 	}
 	pub := def("LATTIS_PUBLIC_URL", "")
 	if pub == "" {

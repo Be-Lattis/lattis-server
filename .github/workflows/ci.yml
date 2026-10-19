@@ -29,6 +29,20 @@ jobs:
         env:
           LATTIS_TEST_PG_URL: postgres://postgres:pg@127.0.0.1:5432/postgres
 
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Chart (édition admin et édition web)
+        run: |
+          set -o pipefail
+          V="--set publicURL=https://lattis.example.com --set secrets.existingSecret=s --set secrets.signingKeySecret=k --set secrets.postgresTLSSecret=t --set lattisd.bootstrapOwner=a@example.com"
+          helm lint deploy/helm/lattis $V
+          helm template t deploy/helm/lattis $V > /dev/null
+          helm template t deploy/helm/lattis $V --set web.enabled=true --set web.cache.size=1Gi | tee /tmp/web.yaml | grep -q "kind: NetworkPolicy"
+          grep -q "LATTIS_WEB_LAUNCHER" /tmp/web.yaml
+
   server-image:
     runs-on: ubuntu-latest
     steps:
@@ -66,6 +80,16 @@ jobs:
           for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
           cd ../..
           LATTIS_E2E_WEB_URL=http://localhost:8080 LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run ComposeWeb ./internal/e2e/
+      - name: Édition web, moteurs en conteneurs (mini lanceur)
+        run: |
+          docker build -f docker/launcher/Dockerfile -t be-lattis/lattis-launcher:dev .
+          cd deploy/compose
+          export LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web LATTIS_WEB_LAUNCHER=docker             LATTIS_WEB_LAUNCHER_URL=http://launcher:8090 LATTIS_WEB_LAUNCHER_TOKEN_FILE=/etc/lattis/launcher/token             LATTIS_WEB_TOKEN_URL=http://lattisd:8081/engine/token LATTIS_ENGINE_IMAGE=be-lattis/lattis-engine:ci
+          docker compose --profile docker-engines up -d --no-build launcher lattisd
+          for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
+          cd ../..
+          LATTIS_E2E_WEB_URL=http://localhost:8080 LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run ComposeWeb ./internal/e2e/
+          docker ps --filter label=lattis.engine=1 --format '{{.Names}}' | grep lattis-engine-
       - if: failure()
         working-directory: deploy/compose
         run: docker compose logs

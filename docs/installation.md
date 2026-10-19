@@ -136,7 +136,11 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_WEB_CACHE_DIR` | `/var/lib/lattis/web` | Édition web : un répertoire par utilisateur (cache SQLite, fichiers envoyés). |
 | `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs simultanés (au-delà : 503). |
 | `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
-| `LATTIS_WEB_ENGINE_UIDS` | vide | Édition web, Linux : plage d'UID système (`200000-200999`, au moins `LATTIS_WEB_MAX_ENGINES` valeurs) ; chaque moteur tourne sous son propre UID et groupe, sans accès à la clé de signature, aux secrets ni aux caches des autres. Vide : même utilisateur que `lattisd`. Voir §5.1. |
+| `LATTIS_WEB_LAUNCHER` | `process` | Édition web : lancement des moteurs, `process` (processus de `lattisd`), `docker` (conteneurs par le mini lanceur `lattis-launcher`) ou `kubernetes` (pods). Voir §5.1. |
+| `LATTIS_WEB_TOKEN_URL` | vide | Modes `docker` et `kubernetes` : adresse de `/engine/token` vue des moteurs (écoute interne `LATTIS_WEB_ENGINE_LISTEN`, `:8081` par défaut, à ne pas exposer). |
+| `LATTIS_WEB_LAUNCHER_URL`, `LATTIS_WEB_LAUNCHER_TOKEN_FILE` | vide | Mode `docker` : adresse du mini lanceur et fichier du jeton partagé avec lui. |
+| `LATTIS_WEB_K8S_IMAGE`, `_CPU`, `_MEMORY`, `_CACHE_SIZE`, `_STORAGE_CLASS`, `_PULL_SECRET`, `_NAMESPACE` | `250m`, `1Gi` | Mode `kubernetes` : image de `lattis-engine`, requêtes (la mémoire est aussi la limite), volume de cache par utilisateur (vide : `emptyDir`). Posés par le chart Helm (`web.*`). |
+| `LATTIS_WEB_ENGINE_UIDS` | vide | Édition web, Linux : plage d'UID système (`200000-200999`, au moins `LATTIS_WEB_MAX_ENGINES` valeurs) ; chaque moteur tourne sous son propre UID et groupe, sans accès à la clé de signature, aux secrets ni aux caches des autres. Vide : 200000 et suivants si `lattisd` tourne en root, sinon même utilisateur que `lattisd`. Voir §5.1. |
 | `LATTIS_WEB_TOKEN_URL` | `http://127.0.0.1:<port>/engine/token` | Édition web : adresse où les moteurs demandent leurs jetons (à préciser si `lattisd` sert lui-même le TLS). |
 | `LATTIS_PUBLIC_URL` | (obligatoire) | URL publique, émetteur des jetons. |
 | `LATTIS_PG_RW_URL` | (obligatoire) | Connexion de service au parent (`lattis_service`), par exemple `postgres://lattis_service:<mdp>@postgres:5432/lattis?sslmode=require`. |
@@ -167,11 +171,19 @@ Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres comm
 
 Image `be-lattis/server` : `POSTGRES_PASSWORD` (superutilisateur, jamais utilisé par `lattisd`), `LATTIS_SERVICE_PASSWORD`, `LATTIS_ISSUER` (= `LATTIS_PUBLIC_URL`), `LATTIS_REPLICATION_PASSWORD` (crée `lattis_replicator` si présent), fichiers dans `/etc/lattis/tls` et `/etc/lattis/keys/public.pem`. Point d'entrée `lattis-replica` : `LATTIS_PRIMARY_HOST`, `LATTIS_PRIMARY_PORT` (5432), `LATTIS_REPLICATION_PASSWORD`, `LATTIS_REPLICATION_SLOT` (nom, ou `auto` = nom d'hôte).
 
-### 5.1 Isoler les moteurs de l'édition web
+### 5.1 Lancer et isoler les moteurs de l'édition web
 
-Par défaut, les moteurs `lattis-engine` tournent sous le même utilisateur système que `lattisd` : un moteur compromis pourrait lire la clé de signature, les secrets et les caches des autres utilisateurs. Avec `LATTIS_WEB_ENGINE_UIDS`, chaque moteur reçoit un UID (et un GID égal) de la plage, le même d'une session à l'autre tant qu'il est libre ; son répertoire de cache lui est donné et le répertoire parent passe en `0711` (traversable, pas lisible). Sous Linux, un moteur meurt aussi avec `lattisd`.
+Chaque utilisateur connecté à l'édition web reçoit son propre moteur `lattis-engine`. Trois modes, au choix (`LATTIS_WEB_LAUNCHER`) :
 
-`lattisd` doit alors pouvoir changer d'utilisateur : démarrez-le en root avec seulement les capacités `SETUID`, `SETGID`, `CHOWN` et `KILL` (Compose : `user: "0"`, `cap_drop: [ALL]`, `cap_add: [SETUID, SETGID, CHOWN, KILL]` ; Kubernetes : `securityContext.capabilities` équivalent). Gardez la clé de signature et les secrets lisibles par `lattisd` seul (`0600`).
+| Mode | Isolation | Ce qu'il faut |
+|---|---|---|
+| `process` (défaut) | Processus de `lattisd`. En root sous Linux, chaque moteur tourne sous son propre UID (plage `LATTIS_WEB_ENGINE_UIDS`, 200000 et suivants par défaut) : il n'atteint ni la clé de signature, ni les secrets, ni les caches des autres. Sinon, même utilisateur que `lattisd`. | Image `lattisd:web`. Pour l'isolation : `lattisd` en root avec seulement les capacités `SETUID`, `SETGID`, `CHOWN` et `KILL` (Compose : `user: "0"`, `cap_drop: [ALL]`, `cap_add: [SETUID, SETGID, CHOWN, KILL]`). |
+| `docker` | Un conteneur par utilisateur : système de fichiers en lecture seule, aucune capacité, `no-new-privileges`, mémoire, processeurs et processus limités, volume de cache par utilisateur. | Le mini lanceur `lattis-launcher` (image `docker/launcher`), seul à recevoir le socket Docker (qui donne root sur l'hôte) : `lattisd` ne lui demande que de démarrer, surveiller ou arrêter l'image du moteur, avec un jeton partagé. Compose : profil `docker-engines`, variables dans `.env.example`. `LATTIS_PUBLIC_URL` et `LATTIS_PG_PUBLIC_RW` doivent être joignables depuis un conteneur. |
+| `kubernetes` | Un pod par utilisateur (non root, système de fichiers en lecture seule, aucune capacité, sans jeton de compte de service), rattaché au pod de `lattisd` et supprimé avec lui ; seul `lattisd` le joint (NetworkPolicy). | Chart Helm : `web.enabled: true`. `lattisd` reçoit un compte de service limité aux pods et volumes de son espace de noms. |
+
+Dans les modes `docker` et `kubernetes`, les moteurs demandent leurs jetons sur une écoute interne de `lattisd` (`LATTIS_WEB_ENGINE_LISTEN`, `:8081`), protégée par le secret propre à chaque moteur. Ce secret est passé par une variable d'environnement : en Kubernetes, il est lisible par qui peut lire les pods de l'espace de noms.
+
+Le code est prêt pour une réserve de moteurs démarrés d'avance (interface `Launcher`) ; elle demandera que `lattis-engine` accepte de recevoir l'utilisateur après son démarrage.
 
 ## 6. Réglages du serveur (administration web)
 

@@ -1,0 +1,78 @@
+{{- if .Values.web.enabled }}
+{{- $fn := include "lattis.fullname" . -}}
+# Édition web : lattisd crée et supprime les pods des moteurs (et leurs
+# volumes de cache) dans cet espace de noms, rien d'autre.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $fn }}-lattisd
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fn }}-engines
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, delete, deletecollection]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [create, get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fn }}-engines
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fn }}-engines
+subjects:
+  - kind: ServiceAccount
+    name: {{ $fn }}-lattisd
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.web.networkPolicy }}
+---
+# Moteurs : seul lattisd les joint (port 8102).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-engines
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lattis-engine
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: 8102 }
+---
+# Écoute des jetons de lattisd (8081) : réservée aux moteurs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-lattisd-engine-port
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 9464 }
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lattis-engine
+      ports:
+        - { protocol: TCP, port: 8081 }
+{{- end }}
+{{- end }}

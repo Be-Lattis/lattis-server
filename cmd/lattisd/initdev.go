@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 //	DIR/keys/signing.pem   clé privée de lattisd
 //	DIR/keys/public.pem    clés publiques lues par lattis_oauth
 //	DIR/tls/server.crt|key certificat de PostgreSQL
+//	DIR/launcher/token     jeton du mini lanceur des moteurs (mode docker)
 func initDev(dir string, hosts []string) error {
 	keys := filepath.Join(dir, "keys")
 	tlsDir := filepath.Join(dir, "tls")
@@ -60,6 +62,25 @@ func initDev(dir string, hosts []string) error {
 	}
 	if err := os.WriteFile(filepath.Join(keys, "public.pem"), pub, 0o644); err != nil {
 		return err
+	}
+	// Jeton partagé entre lattisd et le mini lanceur des moteurs (mode docker).
+	launcher := filepath.Join(dir, "launcher")
+	if err := os.MkdirAll(launcher, 0o755); err != nil {
+		return err
+	}
+	tok := filepath.Join(launcher, "token")
+	if _, err := os.Stat(tok); errors.Is(err, os.ErrNotExist) {
+		b := make([]byte, 32)
+		_, _ = rand.Read(b)
+		if err := os.WriteFile(tok, []byte(hex.EncodeToString(b)+"\n"), 0o600); err != nil {
+			return err
+		}
+		if owner := os.Getenv("LATTIS_KEY_OWNER"); owner != "" {
+			var uid, gid int
+			if _, err := fmt.Sscanf(owner, "%d:%d", &uid, &gid); err == nil {
+				_ = os.Chown(tok, uid, gid)
+			}
+		}
 	}
 	crt := filepath.Join(tlsDir, "server.crt")
 	if _, err := os.Stat(crt); err == nil {

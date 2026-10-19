@@ -63,6 +63,13 @@ func TestStructure(t *testing.T) {
 	if order != "Code,Stock,Prix" {
 		t.Fatalf("ordre des colonnes : %s", order)
 	}
+	// Insertion en première position.
+	must(one(new(string), `SELECT lattis.insert_column($1::uuid, $2::uuid, 'Rang', 'integer', 1)::text`, wb, tid))
+	must(one(&order, `SELECT string_agg(name, ',' ORDER BY position) FROM `+tbl("lattis_meta_columns")+` WHERE table_id = $1`, tid))
+	if order != "Rang,Code,Stock,Prix" {
+		t.Fatalf("ordre après insertion : %s", order)
+	}
+	must(one(nil, `SELECT lattis.drop_column($1::uuid, $2::uuid, $3::uuid)`, wb, tid, col("Rang")))
 	refused("déjà une colonne", `SELECT lattis.add_column($1::uuid, $2::uuid, 'stock', 'text')`, wb, tid)
 	refused("type inconnu", `SELECT lattis.add_column($1::uuid, $2::uuid, 'Poids', 'float')`, wb, tid)
 

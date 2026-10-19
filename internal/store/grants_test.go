@@ -17,7 +17,7 @@ var publicAPI = []string{
 	"create_password_account", "create_pipeline", "create_role", "create_table", "create_team", "create_workbook",
 	"data_catalog", "dataset_audience_history", "dataset_changed_ids", "dataset_tombstones", "disable_user", "disallow_tenant", "drop_data_folder", "drop_dataset",
 	"drop_pipeline", "drop_restriction", "drop_role", "drop_team", "drop_workbook", "enable_user", "finish_publish",
-	"grant_role", "invite", "is_server_owner", "link_dataset", "list_teams", "login_summary", "move_data_folder",
+	"grant_role", "insert_column", "invite", "is_server_owner", "link_dataset", "list_teams", "login_summary", "move_data_folder",
 	"my_capabilities", "my_teams", "my_workbooks", "pipeline_targets", "publish_script", "record_open",
 	"remove_data_audience", "remove_provider", "remove_team_member", "rename_column", "rename_data_folder", "rename_table", "rename_team", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "run_pipeline", "save_meta", "set_config",

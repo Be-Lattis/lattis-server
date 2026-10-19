@@ -84,6 +84,12 @@ services:
       LATTIS_SECRETS_DIR: /etc/lattis/oauth
       LATTIS_BOOTSTRAP_OWNER: ${LATTIS_BOOTSTRAP_OWNER:?}
       LATTIS_METRICS_ADDR: ":9464"
+      # Édition web : moteurs en processus (défaut) ou en conteneurs par le
+      # mini lanceur (profil docker-engines, variables dans .env.example).
+      LATTIS_WEB_LAUNCHER: ${LATTIS_WEB_LAUNCHER:-process}
+      LATTIS_WEB_LAUNCHER_URL: ${LATTIS_WEB_LAUNCHER_URL:-}
+      LATTIS_WEB_LAUNCHER_TOKEN_FILE: ${LATTIS_WEB_LAUNCHER_TOKEN_FILE:-}
+      LATTIS_WEB_TOKEN_URL: ${LATTIS_WEB_TOKEN_URL:-}
     command: ["--migrate"]
     volumes:
       - secrets:/etc/lattis:ro
@@ -92,6 +98,27 @@ services:
     ports:
       - "8080:8080"
       - "127.0.0.1:9464:9464"
+
+  # Mini lanceur des moteurs web en conteneurs (LATTIS_WEB_LAUNCHER=docker) :
+  # seul service à recevoir le socket Docker. Les moteurs rejoignent le réseau
+  # du projet ; LATTIS_PUBLIC_URL et LATTIS_PG_PUBLIC_RW doivent alors être
+  # joignables depuis un conteneur (pas « localhost »).
+  launcher:
+    image: be-lattis/lattis-launcher:dev
+    build: { context: ../.., dockerfile: docker/launcher/Dockerfile }
+    profiles: [docker-engines]
+    depends_on:
+      init: { condition: service_completed_successfully }
+    environment:
+      LAUNCHER_TOKEN_FILE: /etc/lattis/launcher/token
+      LAUNCHER_IMAGE: ${LATTIS_ENGINE_IMAGE:-ghcr.io/be-lattis/lattis-engine:main}
+      LAUNCHER_NETWORK: lattis_default
+      LAUNCHER_SERVER: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
+      LAUNCHER_TOKEN_URL: http://lattisd:8081/engine/token
+      LAUNCHER_MAX: ${LATTIS_WEB_MAX_ENGINES:-50}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - secrets:/etc/lattis:ro
 
 volumes:
   web:

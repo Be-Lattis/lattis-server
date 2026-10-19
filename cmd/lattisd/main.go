@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -196,11 +198,23 @@ func serve(doMigrate bool) error {
 	auth.SourceURL, admin.SourceURL = cfg.SourceURL, cfg.SourceURL
 	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc, Replicas: reps}
 	if cfg.Edition == config.EditionWeb {
-		tokenURL, err := webTokenURL(cfg)
+		web, err := webManager(cfg, st, keys, adminSvc.Session)
 		if err != nil {
 			return err
 		}
-		srv.Web = &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: adminSvc.Session, TokenURL: tokenURL}
+		srv.Web = web
+		web.Init(ctx)
+		if cfg.WebEngineListen != "" {
+			// Moteurs en conteneur ou en pod : /engine/token sur une écoute
+			// interne, jamais exposée au public.
+			el := &http.Server{Addr: cfg.WebEngineListen, Handler: web.TokenHandler(), ReadHeaderTimeout: 10 * time.Second}
+			go func() {
+				if err := el.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+					slog.Error("écoute des moteurs", "addr", cfg.WebEngineListen, "err", err)
+				}
+			}()
+			defer el.Close()
+		}
 		defer func() {
 			sctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
 			defer cancel()
@@ -268,12 +282,45 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 	}
 }
 
-// webTokenURL : adresse de /engine/token pour les moteurs, en bouclage local
-// sur l'écoute de lattisd (LATTIS_WEB_TOKEN_URL la remplace).
-func webTokenURL(cfg *config.Config) (string, error) {
-	if v := os.Getenv("LATTIS_WEB_TOKEN_URL"); v != "" {
-		return v, nil
+// webManager : moteurs de l'édition web, lancés selon LATTIS_WEB_LAUNCHER.
+func webManager(cfg *config.Config, st *store.Store, keys *tokens.KeySet, session func(*http.Request) (store.User, error)) (*webapp.Manager, error) {
+	m := &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: session, TokenURL: cfg.WebTokenURL}
+	switch cfg.WebLauncher {
+	case "docker":
+		tok, err := os.ReadFile(cfg.LauncherTokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("LATTIS_WEB_LAUNCHER_TOKEN_FILE : %w", err)
+		}
+		m.Launcher = &webapp.DockerLauncher{URL: cfg.LauncherURL, Token: strings.TrimSpace(string(tok))}
+	case "kubernetes":
+		k, err := webapp.NewKubeLauncher(cfg.K8s)
+		if err != nil {
+			return nil, err
+		}
+		m.Launcher = k
+	default:
+		uids := cfg.WebEngineUIDs
+		// En root sous Linux : un UID par moteur, sans réglage.
+		if uids[1] == 0 && runtime.GOOS == "linux" && os.Geteuid() == 0 {
+			uids = webapp.DefaultUIDs(cfg.WebMaxEngines)
+			slog.Info("moteurs web : un UID système par moteur", "first", uids[0], "count", uids[1])
+		}
+		m.Launcher = &webapp.ProcessLauncher{Bin: cfg.WebEngine, CacheDir: cfg.WebCacheDir, UIDs: uids}
+		if m.TokenURL == "" {
+			u, err := webTokenURL(cfg)
+			if err != nil {
+				return nil, err
+			}
+			m.TokenURL = u
+		}
 	}
+	slog.Info("moteurs web", "launcher", cfg.WebLauncher)
+	return m, nil
+}
+
+// webTokenURL : adresse de /engine/token pour les moteurs en processus, en
+// bouclage local sur l'écoute de lattisd (LATTIS_WEB_TOKEN_URL la remplace).
+func webTokenURL(cfg *config.Config) (string, error) {
 	if cfg.TLSCertFile != "" {
 		return "", errors.New("édition web avec TLS dans lattisd : préciser LATTIS_WEB_TOKEN_URL")
 	}

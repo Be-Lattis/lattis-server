@@ -11,6 +11,9 @@ spec:
   ports:
     - { name: http, port: {{ .Values.lattisd.service.port }}, targetPort: http }
     - { name: metrics, port: 9464, targetPort: metrics }
+    {{- if .Values.web.enabled }}
+    - { name: engine, port: 8081, targetPort: engine }
+    {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -28,6 +31,9 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.web.enabled }}
+      serviceAccountName: {{ $fn }}-lattisd
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         fsGroup: 65532
@@ -41,7 +47,27 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           env:
+            {{- if .Values.web.enabled }}
+            - { name: LATTIS_EDITION, value: web }
+            - { name: LATTIS_WEB_LAUNCHER, value: kubernetes }
+            - { name: LATTIS_WEB_K8S_IMAGE, value: "{{ .Values.web.engineImage.repository }}:{{ .Values.web.engineImage.tag }}" }
+            - { name: LATTIS_WEB_TOKEN_URL, value: "http://{{ $fn }}-lattisd.{{ .Release.Namespace }}.svc:8081/engine/token" }
+            - { name: LATTIS_WEB_MAX_ENGINES, value: {{ .Values.web.maxEngines | quote }} }
+            - { name: LATTIS_WEB_IDLE, value: {{ .Values.web.idle | quote }} }
+            - { name: LATTIS_WEB_K8S_CPU, value: {{ .Values.web.resources.cpu | quote }} }
+            - { name: LATTIS_WEB_K8S_MEMORY, value: {{ .Values.web.resources.memory | quote }} }
+            - { name: LATTIS_WEB_K8S_CACHE_SIZE, value: {{ .Values.web.cache.size | quote }} }
+            - { name: LATTIS_WEB_K8S_STORAGE_CLASS, value: {{ .Values.web.cache.storageClass | quote }} }
+            {{- with .Values.imagePullSecrets }}
+            - { name: LATTIS_WEB_K8S_PULL_SECRET, value: {{ (first .).name | quote }} }
+            {{- end }}
+            - name: LATTIS_WEB_K8S_OWNER_POD
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: LATTIS_WEB_K8S_OWNER_UID
+              valueFrom: { fieldRef: { fieldPath: metadata.uid } }
+            {{- else }}
             - { name: LATTIS_EDITION, value: admin }
+            {{- end }}
             - { name: LATTIS_PUBLIC_URL, value: {{ .Values.publicURL | quote }} }
             - { name: LATTIS_BOOTSTRAP_OWNER, value: {{ .Values.lattisd.bootstrapOwner | quote }} }
             - { name: LATTIS_TRUST_PROXY, value: {{ .Values.lattisd.trustProxy | quote }} }
@@ -68,6 +94,9 @@ spec:
           ports:
             - { name: http, containerPort: 8080 }
             - { name: metrics, containerPort: 9464 }
+            {{- if .Values.web.enabled }}
+            - { name: engine, containerPort: 8081 }
+            {{- end }}
           readinessProbe:
             httpGet: { path: /readyz, port: http }
             periodSeconds: 5
