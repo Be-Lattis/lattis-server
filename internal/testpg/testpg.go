@@ -34,6 +34,12 @@ type DB struct {
 // l'image et applique les migrations.
 func New(t *testing.T) *DB {
 	t.Helper()
+	return NewAt(t, migrate.Latest())
+}
+
+// NewAt crée une base de test migrée jusqu'à la version donnée seulement.
+func NewAt(t *testing.T, version int) *DB {
+	t.Helper()
 	admin := os.Getenv("LATTIS_TEST_PG_URL")
 	if admin == "" {
 		t.Skip("LATTIS_TEST_PG_URL non défini : test d'intégration ignoré")
@@ -91,7 +97,7 @@ func New(t *testing.T) *DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
-	if _, err := migrate.Up(ctx, st.DB); err != nil {
+	if _, err := migrate.UpTo(ctx, st.DB, version); err != nil {
 		t.Fatal(err)
 	}
 	return &DB{Name: name, Super: super, Store: st, SuperURL: superURL}

@@ -25,7 +25,7 @@
 {{end}}{{if and (not $r.members) (not $r.teams)}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}
 </tbody></table>
 <form method="post" action="/admin/do/grant_role" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant" aria-label="Adresse de la personne à ajouter au rôle"><button>Ajouter</button></form>
-{{if $d.Teams}}<form method="post" action="/admin/do/grant_team" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><select name="team_id" aria-label="Équipe">{{range $d.Teams}}<option value="{{.id}}">{{.name}}</option>{{end}}</select><button>Ajouter l'équipe</button></form>{{end}}
+{{if $d.Teams}}<form method="post" action="/admin/do/grant_team" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><select name="team_id" aria-label="Équipe">{{range $d.Teams}}<option value="{{.id}}">{{.path}}</option>{{end}}</select><button>Ajouter l'équipe</button></form>{{end}}
 {{if .Nodes}}
 <details class="sub"><summary>Niveaux et filtres du rôle</summary>
 <table class="levels"><thead><tr><th>Nœud</th><th>Niveau et filtres</th></tr></thead><tbody>
@@ -80,5 +80,17 @@
 <div class="scroll"><table class="compact"><thead><tr>{{range .Columns}}<th>{{.}}</th>{{end}}</tr></thead><tbody>
 {{range .Rows}}<tr>{{range .}}<td>{{.}}</td>{{end}}</tr>{{end}}</tbody></table></div>
 {{end}}
+</section>
+
+<section class="panel dangerzone" id="suppression">
+<h2>Supprimer le classeur</h2>
+<p>Le classeur, ses tableaux, ses rôles et ses invitations sont supprimés définitivement. Les postes qui l'ont ouvert gardent leur copie, sans plus de synchronisation.</p>
+<form method="post" action="/admin/do/drop_workbook" class="danger stack">{{template "csrf" $}}<input type="hidden" name="id" value="{{$wb.id}}">
+<label>Pour confirmer, tapez le titre du classeur : <strong>{{$wb.title}}</strong><input name="title" autocomplete="off" data-must-type="{{$wb.title}}" aria-label="Titre du classeur à supprimer"></label>
+{{if $d.Datasets}}<div class="panel warn"><p><strong>Ce classeur alimente le Data Lake Lattis.</strong> Ces données seront retirées, et les classeurs qui les utilisent n'en recevront plus les mises à jour :</p>
+<ul>{{range $d.Datasets}}<li>{{.name}} <code>donnees.{{.sql_name}}</code>{{with .used_by}} — utilisée par {{len .}} classeur(s){{end}}</li>{{end}}</ul>
+<label class="inline"><input type="checkbox" name="confirm_datasets"> Je retire aussi ces données du Data Lake</label></div>{{end}}
+<label class="inline"><input type="checkbox" name="confirm"> Je confirme la suppression définitive</label>
+<button>Supprimer le classeur</button></form>
 </section>
 {{end}}

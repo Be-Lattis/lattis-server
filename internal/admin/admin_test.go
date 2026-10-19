@@ -297,6 +297,17 @@ func TestAdminConsole(t *testing.T) {
 		JOIN lattis.workbooks w ON w.schema_name = n.nspname WHERE w.title = 'Suivi console' AND c.relname = 'Commandes' AND a.attname IN ('Client', 'Montant', 'Livrée')`).Scan(&cols); err != nil || cols != 3 {
 		t.Fatalf("tableau créé : %d colonnes, %v", cols, err)
 	}
+	// Suppression : titre à retaper.
+	var suivi string
+	if err := e.db.Super.QueryRow(ctx, `SELECT id::text FROM lattis.workbooks WHERE title = 'Suivi console'`).Scan(&suivi); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := b.post("/admin/do/drop_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "id": {suivi}, "confirm": {"on"}, "title": {"Suivi"}}); !strings.Contains(body, "ne correspond pas") {
+		t.Fatal("suppression sans le bon titre acceptée")
+	}
+	if _, body := b.post("/admin/do/drop_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "id": {suivi}, "confirm": {"on"}, "title": {"Suivi console"}}); !strings.Contains(body, "supprimé") {
+		t.Fatalf("suppression du classeur : %s", body)
+	}
 	if _, body := b.post("/admin/do/create_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "title": {"Mauvais"},
 		"mode": {"collaborative"}, "table": {"T"}, "columns": {"A : couleur"}}); !strings.Contains(body, "inconnu") {
 		t.Fatal("type de colonne inconnu accepté")
@@ -366,6 +377,9 @@ func TestAdminConsole(t *testing.T) {
 	if _, body = b.post("/admin/do/add_data_audience", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "dataset_id": {ds},
 		"kind": {"user"}, "email": {ownerEmail}, "predicate": {`"Région" = 'Nord'`}}); !strings.Contains(body, "Ajouté à l&#39;audience.") {
 		t.Fatalf("audience : %s", body)
+	}
+	if _, body := b.post("/admin/do/drop_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "id": {wb}, "confirm": {"on"}, "title": {"Ventes console"}}); !strings.Contains(body, "alimente 1 donnée") {
+		t.Fatal("suppression d'une source du Data Lake sans seconde confirmation")
 	}
 	if _, body = b.post("/admin/do/drop_dataset", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "id": {ds}, "confirm": {"on"}}); !strings.Contains(body, "Partage retiré.") {
 		t.Fatal("retrait du partage")

@@ -22,6 +22,10 @@
 </dl>
 <h3>Audience propre</h3>
 {{template "audience" (audienceCtx $p $s.audience (str $s.id) "" $d.Teams true)}}
+{{with $s.history}}<details class="sub"><summary>Historique de l'audience (qui pouvait lire, et depuis quand)</summary>
+<div class="scroll"><table class="compact"><thead><tr><th>Depuis le</th><th>Lecteurs</th><th>Par</th></tr></thead><tbody>
+{{range .}}<tr><td>{{date .at}}</td><td>{{range $i, $r := .readers}}{{if $i}}, {{end}}{{$r}}{{else}}<span class="muted">personne</span>{{end}}</td><td><small>{{.actor}}</small></td></tr>{{end}}
+</tbody></table></div></details>{{end}}
 <h3>Utilisée par</h3>
 {{if $s.used_by}}<div class="scroll"><table class="compact"><thead><tr><th>Classeur</th><th>Dernière modification</th><th>Dernière lecture</th></tr></thead><tbody>
 {{range $s.used_by}}<tr><td><a href="/admin/workbooks/{{.workbook_id}}">{{.title}}</a></td>

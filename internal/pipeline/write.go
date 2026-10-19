@@ -23,7 +23,10 @@ const maxRejects = 20
 
 // write convertit les lignes et les écrit dans le tableau, sous l'identité
 // technique du pipeline, dans une seule transaction.
-func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table) (Result, error) {
+// errDryRun annule la transaction d'une simulation.
+var errDryRun = errors.New("simulation")
+
+func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table, dry bool) (Result, error) {
 	res := Result{Read: len(t.Rows)}
 	if cells := len(t.Rows) * len(t.Header); cells > MaxCells {
 		return res, fmt.Errorf("source trop volumineuse : %d cellules (au plus %d)", cells, MaxCells)
@@ -184,8 +187,14 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table) (Result, erro
 				res.Deleted = int(tag.RowsAffected())
 			}
 		}
+		if dry {
+			return errDryRun
+		}
 		return nil
 	})
+	if dry && errors.Is(err, errDryRun) {
+		err = nil
+	}
 	return res, err
 }
 

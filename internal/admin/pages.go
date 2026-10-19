@@ -226,7 +226,11 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 			'server_owner', pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER'),
 			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'),
 			'data_publisher', pg_has_role(u.pg_role, 'lattis_data_publishers', 'MEMBER'),
-			'email_verified', u.email_verified)
+			'email_verified', u.email_verified,
+			'link_expires_at', (SELECT c.setup_expires_at FROM lattis.local_credentials c
+			                    WHERE c.user_id = u.id AND c.password_hash IS NULL),
+			'link_expired', (SELECT c.setup_expires_at < now() FROM lattis.local_credentials c
+			                 WHERE c.user_id = u.id AND c.password_hash IS NULL))
 			ORDER BY u.email), '[]')
 		FROM (SELECT * FROM lattis.users
 		      WHERE $1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'
@@ -305,6 +309,14 @@ func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (an
 	for _, d := range cat.Datasets {
 		f, _ := d["folder_id"].(string)
 		byFolder[f] = append(byFolder[f], d)
+	}
+	for _, d := range cat.Datasets {
+		if m, _ := d["manageable"].(bool); m {
+			var h any
+			if err := tx.QueryRow(ctx, `SELECT lattis.dataset_audience_history($1::uuid)`, d["id"]).Scan(&h); err == nil {
+				d["history"] = h
+			}
+		}
 	}
 	tree := buildTree(cat.Folders)
 	var fill func([]*treeNode)
@@ -396,8 +408,12 @@ func (s *Service) loadWorkbook(ctx context.Context, tx pgx.Tx, r *http.Request, 
 	if err != nil {
 		return nil, err
 	}
+	datasets, err := workbookDatasets(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]any{"ACL": acl, "Workbook": wb, "Tables": tables, "Roles": roles, "Levels": levels, "Teams": teams,
-		"Link": WorkbookLink(s.Config, id)}
+		"Link": WorkbookLink(s.Config, id), "Datasets": datasets}
 	if wb["mode"] == "collaborative" && wb["state"] == "published" {
 		drift, err := queryJSON(ctx, tx, `SELECT lattis.check_drift($1::uuid)`, id)
 		if err != nil {
@@ -545,6 +561,23 @@ func (s *Service) loadStatus(ctx context.Context, tx pgx.Tx, r *http.Request, u 
 		out["Monitored"] = s.Replicas.States()
 		out["Announced"] = s.Replicas.Available()
 		out["MaxLag"] = s.Config.ReplicaMaxLag.String()
+	}
+	return out, nil
+}
+
+// workbookDatasets : données du Data Lake tirées d'un classeur.
+func workbookDatasets(ctx context.Context, tx pgx.Tx, workbookID string) ([]map[string]any, error) {
+	var cat struct {
+		Datasets []map[string]any `json:"datasets"`
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.data_catalog()`).Scan(&cat); err != nil {
+		return nil, err
+	}
+	var out []map[string]any
+	for _, d := range cat.Datasets {
+		if src, ok := d["source"].(map[string]any); ok && src["workbook_id"] == workbookID {
+			out = append(out, d)
+		}
 	}
 	return out, nil
 }

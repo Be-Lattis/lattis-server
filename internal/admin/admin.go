@@ -31,6 +31,7 @@ import (
 
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/pipeline"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
@@ -179,6 +180,11 @@ func init() {
 }
 
 // Service porte les routes /admin/*.
+// Simulator simule un pipeline (pipeline.Runner).
+type Simulator interface {
+	Simulate(ctx context.Context, id, file string) (pipeline.Result, error)
+}
+
 type Service struct {
 	Config *config.Config
 	Store  *store.Store
@@ -188,6 +194,8 @@ type Service struct {
 	Replicas *replicas.Monitor
 	Version  string
 	Now      func() time.Time
+	// Pipelines : simulation des pipelines ; nil : bouton absent.
+	Pipelines Simulator
 }
 
 func (s *Service) now() time.Time {

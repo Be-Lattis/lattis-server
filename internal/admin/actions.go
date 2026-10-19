@@ -65,7 +65,7 @@ func (s *Service) actions() map[string]actionFunc {
 		"workbook_creator_off": exec1(`SELECT lattis.set_workbook_creator($1::uuid, false)`, "Rôle de créateur de classeurs retiré.", false, "id"),
 		"enable_user":          exec1(`SELECT lattis.enable_user($1::uuid)`, "Compte réactivé.", false, "id"),
 		"revoke_invitation":    exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
-		"drop_workbook":        exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
+		"drop_workbook":        dropWorkbook,
 		"create_team":          exec1(`SELECT lattis.create_team($1, $2::uuid)`, "Équipe créée.", false, "name", "parent_id"),
 		"data_publisher_on":    exec1(`SELECT lattis.set_data_publisher($1::uuid, true)`, "Cette personne peut maintenant partager des tableaux au Data Lake Lattis.", false, "id"),
 		"data_publisher_off":   exec1(`SELECT lattis.set_data_publisher($1::uuid, false)`, "Rôle de publieur au Data Lake retiré.", false, "id"),
@@ -77,6 +77,7 @@ func (s *Service) actions() map[string]actionFunc {
 		"remove_data_audience": exec1(`SELECT lattis.remove_data_audience($1::uuid)`, "Retiré de l'audience.", false, "id"),
 		"add_data_audience":    addDataAudience,
 		"create_pipeline":      createPipeline,
+		"simulate_pipeline":    s.simulatePipeline,
 		"create_workbook":      createWorkbook,
 		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
 		"toggle_pipeline":      exec1(`SELECT lattis.update_pipeline($1::uuid, jsonb_build_object('enabled', $2::boolean))`, "Pipeline mis à jour.", false, "id", "enabled"),
@@ -517,4 +518,50 @@ func createWorkbook(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 		msg += " " + owner + " en est propriétaire."
 	}
 	return msg, nil
+}
+
+// dropWorkbook : titre retapé et confirmation, plus une seconde confirmation
+// si le classeur alimente le Data Lake.
+func dropWorkbook(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	if !f.checked("confirm") {
+		return "", errConfirm
+	}
+	var title string
+	if err := tx.QueryRow(ctx, `SELECT lattis.workbook_acl($1::uuid) #>> '{workbook,title}'`, f.s("id")).Scan(&title); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(f.s("title")) != title {
+		return "", inputError("Le titre tapé ne correspond pas : le classeur n'a pas été supprimé.")
+	}
+	ds, err := workbookDatasets(ctx, tx, f.s("id"))
+	if err != nil {
+		return "", err
+	}
+	if len(ds) > 0 && !f.checked("confirm_datasets") {
+		return "", inputError(fmt.Sprintf("Ce classeur alimente %d donnée(s) du Data Lake : cochez aussi leur retrait.", len(ds)))
+	}
+	for _, d := range ds {
+		if _, err := tx.Exec(ctx, `SELECT lattis.drop_dataset($1::uuid)`, d["id"]); err != nil {
+			return "", err
+		}
+	}
+	if _, err := tx.Exec(ctx, `SELECT lattis.drop_workbook($1::uuid)`, f.s("id")); err != nil {
+		return "", err
+	}
+	return "Classeur « " + title + " » supprimé.", nil
+}
+
+// simulatePipeline : bilan d'une exécution sans rien écrire.
+func (s *Service) simulatePipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	if s.Pipelines == nil {
+		return "", inputError("Simulation indisponible sur ce serveur.")
+	}
+	res, err := s.Pipelines.Simulate(ctx, f.s("id"), "")
+	if err != nil {
+		return "", err
+	}
+	if res.Status == "error" {
+		return "", inputError("Simulation : " + res.Summary())
+	}
+	return "Simulation (rien n'a été écrit) : " + res.Summary(), nil
 }

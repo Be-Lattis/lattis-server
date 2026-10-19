@@ -74,6 +74,12 @@ func (s *Service) uploadPipeline(w http.ResponseWriter, r *http.Request) {
 	if len(name) > 200 {
 		name = name[:200]
 	}
+	if r.PostFormValue("simulate") != "" {
+		s.perform(w, r, func(ctx context.Context, tx pgx.Tx, _ form) (string, error) {
+			return s.simulateUpload(ctx, id, name, f)
+		})
+		return
+	}
 	s.perform(w, r, func(ctx context.Context, tx pgx.Tx, _ form) (string, error) {
 		// Droits vérifiés par run_pipeline (propriétaire du serveur) avant
 		// l'écriture du fichier : la transaction échoue sinon.
@@ -124,4 +130,37 @@ func pipelineSource(x map[string]any) string {
 		return "PostgreSQL externe : " + str("query")
 	}
 	return fmt.Sprint(x["source_kind"])
+}
+
+// simulateUpload : fichier envoyé simulé puis effacé.
+func (s *Service) simulateUpload(ctx context.Context, id, name string, f io.Reader) (string, error) {
+	if s.Pipelines == nil {
+		return "", inputError("Simulation indisponible sur ce serveur.")
+	}
+	dir := filepath.Join(s.Config.PipelineDir, id, "uploads")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	name = "simulation-" + name
+	path := filepath.Join(dir, name)
+	out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(path)
+	if _, err := io.Copy(out, io.LimitReader(f, maxUpload+1)); err != nil {
+		out.Close()
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		return "", err
+	}
+	res, err := s.Pipelines.Simulate(ctx, id, name)
+	if err != nil {
+		return "", err
+	}
+	if res.Status == "error" {
+		return "", inputError("Simulation : " + res.Summary())
+	}
+	return "Simulation (rien n'a été écrit) : " + res.Summary(), nil
 }

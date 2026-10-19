@@ -20,8 +20,19 @@ type Metrics struct {
 	Logins      *prometheus.CounterVec
 	Enrollments *prometheus.CounterVec
 	BuildInfo   *prometheus.GaugeVec
-	// PipelineRuns : exécutions des pipelines d'ingestion par statut.
-	PipelineRuns *prometheus.CounterVec
+	// PipelineRuns : exécutions des pipelines d'ingestion par statut ;
+	// PipelineDuration : leur durée ; PipelineRows : lignes par effet.
+	PipelineRuns     *prometheus.CounterVec
+	PipelineDuration *prometheus.HistogramVec
+	PipelineRows     *prometheus.CounterVec
+}
+
+// Observe compte la durée et les lignes d'une exécution de pipeline.
+func (m *Metrics) Observe(status string, seconds float64, rows map[string]int) {
+	m.PipelineDuration.WithLabelValues(status).Observe(seconds)
+	for k, n := range rows {
+		m.PipelineRows.WithLabelValues(k).Add(float64(n))
+	}
 }
 
 // Inc compte une exécution de pipeline (pipeline.Counter).
@@ -43,8 +54,16 @@ func New(server string, db *pgxpool.Pool) *Metrics {
 		PipelineRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "lattis_pipeline_runs_total", Help: "Exécutions des pipelines d'ingestion par statut (ok, warning, error).",
 		}, []string{"status"}),
+		PipelineDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "lattis_pipeline_duration_seconds", Help: "Durée des exécutions de pipelines.",
+			Buckets: []float64{1, 5, 15, 60, 300, 900, 1800},
+		}, []string{"status"}),
+		PipelineRows: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "lattis_pipeline_rows_total", Help: "Lignes traitées par les pipelines (read, inserted, updated, deleted, rejected).",
+		}, []string{"kind"}),
 	}
-	m.Registry.MustRegister(m.Logins, m.Enrollments, m.BuildInfo, m.PipelineRuns,
+	m.Registry.MustRegister(m.Logins, m.Enrollments, m.BuildInfo, m.PipelineRuns, m.PipelineDuration, m.PipelineRows,
+		&lattisCollector{db: db},
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		&pgCollector{server: server, db: db})
 	return m
@@ -145,4 +164,33 @@ func (c *pgCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	ch <- prometheus.MustNewConstMetric(descSessions, prometheus.GaugeValue, desktop, "desktop")
 	ch <- prometheus.MustNewConstMetric(descSessions, prometheus.GaugeValue, web, "web")
+}
+
+var (
+	descOldestRun = prometheus.NewDesc("lattis_pipeline_oldest_running_seconds",
+		"Âge de la plus ancienne exécution de pipeline en cours (0 : aucune).", nil, nil)
+	descUnavailable = prometheus.NewDesc("lattis_datasets_unavailable",
+		"Données du Data Lake dont la source est indisponible (classeur supprimé ou tableau introuvable).", nil, nil)
+)
+
+// lattisCollector lit l'état des pipelines et du Data Lake à chaque relevé.
+type lattisCollector struct{ db *pgxpool.Pool }
+
+func (c *lattisCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- descOldestRun
+	ch <- descUnavailable
+}
+
+func (c *lattisCollector) Collect(ch chan<- prometheus.Metric) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var oldest, unavailable float64
+	if err := c.db.QueryRow(ctx, `SELECT coalesce(extract(epoch FROM now() - min(started_at)), 0)::float8
+		FROM lattis.pipeline_runs WHERE status = 'running'`).Scan(&oldest); err == nil {
+		ch <- prometheus.MustNewConstMetric(descOldestRun, prometheus.GaugeValue, oldest)
+	}
+	if err := c.db.QueryRow(ctx, `SELECT count(*)::float8 FROM lattis.datasets WHERE workbook_id IS NULL OR table_id IS NULL`).
+		Scan(&unavailable); err == nil {
+		ch <- prometheus.MustNewConstMetric(descUnavailable, prometheus.GaugeValue, unavailable)
+	}
 }

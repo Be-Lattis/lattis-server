@@ -84,6 +84,12 @@ func Current(ctx context.Context, db *pgxpool.Pool) (int, error) {
 // Up applique les migrations manquantes, chacune dans sa transaction.
 // Renvoie le nombre de migrations appliquées.
 func Up(ctx context.Context, db *pgxpool.Pool) (int, error) {
+	return UpTo(ctx, db, 1<<30)
+}
+
+// UpTo applique les migrations manquantes jusqu'à la version max comprise
+// (tests de mise à jour depuis une version précédente).
+func UpTo(ctx context.Context, db *pgxpool.Pool, max int) (int, error) {
 	all, err := All()
 	if err != nil {
 		return 0, err
@@ -113,7 +119,7 @@ func Up(ctx context.Context, db *pgxpool.Pool) (int, error) {
 	}
 	applied := 0
 	for _, m := range all {
-		if m.Version <= current {
+		if m.Version <= current || m.Version > max {
 			continue
 		}
 		err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {

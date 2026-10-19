@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -98,6 +99,17 @@ func TestDatasets(t *testing.T) {
 	must(service(func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `SELECT lattis.set_data_publisher($1::uuid, false)`, bruno.UserID)
 		return err
+	}))
+	// Historique de l'audience : l'équipe Nord figure parmi les lecteurs.
+	must(as(pub.PGRole, func(tx pgx.Tx) error {
+		var hist string
+		if err := tx.QueryRow(ctx, `SELECT lattis.dataset_audience_history($1::uuid)::text`, ds).Scan(&hist); err != nil {
+			return err
+		}
+		if !strings.Contains(hist, "Équipe Nord") {
+			t.Errorf("historique de l'audience : %s", hist)
+		}
+		return nil
 	}))
 	if sqlName != "clients" {
 		t.Fatalf("nom SQL : %q", sqlName)

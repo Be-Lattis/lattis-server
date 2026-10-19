@@ -104,3 +104,19 @@ for (const b of document.querySelectorAll("[data-copy]")) {
     setTimeout(() => { b.textContent = label; }, 1500);
   });
 }
+
+// Boutons de suppression : inactifs tant que « Confirmer » n'est pas coché.
+for (const f of document.querySelectorAll("form.danger")) {
+  const boxes = [...f.querySelectorAll('input[type="checkbox"][name^="confirm"]')];
+  const typed = f.querySelector("[data-must-type]");
+  const btn = f.querySelector("button");
+  if (!btn || (!boxes.length && !typed)) continue;
+  const sync = () => {
+    const okBoxes = boxes.filter((b) => !b.closest("[hidden]")).every((b) => b.checked);
+    const okTyped = !typed || typed.value.trim() === typed.dataset.mustType;
+    btn.disabled = !(okBoxes && okTyped);
+  };
+  f.addEventListener("input", sync);
+  f.addEventListener("change", sync);
+  sync();
+}

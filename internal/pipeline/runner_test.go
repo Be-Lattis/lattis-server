@@ -83,6 +83,20 @@ func TestPipelineUpload(t *testing.T) {
 		return res
 	}
 
+	// Simulation : même bilan, rien d'écrit.
+	up := filepath.Join(dir, pid, "uploads")
+	must(os.MkdirAll(up, 0o750))
+	must(os.WriteFile(filepath.Join(up, "essai.csv"), []byte("Code;Libellé;PRIX_HT\nA1;Vis inox;1,50\nA9;Neuf;2\n"), 0o640))
+	sim, err := r.Simulate(ctx, pid, "essai.csv")
+	if err != nil || sim.Status != "ok" || sim.Inserted != 1 || sim.Updated != 1 {
+		t.Fatalf("simulation : %+v %v", sim, err)
+	}
+	var count int
+	must(db.Super.QueryRow(ctx, `SELECT count(*) FROM `+pgx.Identifier{schema, "Articles"}.Sanitize()).Scan(&count))
+	if count != 1 {
+		t.Fatalf("la simulation a écrit : %d lignes", count)
+	}
+
 	res := run("tarifs.csv", "Code;Libellé;PRIX_HT;Depuis\nA1;Vis inox;1,50;18/10/2026\nA2;Écrou;0,20;\nA3;Rondelle;pas un prix;\n")
 	if res["status"] != "warning" || res["inserted"].(float64) != 1 || res["updated"].(float64) != 1 || res["rejected"].(float64) != 1 {
 		t.Fatalf("première exécution : %v", res)

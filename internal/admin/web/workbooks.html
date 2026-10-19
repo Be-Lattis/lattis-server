@@ -23,7 +23,7 @@
 <td class="who">{{with .last_read}}<span class="clip" title="{{.email}}">{{.email}}</span><small>{{date .at}}</small>{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{bytes .size}}</td>
 <td>{{str .version}}</td>
-<td><form method="post" action="/admin/do/drop_workbook" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{.id}}">{{template "confirm"}}<button>Supprimer</button></form></td>
+<td><a href="/admin/workbooks/{{.id}}#suppression">Supprimer…</a></td>
 </tr>
 {{else}}<tr><td colspan="9" class="muted">Aucun classeur publié.</td></tr>{{end}}
 </tbody>

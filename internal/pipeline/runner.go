@@ -221,7 +221,14 @@ func (r *Runner) RunDue(ctx context.Context) (bool, error) {
 	if err != nil || p == nil {
 		return false, err
 	}
+	start := r.now()
 	res := r.Execute(ctx, p)
+	if o, ok := r.Metrics.(interface {
+		Observe(status string, seconds float64, rows map[string]int)
+	}); ok && r.Metrics != nil {
+		o.Observe(res.Status, r.now().Sub(start).Seconds(), map[string]int{"read": res.Read, "inserted": res.Inserted,
+			"updated": res.Updated, "deleted": res.Deleted, "rejected": res.Rejected})
+	}
 	if err := r.finish(ctx, p, runID, res); err != nil {
 		return true, err
 	}
@@ -320,7 +327,7 @@ func (r *Runner) Execute(ctx context.Context, p *Pipeline) Result {
 		r.moveFile(p, file, "failed")
 		return Result{Status: "error", Err: err.Error()}
 	}
-	res, err := r.write(ctx, p, t)
+	res, err := r.write(ctx, p, t, false)
 	if err != nil {
 		r.moveFile(p, file, "failed")
 		res.Status, res.Err = "error", err.Error()
@@ -394,4 +401,63 @@ func (r *Runner) alert(p *Pipeline, runID string, res Result) {
 		return
 	}
 	resp.Body.Close()
+}
+
+// Simulate lit et convertit la source d'un pipeline, puis écrit dans une
+// transaction annulée : le bilan est celui d'une vraie exécution, sans rien
+// changer ni ranger de fichier. file : fichier envoyé (source « upload »).
+func (r *Runner) Simulate(ctx context.Context, id, file string) (Result, error) {
+	p, err := scanPipeline(r.Store.DB.QueryRow(ctx, selectPipeline+` WHERE id = $1`, id))
+	if err != nil {
+		return Result{}, err
+	}
+	if file != "" {
+		p.PendingFile = file
+	}
+	ctx, cancel := context.WithTimeout(ctx, MaxRun)
+	defer cancel()
+	var t *Table
+	if p.SourceKind == "sql" {
+		t, err = r.fetchSQL(ctx, p)
+	} else {
+		var b []byte
+		b, _, err = r.fetchBytes(ctx, p)
+		if err == nil {
+			format := p.Format
+			if format == "sql" {
+				format = "csv"
+			}
+			t, err = parse(format, b, p.Source)
+		}
+	}
+	if err != nil {
+		return Result{Status: "error", Err: err.Error()}, nil
+	}
+	res, err := r.write(ctx, p, t, true)
+	if err != nil {
+		res.Status, res.Err = "error", err.Error()
+		return res, nil
+	}
+	res.Status = "ok"
+	if res.Rejected > 0 {
+		res.Status = "warning"
+	}
+	return res, nil
+}
+
+// Summary : bilan d'une exécution en une phrase.
+func (res Result) Summary() string {
+	if res.Status == "error" {
+		return "Échec : " + res.Err
+	}
+	s := fmt.Sprintf("%d ligne(s) lue(s) : %d ajoutée(s), %d modifiée(s), %d supprimée(s), %d rejetée(s).",
+		res.Read, res.Inserted, res.Updated, res.Deleted, res.Rejected)
+	for i, rj := range res.Rejects {
+		if i == 3 {
+			s += " …"
+			break
+		}
+		s += fmt.Sprintf(" Ligne %d (%s) : %s.", rj.Row, rj.Column, rj.Error)
+	}
+	return s
 }
