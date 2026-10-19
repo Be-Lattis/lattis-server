@@ -14,6 +14,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/events"
 	"github.com/Be-Lattis/lattis-server/internal/forms"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
@@ -43,6 +44,8 @@ type Server struct {
 	Pipelines Kicker
 	// Forms : formulaires (/f/<code>) ; nil : absents.
 	Forms *forms.Handler
+	// Events : relais des changements aux postes (GET /api/events).
+	Events *events.Hub
 }
 
 // Handler renvoie le routeur avec ses intergiciels.
@@ -56,6 +59,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("POST /api/push/{id}", s.push)
 	mux.HandleFunc("GET /api/push/{id}", s.pushStatus)
+	if s.Events != nil {
+		mux.HandleFunc("GET /api/events", s.Events.Handler(s.bearer))
+	}
 	if s.Forms != nil {
 		s.Forms.Bearer = s.bearer
 		s.Forms.ClientIP = func(r *http.Request) string { return auth.ClientIP(r, s.Config.TrustProxy) }
@@ -77,7 +83,7 @@ func (s *Server) Handler() http.Handler {
 	limiter := newLimiter(max(s.Config.RateLimit, 1), time.Minute)
 	return securityHeaders(s.Config.PublicURL.Scheme == "https", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/admin/do/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
+		if strings.HasPrefix(p, "/oauth/") || (strings.HasPrefix(p, "/api/") && p != "/api/events") || strings.HasPrefix(p, "/admin/do/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
 			if !limiter.allow(auth.ClientIP(r, s.Config.TrustProxy)) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "trop de requêtes", http.StatusTooManyRequests)

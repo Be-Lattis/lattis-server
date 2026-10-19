@@ -28,6 +28,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/events"
 	"github.com/Be-Lattis/lattis-server/internal/forms"
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
 	"github.com/Be-Lattis/lattis-server/internal/metrics"
@@ -248,6 +249,9 @@ func serve(doMigrate bool) error {
 	adminSvc.Pipelines = runner
 	srv.Users, srv.Pipelines = users, runner
 	srv.Forms = &forms.Handler{Store: st, Users: users, Keys: keys, Session: adminSvc.Session}
+	// Relais des changements : une écoute PostgreSQL pour tous les postes.
+	srv.Events = &events.Hub{Pool: st.DB, Users: users}
+	go srv.Events.Run(ctx)
 	go runner.Run(ctx)
 	errc := make(chan error, 2)
 	go func() {

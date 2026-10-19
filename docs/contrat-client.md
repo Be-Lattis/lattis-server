@@ -205,3 +205,18 @@ Un tableau d'un classeur collaboratif publié se partage comme une page `<émett
 **Structure** : renommer une colonne ne change rien ; supprimer une colonne retire ses champs et met le formulaire en pause si le champ était obligatoire ou posé par le serveur ; convertir une colonne revérifie la définition (pause si elle n'est plus valide) ; supprimer le tableau supprime ses formulaires.
 
 **Administration** (propriétaires du serveur) : page Formulaires (tous les formulaires, accès, état, débit, pause et reprise) et réglage du lien public (`forms_public`, coupé par défaut).
+
+## 11. Changements relayés par lattisd (jalon 8)
+
+Au lieu d'un `LISTEN` par poste sur le parent, le poste suit ses classeurs par un flux d'événements servi par lattisd, qui écoute PostgreSQL une seule fois pour tous les postes (spécification §21, jalon 8). Le poste n'a alors plus de connexion permanente au parent : il lit sur un réplica et n'ouvre sur `rw` que des connexions courtes pour écrire (à fermer après quelques secondes sans écriture). Le `LISTEN` direct (§6) reste accepté pendant la transition.
+
+- **Flux** : `GET <émetteur>/api/events?workbooks=<id>,<id>&data=1`, `Authorization: Bearer <jeton d'accès>` (le même que pour PostgreSQL), réponse `text/event-stream`. 1 à 200 classeurs, `data=1` pour les notifications du Data Lake (`lattis_data`). `401` jeton refusé, `403` un classeur inconnu ou interdit (accès vérifié comme `my_capabilities`), `400` paramètres. Pour changer la liste des classeurs suivis : rouvrir le flux. Un commentaire `: ping` part toutes les 25 s.
+- **Événements** (`event:` puis `data:` en JSON) :
+  - `ready` `{"workbooks", "data"}` : les canaux sont écoutés ; tout changement validé après ce point arrivera. Le poste lit alors ce qui a changé depuis sa dernière synchronisation (§6), puis suit les événements.
+  - `change` `{"workbook", "payload", "lsn"}` : `payload` est la charge du `NOTIFY` du classeur (identifiant de tableau, `*meta`, `*structure:<table_id>`, `*version:<n>`, `*acl`, `*form:<id>`), `lsn` la position WAL du parent juste après le changement.
+  - `data` `{"payload", "lsn"}` : charge de `lattis_data` (`<dataset_id>`, `*catalog`, `*withdrawn:<id>`).
+  - `reset` `{}` : des événements ont pu se perdre (lattisd a dû rouvrir son écoute, ou le poste lisait trop lentement) : resynchroniser tous les classeurs suivis.
+  - `revoked` `{"workbook"}` : le poste a perdu l'accès au classeur (après `*acl`) ; il n'en reçoit plus les changements.
+- **Lire sur un réplica** : avant de lire les deltas sur `ro`, attendre que le réplica ait rejoué la position reçue : `SELECT pg_last_wal_replay_lsn() >= '<lsn>'::pg_lsn` (quelques dizaines de millisecondes d'ordinaire ; au-delà de quelques secondes, lire sur `rw`).
+- **Reconnexion** : à la coupure du flux, rouvrir (avec un délai croissant), puis resynchroniser depuis le dernier `since` comme après `reset`.
+- **Plusieurs lattisd** : chacun relaie tous les changements, le flux peut donc s'ouvrir sur n'importe lequel ; le répartiteur de charge doit seulement garder la connexion ouverte (pas de délai d'inactivité inférieur à 30 s, pas de mise en tampon des réponses).
