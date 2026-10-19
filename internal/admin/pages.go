@@ -282,7 +282,7 @@ func loadTeams(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 	return map[string]any{"Teams": teams, "Tree": buildTree(teams)}, nil
 }
 
-// --- Données d'entreprise -------------------------------------------------------------------
+// --- Data Lake Lattis ---------------------------------------------------------------------------
 
 // loadData : catalogue en arbre, chaque donnée sous son dossier.
 func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {

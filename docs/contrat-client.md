@@ -131,7 +131,7 @@ Un filtre refusé (point-virgule, `$`, commentaire, parenthèses déséquilibré
 - Dans le navigateur, `lattisd` connecte la personne si besoin, vérifie son accès sous sa propre identité (`my_capabilities`), puis propose d'ouvrir le classeur dans l'application de bureau ou, en édition `web`, dans le navigateur. Un classeur inexistant et un classeur interdit donnent la même page (403), sans titre. Le choix est retenu par le navigateur (cookie `lattis_open`, « Changer » pour revenir au choix).
 - « Ouvrir dans Lattis » ouvre `lattis://open?server=<issuer encodé>&workbook=<workbook_id>`. L'application déclare le schéma `lattis` à l'installation (Windows : registre `HKCU\Software\Classes\lattis` ; Linux : fichier `.desktop` avec `MimeType=x-scheme-handler/lattis` ; macOS : `CFBundleURLTypes`). À l'appel : si l'instance tourne déjà, lui transmettre l'adresse ; vérifier que `server` est un serveur Lattis (découverte §1) et demander confirmation avant de se connecter à un serveur jamais utilisé ; se connecter si besoin (§2), puis ouvrir le classeur comme « Ouvrir depuis un serveur » (§5). Aucun autre paramètre n'est lu.
 
-## 9. Données d'entreprise
+## 9. Data Lake Lattis
 
 Un tableau d'un classeur publié se partage dans un catalogue rangé en dossiers. Il est lisible depuis n'importe quel classeur par son audience (personnes, équipes avec leurs sous-équipes, filtre facultatif par entrée).
 

@@ -331,7 +331,7 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 
 ### 15.1 Pipelines d'ingestion (`/admin/pipelines`)
 
-Un pipeline (`lattis.pipelines`, migration 0020) lit une source et écrit dans un tableau d'un classeur collaboratif publié ; une donnée d'entreprise tirée de ce tableau suit.
+Un pipeline (`lattis.pipelines`, migration 0020) lit une source et écrit dans un tableau d'un classeur collaboratif publié ; une donnée du Data Lake Lattis tirée de ce tableau suit.
 
 - **Sources** : fichier envoyé depuis /admin, dossier de dépôt (`LATTIS_PIPELINE_DIR/<pipeline>/inbox`, motif), adresse HTTP(S) (jeton, identifiant:mot de passe ou en-tête, lus dans le dossier des secrets), SFTP (mot de passe ou clé privée, empreinte de la clé du serveur obligatoire), base PostgreSQL externe (chaîne de connexion en secret, requête en transaction en lecture seule). Formats : CSV (séparateur détecté, UTF-8 ou Latin-1), Excel `.xlsx`, JSON (tableau d'objets, chemin facultatif). 100 Mo et 2 millions de lignes au plus.
 - **Écriture** : correspondance des colonnes (même nom par défaut), conversion selon le type du tableau (nombres à la française, dates JJ/MM/AAAA, numéros de série Excel, oui/non) ; lignes invalides rejetées et échantillonnées. Modes : ajout, mise à jour par clé (`MERGE`, sans réécrire une ligne inchangée, doublons de clé : la dernière l'emporte), remplacement (par clé : lignes absentes supprimées ; sans clé : tout réécrit). Une seule transaction.

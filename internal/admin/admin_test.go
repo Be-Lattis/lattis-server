@@ -336,7 +336,7 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatal("aperçu")
 	}
 
-	// Données d'entreprise : dossier, donnée partagée, audience, retrait.
+	// Data Lake Lattis : dossier, donnée partagée, audience, retrait.
 	if _, body = b.post("/admin/do/create_data_folder", url.Values{"csrf": {csrf}, "back": {"/admin/data"}, "name": {"Commercial"}}); !strings.Contains(body, "Dossier créé.") {
 		t.Fatal("création de dossier")
 	}

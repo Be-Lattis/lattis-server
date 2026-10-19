@@ -222,7 +222,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/teams", s.page("teams", "Équipes", loadTeams))
 	mux.HandleFunc("GET /admin/workbooks", s.page("workbooks", "Classeurs", loadWorkbooks))
 	mux.HandleFunc("GET /admin/workbooks/{id}", s.page("workbook", "Droits du classeur", s.loadWorkbook))
-	mux.HandleFunc("GET /admin/data", s.page("data", "Données d'entreprise", loadData))
+	mux.HandleFunc("GET /admin/data", s.page("data", "Data Lake Lattis", loadData))
 	mux.HandleFunc("GET /admin/pipelines", s.page("pipelines", "Pipelines d'ingestion", s.loadPipelines))
 	mux.HandleFunc("POST /admin/pipelines/{id}/upload", s.uploadPipeline)
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))

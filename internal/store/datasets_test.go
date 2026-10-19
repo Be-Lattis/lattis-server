@@ -9,7 +9,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/testpg"
 )
 
-// Données d'entreprise : un tableau partagé dans le catalogue, lisible selon
+// Data Lake Lattis : un tableau partagé dans le catalogue, lisible selon
 // l'audience (équipe + filtre), colonnes masquées, pierres tombales, retrait.
 func TestDatasets(t *testing.T) {
 	ctx := context.Background()
