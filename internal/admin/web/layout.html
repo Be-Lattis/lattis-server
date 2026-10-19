@@ -8,35 +8,42 @@
 <script src="/admin/static/admin.js" defer></script>
 {{block "head" .}}{{end}}
 </head>
-<body>
-<header class="top">
-<p class="brand">{{.Server}} <span>administration</span></p>
+<body class="{{if .User.ID}}with-side{{else}}bare{{end}}">
 {{if .User.ID}}
-<nav>
+<aside class="side">
+<a class="brand" href="/admin/server"><span class="logo" aria-hidden="true"></span><span class="name">{{.Server}}<small>Administration</small></span></a>
+<nav aria-label="Administration">
+<p class="group">Serveur</p>
 <a href="/admin/server"{{if eq .Page "server"}} aria-current="page"{{end}}>Serveur</a>
 <a href="/admin/providers"{{if eq .Page "providers"}} aria-current="page"{{end}}>Connexion</a>
+<a href="/admin/status"{{if eq .Page "status"}} aria-current="page"{{end}}>État</a>
+<a href="/admin/audit"{{if eq .Page "audit"}} aria-current="page"{{end}}>Journal</a>
+<p class="group">Personnes</p>
 <a href="/admin/users"{{if eq .Page "users"}} aria-current="page"{{end}}>Utilisateurs</a>
 <a href="/admin/teams"{{if eq .Page "teams"}} aria-current="page"{{end}}>Équipes</a>
+<p class="group">Données</p>
+<a href="/admin/workbooks"{{if or (eq .Page "workbooks") (eq .Page "workbook")}} aria-current="page"{{end}}>Classeurs</a>
 <a href="/admin/data"{{if eq .Page "data"}} aria-current="page"{{end}}>Data Lake</a>
 <a href="/admin/pipelines"{{if eq .Page "pipelines"}} aria-current="page"{{end}}>Pipelines</a>
-<a href="/admin/workbooks"{{if or (eq .Page "workbooks") (eq .Page "workbook")}} aria-current="page"{{end}}>Classeurs</a>
-<a href="/admin/audit"{{if eq .Page "audit"}} aria-current="page"{{end}}>Journal</a>
-<a href="/admin/status"{{if eq .Page "status"}} aria-current="page"{{end}}>État</a>
 </nav>
-<form method="post" action="/admin/logout" class="me"><span>{{.User.Email}}</span>{{template "csrf" .}}<button>Se déconnecter</button></form>
+<form method="post" action="/admin/logout" class="me"><span class="who" title="{{.User.Email}}">{{.User.Email}}</span>{{template "csrf" .}}<button>Se déconnecter</button></form>
+</aside>
+{{else}}
+<header class="top"><p class="brand"><span class="logo" aria-hidden="true"></span><span class="name">{{.Server}}<small>Administration</small></span></p></header>
 {{end}}
-</header>
+<div class="page">
 <main{{with .Refill}} data-refill="{{.}}"{{end}}>
-<h1>{{.Title}}</h1>
+<header class="pagehead"><h1>{{.Title}}</h1></header>
 {{if .Flash}}<p class="flash" role="status">{{.Flash}}</p>{{end}}
 {{with .FlashLink}}<div class="panel linkbox"><p><strong>Lien à transmettre à la personne</strong> (valable 7 jours). Il ne sera plus affiché : copiez-le maintenant.</p>
 <p class="copy"><input id="flashlink" readonly value="{{.}}" aria-label="Lien à transmettre"><button type="button" data-copy="flashlink">Copier</button></p></div>{{end}}
-{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if .Error}}<p class="error alert" role="alert">{{.Error}}</p>{{end}}
 {{if .Data}}{{template "body" .}}{{end}}
 {{if and (eq .Page "message") (eq .Title "Accès réservé")}}<form method="post" action="/logout"><input type="hidden" name="next" value="/admin/"><button>Changer de compte</button></form>{{end}}
 {{if eq .Page "message"}}<p class="actions">{{if .User.ID}}<a class="button" href="{{if .Back}}{{.Back}}{{else}}/admin/server{{end}}">Retour à l'administration</a>{{else}}<a class="button" href="/admin/login{{with .Back}}?next={{.}}{{end}}">Se connecter</a>{{end}}</p>{{end}}
 </main>
 <footer class="foot">Serveur Lattis {{.Version}} · <a href="{{sourceURL}}">Code source</a> (AGPL-3.0)</footer>
+</div>
 </body>
 </html>{{end}}
 {{define "csrf"}}<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="back" value="{{.Path}}">{{end}}
