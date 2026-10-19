@@ -85,12 +85,20 @@ func TestConvert(t *testing.T) {
 }
 
 func TestPositions(t *testing.T) {
-	prev := "a5"
-	for i := 1; i < 200; i++ {
-		k := "a5" + pad62(i, 3) + "1"
-		if k <= prev || k[len(k)-1] == '0' {
-			t.Fatalf("clé %q après %q", k, prev)
+	// Des milliers d'ajouts successifs : clés croissantes, valides, courtes.
+	key := validKey("a5")
+	prev := key
+	for i := 0; i < 20000; i++ {
+		key = afterKey(key)
+		if key <= prev || key[len(key)-1] == '0' {
+			t.Fatalf("clé %q après %q", key, prev)
 		}
-		prev = k
+		prev = key
+	}
+	if len(key) > 6 {
+		t.Fatalf("clé trop longue après 20 000 ajouts : %q", key)
+	}
+	if afterKey("") == "" || validKey("a50") != "a5" || validKey("a!b") != "a" {
+		t.Fatal("cas limites")
 	}
 }

@@ -80,3 +80,16 @@ applyShowIf();
     });
   }
 })();
+
+// Boutons « Copier » : data-copy = identifiant du champ à copier.
+for (const b of document.querySelectorAll("[data-copy]")) {
+  b.addEventListener("click", async () => {
+    const field = document.getElementById(b.dataset.copy);
+    if (!field) return;
+    field.select();
+    try { await navigator.clipboard.writeText(field.value); } catch { document.execCommand?.("copy"); }
+    const label = b.textContent;
+    b.textContent = "Copié";
+    setTimeout(() => { b.textContent = label; }, 1500);
+  });
+}

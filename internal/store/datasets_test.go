@@ -83,6 +83,22 @@ func TestDatasets(t *testing.T) {
 		_, err := tx.Exec(ctx, `SELECT lattis.add_data_audience(NULL, $1::uuid, $2::uuid, $3)`, folder, nord, `"Région" = 'Nord'`)
 		return err
 	}))
+	// Un autre publieur, sans rôle sur le classeur source, ne peut pas ouvrir
+	// la donnée par l'audience du dossier.
+	must(service(func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.set_data_publisher($1::uuid, true)`, bruno.UserID)
+		return err
+	}))
+	if err := as(bruno.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.add_data_audience(NULL, $1::uuid, $2::uuid, NULL)`, folder, bruno.UserID)
+		return err
+	}); pgCode(err) != "42501" {
+		t.Fatalf("audience de dossier posée par un autre publieur : %v", err)
+	}
+	must(service(func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.set_data_publisher($1::uuid, false)`, bruno.UserID)
+		return err
+	}))
 	if sqlName != "clients" {
 		t.Fatalf("nom SQL : %q", sqlName)
 	}

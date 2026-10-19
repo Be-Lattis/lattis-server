@@ -1,6 +1,6 @@
 {{define "body"}}{{$wb := .Data.Workbook}}{{$d := .Data}}
 <p class="lead"><strong>{{$wb.title}}</strong> · {{if eq (str $wb.mode) "frozen"}}figé{{else}}collaboratif{{end}} · version {{str $wb.version}} · schéma <code>{{$wb.schema}}</code></p>
-<p class="copy"><label for="wblink">Lien à partager</label><input id="wblink" readonly value="{{$d.Link}}"></p>
+<p class="copy"><label for="wblink">Lien à partager</label><input id="wblink" readonly value="{{$d.Link}}"><button type="button" data-copy="wblink">Copier</button></p>
 
 {{if $d.Drift}}<section class="panel warn"><h2>Écarts détectés</h2>
 <p>Les règles de ces tableaux ont été modifiées hors de Lattis. Enregistrer un niveau recompile les règles générées ; les règles et droits étrangers restent signalés tant qu'ils ne sont pas retirés à la main.</p>

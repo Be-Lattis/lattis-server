@@ -67,8 +67,8 @@ func (s *Service) actions() map[string]actionFunc {
 		"revoke_invitation":    exec1(`SELECT lattis.revoke_invitation($1::uuid)`, "Invitation retirée.", false, "id"),
 		"drop_workbook":        exec1(`SELECT lattis.drop_workbook($1::uuid)`, "Classeur supprimé.", true, "id"),
 		"create_team":          exec1(`SELECT lattis.create_team($1, $2::uuid)`, "Équipe créée.", false, "name", "parent_id"),
-		"data_publisher_on":    exec1(`SELECT lattis.set_data_publisher($1::uuid, true)`, "Cette personne peut maintenant partager des données.", false, "id"),
-		"data_publisher_off":   exec1(`SELECT lattis.set_data_publisher($1::uuid, false)`, "Rôle de publieur de données retiré.", false, "id"),
+		"data_publisher_on":    exec1(`SELECT lattis.set_data_publisher($1::uuid, true)`, "Cette personne peut maintenant partager des tableaux au Data Lake Lattis.", false, "id"),
+		"data_publisher_off":   exec1(`SELECT lattis.set_data_publisher($1::uuid, false)`, "Rôle de publieur au Data Lake retiré.", false, "id"),
 		"create_data_folder":   exec1(`SELECT lattis.create_data_folder($1, $2::uuid)`, "Dossier créé.", false, "name", "parent_id"),
 		"rename_data_folder":   exec1(`SELECT lattis.rename_data_folder($1::uuid, $2)`, "Dossier renommé.", false, "id", "name"),
 		"move_data_folder":     exec1(`SELECT lattis.move_data_folder($1::uuid, $2::uuid)`, "Dossier déplacé.", false, "id", "parent_id"),
@@ -294,6 +294,9 @@ func (s *Service) addUser(ctx context.Context, tx pgx.Tx, f form) (string, error
 }
 
 func (s *Service) resetPassword(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	if !f.checked("confirm") {
+		return "", errConfirm
+	}
 	var token string
 	if err := tx.QueryRow(ctx, `SELECT lattis.reset_password($1::uuid)`, f.s("id")).Scan(&token); err != nil {
 		return "", err
@@ -344,10 +347,14 @@ func setLevel(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 // userByEmail : compte le plus récemment connecté pour une adresse.
 func userByEmail(ctx context.Context, tx pgx.Tx, email string) (string, error) {
 	var uid string
-	err := tx.QueryRow(ctx, `SELECT id::text FROM lattis.users WHERE email = $1
-		ORDER BY last_login_at DESC NULLS LAST LIMIT 1`, email).Scan(&uid)
+	var verified bool
+	err := tx.QueryRow(ctx, `SELECT id::text, email_verified FROM lattis.users WHERE email = $1 AND NOT disabled
+		ORDER BY email_verified DESC, last_login_at DESC NULLS LAST LIMIT 1`, email).Scan(&uid, &verified)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", inputError("Aucun compte pour " + email + " : invitez-le d'abord.")
+		return "", inputError("Aucun compte actif pour " + email + " : créez-le (page Utilisateurs) ou invitez la personne à un classeur.")
+	}
+	if err == nil && !verified {
+		return "", inputError("L'adresse " + email + " a été choisie par la personne elle-même et n'est pas vérifiée : elle ne peut pas recevoir de droits par adresse.")
 	}
 	return uid, err
 }

@@ -29,6 +29,8 @@
 <main>
 <h1>{{.Title}}</h1>
 {{if .Flash}}<p class="flash" role="status">{{.Flash}}</p>{{end}}
+{{with .FlashLink}}<div class="panel linkbox"><p><strong>Lien à transmettre à la personne</strong> (valable 7 jours). Il ne sera plus affiché : copiez-le maintenant.</p>
+<p class="copy"><input id="flashlink" readonly value="{{.}}" aria-label="Lien à transmettre"><button type="button" data-copy="flashlink">Copier</button></p></div>{{end}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 {{if .Data}}{{template "body" .}}{{end}}
 </main>

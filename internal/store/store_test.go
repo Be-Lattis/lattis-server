@@ -83,6 +83,27 @@ func TestSetupChangesEmail(t *testing.T) {
 	if err != nil || e.Status != "ok" || !isOwner(t, db, e.PGRole) {
 		t.Fatalf("inscription : %+v %v", e, err)
 	}
+	var verified bool
+	if err := db.Super.QueryRow(ctx, `SELECT email_verified FROM lattis.users WHERE id = $1`, uid).Scan(&verified); err != nil || verified {
+		t.Fatalf("adresse choisie marquée vérifiée : %v %v", verified, err)
+	}
+	// Une adresse déjà portée par un compte est refusée.
+	var token2 string
+	if err := st.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT lattis.create_password_account($1, '')`, testpg.Email("autre")).Scan(&token2)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetPasswordWithToken(ctx, token2, "$argon2id$fake", chosen); pgCode(err) != "23505" {
+		t.Fatalf("adresse déjà prise acceptée : %v", err)
+	}
+	// Le dernier moyen de connexion actif ne se désactive pas.
+	if err := st.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE lattis.identity_providers SET enabled = false WHERE kind = 'password'`)
+		return err
+	}); pgCode(err) != "55000" {
+		t.Fatalf("dernier fournisseur désactivé : %v", err)
+	}
 }
 
 func TestBootstrapOwnerWithPassword(t *testing.T) {

@@ -99,3 +99,4 @@ details.tree details.tree > summary h2 { font-size: 15px; }
 details.sub { margin-bottom: 12px; } details.sub > summary { cursor: pointer; color: var(--accent); }
 .tree-tools { display: flex; gap: 8px; justify-content: flex-end; margin: 0 0 8px; }
 @media (max-width: 640px) { details.tree details.tree { margin-left: 0; } }
+.linkbox { border-color: var(--accent); } .copy button { flex: none; } .js [data-copy] { display: inline-block; } [data-copy] { display: none; }

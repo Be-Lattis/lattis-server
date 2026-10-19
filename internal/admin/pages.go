@@ -224,7 +224,8 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 			'pending', u.subject IS NULL AND u.last_login_at IS NULL,
 			'server_owner', pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER'),
 			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'),
-			'data_publisher', pg_has_role(u.pg_role, 'lattis_data_publishers', 'MEMBER'))
+			'data_publisher', pg_has_role(u.pg_role, 'lattis_data_publishers', 'MEMBER'),
+			'email_verified', u.email_verified)
 			ORDER BY u.email), '[]')
 		FROM (SELECT * FROM lattis.users
 		      WHERE $1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'

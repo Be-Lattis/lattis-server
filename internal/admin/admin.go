@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -368,17 +369,20 @@ func (s *Service) session(r *http.Request) (store.User, error) {
 type loader func(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error)
 
 type view struct {
-	Title   string
-	Page    string
-	Server  string
-	User    store.User
-	CSRF    string
-	Flash   string
-	Error   string
-	Path    string
-	Data    any
-	Version string
-	Edition string
+	Title  string
+	Page   string
+	Server string
+	User   store.User
+	CSRF   string
+	Flash  string
+	// FlashLink : lien de choix du mot de passe extrait du message, montré
+	// une seule fois avec un bouton « Copier ».
+	FlashLink string
+	Error     string
+	Path      string
+	Data      any
+	Version   string
+	Edition   string
 }
 
 func (s *Service) page(name, title string, load loader) http.HandlerFunc {
@@ -391,6 +395,7 @@ func (s *Service) page(name, title string, load loader) http.HandlerFunc {
 		v := view{Title: title, Page: name, User: u, CSRF: s.csrf(w, r), Path: r.URL.RequestURI(),
 			Version: s.Version, Edition: string(s.Config.Edition)}
 		v.Flash, v.Error = s.takeFlash(w, r)
+		v.Flash, v.FlashLink = splitSetupLink(v.Flash)
 		var forbidden bool
 		err = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
 			var owner bool
@@ -531,4 +536,15 @@ func randomString() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+var setupLinkRe = regexp.MustCompile(`https?://\S+/setup\?token=[A-Za-z0-9_-]+`)
+
+// splitSetupLink sépare d'un message le lien de choix du mot de passe.
+func splitSetupLink(msg string) (string, string) {
+	loc := setupLinkRe.FindStringIndex(msg)
+	if loc == nil {
+		return msg, ""
+	}
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(msg[:loc[0]]), ":")), msg[loc[0]:loc[1]]
 }

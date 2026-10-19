@@ -95,13 +95,13 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table) (Result, erro
 				return err
 			}
 		}
-		base := ""
+		key := ""
 		if last != nil {
-			base = *last
+			key = validKey(*last)
 		}
-		width := len(strconv.FormatInt(int64(len(rows)), 36)) + 1
 		for i := range rows {
-			rows[i][0] = base + pad62(i+1, width) + "1"
+			key = afterKey(key)
+			rows[i][0] = key
 		}
 
 		names := make([]string, len(cols))
@@ -286,15 +286,40 @@ func keyString(vals []any, idx []int) string {
 	return b.String()
 }
 
-// pad62 écrit n en base 62 sur width chiffres (clés d'ordre de Lattis).
-func pad62(n, width int) string {
-	const digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, width)
-	for i := width - 1; i >= 0; i-- {
-		b[i] = digits[n%62]
-		n /= 62
+const digits62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// afterKey donne la clé d'ordre juste après a, à longueur constante sauf
+// débordement (même algorithme que internal/order de l'application) : des
+// ajouts répétés n'allongent pas les clés.
+func afterKey(a string) string {
+	k := 0
+	for k < len(a) && a[k] == 'z' {
+		k++
 	}
-	return string(b)
+	rest := []byte(a[k:])
+	w := max(len(rest), k+1)
+	for len(rest) < w {
+		rest = append(rest, '0')
+	}
+	for i := w - 1; i >= 0; i-- {
+		if d := strings.IndexByte(digits62, rest[i]); d < len(digits62)-1 {
+			rest[i] = digits62[d+1]
+			break
+		}
+		rest[i] = '0'
+	}
+	return strings.TrimRight(a[:k]+string(rest), "0")
+}
+
+// validKey ramène une clé existante à une forme valide (chiffres base 62,
+// sans « 0 » final) ; une clé illisible repart de zéro.
+func validKey(k string) string {
+	for i := 0; i < len(k); i++ {
+		if strings.IndexByte(digits62, k[i]) < 0 {
+			return k[:i]
+		}
+	}
+	return strings.TrimRight(k, "0")
 }
 
 // convert lit un texte selon le type PostgreSQL de la colonne cible.
