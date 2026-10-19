@@ -297,6 +297,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setCookie(w, sessionCookie, signed, "/", sessionTTL, http.SameSiteLaxMode)
+	s.clearCookie(w, sessionCookie, "/admin") // session d'avant le 18/10, sous /admin
 	next := ld.Next
 	if next == "" {
 		next = "/admin/server"
@@ -323,12 +324,23 @@ func (s *Service) logout(w http.ResponseWriter, r *http.Request) {
 func (s *Service) Session(r *http.Request) (store.User, error) { return s.session(r) }
 
 // session renvoie l'utilisateur connecté, encore actif.
+//
+// Le navigateur peut envoyer plusieurs cookies de ce nom : avant le 18/10 la
+// session vivait sous /admin, elle vit maintenant sous /. Le plus ancien,
+// envoyé en premier car son chemin est plus précis, peut être périmé (autre
+// clé de signature après une réinstallation) : on prend le premier valable,
+// sinon la connexion tournerait en rond.
 func (s *Service) session(r *http.Request) (store.User, error) {
-	c, err := r.Cookie(sessionCookie)
-	if err != nil {
-		return store.User{}, err
+	var claims *tokens.Claims
+	err := http.ErrNoCookie
+	for _, c := range r.Cookies() {
+		if c.Name != sessionCookie {
+			continue
+		}
+		if claims, err = s.Keys.Verify(c.Value, tokens.TypeState, s.Config.Issuer(), audSession, s.now()); err == nil {
+			break
+		}
 	}
-	claims, err := s.Keys.Verify(c.Value, tokens.TypeState, s.Config.Issuer(), audSession, s.now())
 	if err != nil {
 		return store.User{}, err
 	}
