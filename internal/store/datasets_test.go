@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -184,19 +185,28 @@ func TestDatasets(t *testing.T) {
 		_, err := tx.Exec(ctx, `UPDATE `+pgx.Identifier{schema, "Clients"}.Sanitize()+` SET "Région" = 'Sud' WHERE "Nom" = 'Lille SA'`)
 		return err
 	}))
+	// since peut remonter avant des écritures plus anciennes (transactions
+	// ouvertes ailleurs dans la grappe) : on vérifie que Lille figure parmi
+	// les lignes changées, sans en exiger le nombre exact.
+	var changedIDs []string
 	must(as(anne.PGRole, func(tx pgx.Tx) error {
-		var visible, changed int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+view+` WHERE lattis_xid >= $1::xid8`, since).Scan(&visible); err != nil {
+		var visible int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+view+` WHERE lattis_xid >= $1::xid8 AND "Nom" = 'Lille SA'`, since).Scan(&visible); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM lattis.dataset_changed_ids($1::uuid, $2::xid8)`, ds, since).Scan(&changed); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT coalesce(array_agg(row_id::text), '{}') FROM lattis.dataset_changed_ids($1::uuid, $2::xid8)`, ds, since).Scan(&changedIDs); err != nil {
 			return err
 		}
-		if visible != 0 || changed != 1 {
-			t.Errorf("sortie d'audience : %d visibles, %d changées", visible, changed)
+		if visible != 0 {
+			t.Errorf("sortie d'audience : Lille encore visible")
 		}
 		return nil
 	}))
+	var lille string
+	must(db.Super.QueryRow(ctx, `SELECT lattis_id::text FROM `+pgx.Identifier{schema, "Clients"}.Sanitize()+` WHERE "Nom" = 'Lille SA'`).Scan(&lille))
+	if !slices.Contains(changedIDs, lille) {
+		t.Errorf("sortie d'audience : Lille absente des lignes changées %v", changedIDs)
+	}
 	must(as(pub.PGRole, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE `+pgx.Identifier{schema, "Clients"}.Sanitize()+` SET "Région" = 'Nord' WHERE "Nom" = 'Lille SA'`)
 		return err
