@@ -80,6 +80,22 @@ jobs:
           for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
           cd ../..
           LATTIS_E2E_WEB_URL=http://localhost:8080 LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run ComposeWeb ./internal/e2e/
+      - name: Édition web, mode process isolé (lattisd en root, un UID par moteur)
+        run: |
+          cat > /tmp/root.yml <<'YAML'
+          services:
+            lattisd:
+              user: "0"
+              cap_drop: [ALL]
+              cap_add: [SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE, FOWNER]
+          YAML
+          cd deploy/compose
+          LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web docker compose -f docker-compose.yml -f /tmp/root.yml up -d --no-build lattisd
+          for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
+          cd ../..
+          LATTIS_E2E_WEB_URL=http://localhost:8080 LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run ComposeWeb ./internal/e2e/
+          ps -eo uid,args | grep '[l]attis-engine --addr'
+          ps -eo uid,args | grep '[l]attis-engine --addr' | awk '{ if ($1 < 200000) exit 1 }'
       - name: Édition web, moteurs en conteneurs (mini lanceur)
         run: |
           docker build -f docker/launcher/Dockerfile -t be-lattis/lattis-launcher:dev .

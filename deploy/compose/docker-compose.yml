@@ -74,7 +74,7 @@ services:
       LATTIS_EDITION: ${LATTIS_EDITION:-admin}
       LATTIS_PUBLIC_URL: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
       LATTIS_PG_RW_URL: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@postgres:5432/lattis?sslmode=require
-      LATTIS_PG_PUBLIC_RW: localhost:5432
+      LATTIS_PG_PUBLIC_RW: ${LATTIS_PG_PUBLIC_RW:-localhost:5432}
       # Réplica du profil « replicas » : vides par défaut (aucun réplica
       # surveillé) ; les deux lignes à décommenter sont dans .env.example.
       LATTIS_PG_RO_URLS: ${LATTIS_PG_RO_URLS:-}

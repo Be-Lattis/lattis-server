@@ -1,6 +1,6 @@
 # Installer et configurer le Serveur Lattis
 
-Édition « gestion des rôles » (`LATTIS_EDITION=admin`). Trois façons de le lancer : Docker Compose pour un essai, Docker Compose sur un serveur, ou Kubernetes avec le chart Helm. La configuration est la même partout : des variables d'environnement pour `lattisd` et PostgreSQL, le reste en base, modifiable depuis l'administration web.
+Édition « gestion des rôles » (`LATTIS_EDITION=admin`) ; pour l'édition web (application dans le navigateur), voir en plus §5.1. Trois façons de le lancer : Docker Compose pour un essai, Docker Compose sur un serveur, ou Kubernetes avec le chart Helm. La configuration est la même partout : des variables d'environnement pour `lattisd` et PostgreSQL, le reste en base, modifiable depuis l'administration web.
 
 ## 1. Ce qu'il faut savoir avant de commencer
 
@@ -171,19 +171,105 @@ Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres comm
 
 Image `be-lattis/server` : `POSTGRES_PASSWORD` (superutilisateur, jamais utilisé par `lattisd`), `LATTIS_SERVICE_PASSWORD`, `LATTIS_ISSUER` (= `LATTIS_PUBLIC_URL`), `LATTIS_REPLICATION_PASSWORD` (crée `lattis_replicator` si présent), fichiers dans `/etc/lattis/tls` et `/etc/lattis/keys/public.pem`. Point d'entrée `lattis-replica` : `LATTIS_PRIMARY_HOST`, `LATTIS_PRIMARY_PORT` (5432), `LATTIS_REPLICATION_PASSWORD`, `LATTIS_REPLICATION_SLOT` (nom, ou `auto` = nom d'hôte).
 
-### 5.1 Lancer et isoler les moteurs de l'édition web
+### 5.1 Édition web : choisir comment lancer les moteurs
 
-Chaque utilisateur connecté à l'édition web reçoit son propre moteur `lattis-engine`. Trois modes, au choix (`LATTIS_WEB_LAUNCHER`) :
+L'édition web (`LATTIS_EDITION=web`) sert l'application dans le navigateur. Chaque utilisateur connecté reçoit son propre moteur `lattis-engine`, arrêté après `LATTIS_WEB_IDLE` d'inactivité. `LATTIS_WEB_LAUNCHER` dit où il tourne :
 
-| Mode | Isolation | Ce qu'il faut |
-|---|---|---|
-| `process` (défaut) | Processus de `lattisd`. En root sous Linux, chaque moteur tourne sous son propre UID (plage `LATTIS_WEB_ENGINE_UIDS`, 200000 et suivants par défaut) : il n'atteint ni la clé de signature, ni les secrets, ni les caches des autres. Sinon, même utilisateur que `lattisd`. | Image `lattisd:web`. Pour l'isolation : `lattisd` en root avec seulement les capacités `SETUID`, `SETGID`, `CHOWN` et `KILL` (Compose : `user: "0"`, `cap_drop: [ALL]`, `cap_add: [SETUID, SETGID, CHOWN, KILL]`). |
-| `docker` | Un conteneur par utilisateur : système de fichiers en lecture seule, aucune capacité, `no-new-privileges`, mémoire, processeurs et processus limités, volume de cache par utilisateur. | Le mini lanceur `lattis-launcher` (image `docker/launcher`), seul à recevoir le socket Docker (qui donne root sur l'hôte) : `lattisd` ne lui demande que de démarrer, surveiller ou arrêter l'image du moteur, avec un jeton partagé. Compose : profil `docker-engines`, variables dans `.env.example`. `LATTIS_PUBLIC_URL` et `LATTIS_PG_PUBLIC_RW` doivent être joignables depuis un conteneur. |
-| `kubernetes` | Un pod par utilisateur (non root, système de fichiers en lecture seule, aucune capacité, sans jeton de compte de service), rattaché au pod de `lattisd` et supprimé avec lui ; seul `lattisd` le joint (NetworkPolicy). | Chart Helm : `web.enabled: true`. `lattisd` reçoit un compte de service limité aux pods et volumes de son espace de noms. |
+| | `process` | `docker` | `kubernetes` |
+|---|---|---|---|
+| Pour qui | Un serveur unique, l'installation la plus simple | Un serveur Docker, isolation forte sans root pour `lattisd` | Un cluster |
+| Où tourne un moteur | Processus de `lattisd`, dans son conteneur | Conteneur à part, un par utilisateur | Pod à part, un par utilisateur |
+| Isolation | Avec `lattisd` en root : un utilisateur système par moteur. Sans root : aucune (déconseillé à plusieurs utilisateurs) | Conteneur verrouillé, mémoire, processeurs et processus limités | Pod verrouillé, ressources limitées, NetworkPolicy |
+| Ce qu'il faut en plus | L'image `lattisd:web` (qui contient le moteur) | Le mini lanceur `lattis-launcher`, l'image du moteur | Le chart Helm (`web.enabled`), l'image du moteur |
+| Démarrage d'un moteur | Immédiat | Une à deux secondes | Quelques secondes (tirage de l'image la première fois) |
 
-Dans les modes `docker` et `kubernetes`, les moteurs demandent leurs jetons sur une écoute interne de `lattisd` (`LATTIS_WEB_ENGINE_LISTEN`, `:8081`), protégée par le secret propre à chaque moteur. Ce secret est passé par une variable d'environnement : en Kubernetes, il est lisible par qui peut lire les pods de l'espace de noms.
+Images utilisées :
 
-Le code est prêt pour une réserve de moteurs démarrés d'avance (interface `Launcher`) ; elle demandera que `lattis-engine` accepte de recevoir l'utilisateur après son démarrage.
+| Image | Construction |
+|---|---|
+| `lattis-engine` (moteur, dépôt de l'application) | `ghcr.io/be-lattis/lattis-engine:main`, ou `docker build -f build/engine/Dockerfile -t be-lattis/lattis-engine:dev .` dans le dépôt `lattis-app` |
+| `lattisd:web` (`lattisd` avec le moteur, mode `process`) | `docker build -f docker/lattisd/Dockerfile --target web --build-arg ENGINE_IMAGE=<image du moteur> -t be-lattis/lattisd:web .` |
+| `lattis-launcher` (mode `docker`) | `docker build -f docker/launcher/Dockerfile -t be-lattis/lattis-launcher:dev .` |
+
+Dans tous les modes, `LATTIS_PUBLIC_URL` est aussi l'adresse que les moteurs contactent pour se connecter à PostgreSQL au nom de l'utilisateur.
+
+#### 5.1.1 Mode `process`
+
+1. Construire `be-lattis/lattisd:web` (tableau ci-dessus).
+2. Dans `deploy/compose/.env` :
+
+   ```sh
+   LATTIS_IMAGE=be-lattis/lattisd:web
+   LATTIS_EDITION=web
+   ```
+
+3. `docker compose up -d`, puis ouvrir `http://localhost:8080/app/`.
+
+Pour isoler les moteurs entre eux et de `lattisd` (recommandé dès qu'il y a plusieurs utilisateurs), lancer `lattisd` en root avec seulement six capacités. Chaque moteur reçoit alors un utilisateur système de la plage 200000 et suivantes (`LATTIS_WEB_ENGINE_UIDS` pour en choisir une autre) et ne voit que son propre cache. Fichier `deploy/compose/docker-compose.override.yml`, lu automatiquement par Compose :
+
+```yaml
+services:
+  lattisd:
+    user: "0"
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, KILL, DAC_OVERRIDE, FOWNER]
+```
+
+`SETUID` et `SETGID` servent à lancer chaque moteur sous son utilisateur, `CHOWN` et `FOWNER` à lui donner son répertoire de cache, `KILL` à l'arrêter, `DAC_OVERRIDE` à garder l'accès aux volumes créés pour l'utilisateur 65532. La clé de signature et les secrets restent en `0600` : les moteurs ne les lisent pas. Le chart Helm ne propose pas ce mode : en Kubernetes, utiliser `kubernetes`.
+
+#### 5.1.2 Mode `docker`
+
+Les moteurs tournent chacun dans leur conteneur. Le socket Docker donne root sur la machine : seul le mini lanceur `lattis-launcher` le reçoit, et il ne sait que démarrer, surveiller et arrêter l'image du moteur. `lattisd` lui parle avec un jeton partagé, que le service `init` crée au premier lancement (`/etc/lattis/launcher/token`).
+
+1. Construire `be-lattis/lattis-launcher:dev` et disposer de l'image du moteur (tableau ci-dessus). `lattisd` n'a pas besoin de l'image `web` dans ce mode.
+2. Dans `deploy/compose/.env`, décommenter le bloc « moteurs en conteneurs » et régler les adresses :
+
+   ```sh
+   LATTIS_EDITION=web
+   LATTIS_WEB_LAUNCHER=docker
+   LATTIS_WEB_LAUNCHER_URL=http://launcher:8090
+   LATTIS_WEB_LAUNCHER_TOKEN_FILE=/etc/lattis/launcher/token
+   LATTIS_WEB_TOKEN_URL=http://lattisd:8081/engine/token
+   LATTIS_ENGINE_IMAGE=ghcr.io/be-lattis/lattis-engine:main
+   # Joignables depuis un conteneur : pas « localhost ».
+   LATTIS_PUBLIC_URL=https://lattis.acme.fr
+   LATTIS_PG_PUBLIC_RW=pg.acme.fr:5432
+   ```
+
+3. `docker compose --profile docker-engines up -d`.
+4. Vérifier : après une connexion à `/app/`, `docker ps --filter label=lattis.engine=1` montre le conteneur `lattis-engine-<utilisateur>`.
+
+Les moteurs rejoignent le réseau du projet (`lattis_default`) et y joignent `lattisd` sur le port interne 8081, qui n'est pas publié. Ne publiez pas non plus le port 8090 du lanceur. Limites par moteur : `LAUNCHER_MEMORY` (1g), `LAUNCHER_CPUS` (1), `LAUNCHER_PIDS` (256), à ajouter au service `launcher`. Chaque utilisateur garde un volume de cache `lattis-web-<utilisateur>`.
+
+Pour un essai sur un poste, `localhost` ne convient pas : les moteurs le prendraient pour leur propre conteneur. Utilisez l'adresse IP du poste sur le réseau local (`LATTIS_PUBLIC_URL=http://192.168.1.10:8080`, `LATTIS_PG_PUBLIC_RW=192.168.1.10:5432`).
+
+#### 5.1.3 Mode `kubernetes`
+
+`lattisd` crée un pod par utilisateur dans son espace de noms, au nom d'un compte de service limité aux pods et aux volumes de cet espace. Chaque pod est rattaché au pod de `lattisd` et disparaît avec lui.
+
+1. Ajouter aux valeurs du chart (§4.2) :
+
+   ```yaml
+   web:
+     enabled: true
+     engineImage:
+       repository: ghcr.io/be-lattis/lattis-engine
+       tag: main
+     maxEngines: 50
+     resources: { cpu: 250m, memory: 1Gi }
+     cache:
+       size: 1Gi        # vide : cache perdu à l'arrêt du moteur, rechargé depuis le serveur
+       storageClass: ""
+   ```
+
+2. `helm upgrade --install lattis deploy/helm/lattis -n lattis -f lattis-values.yaml`.
+3. Vérifier : après une connexion à `https://lattis.acme.fr/app/`, `kubectl -n lattis get pods -l app.kubernetes.io/name=lattis-engine`.
+
+Le chart crée le compte de service, ses droits et deux NetworkPolicy : seul `lattisd` joint les moteurs, et seuls les moteurs joignent le port des jetons de `lattisd`. Elles ne s'appliquent qu'avec un réseau de cluster qui les gère (Calico, Cilium…). Les moteurs doivent pouvoir joindre `publicURL` et `postgres.publicReadWrite` depuis le cluster. Le secret de chaque moteur est passé par une variable d'environnement de son pod : il est lisible par qui peut lire les pods de l'espace de noms.
+
+#### 5.1.4 Plus tard : réserve de moteurs
+
+Le code passe par une interface de lanceur, prête pour une réserve de moteurs démarrés d'avance qui supprimerait l'attente du premier démarrage. Elle demandera que `lattis-engine` accepte de recevoir l'utilisateur après son démarrage.
 
 ## 6. Réglages du serveur (administration web)
 

@@ -12,7 +12,8 @@ import (
 
 // isolate : le moteur meurt avec lattisd et, avec un UID (>= 0), tourne
 // sous cet utilisateur et ce groupe, sans groupes supplémentaires.
-// lattisd a alors besoin de CAP_SETUID, CAP_SETGID, CAP_CHOWN et CAP_KILL.
+// lattisd a alors besoin de CAP_SETUID, CAP_SETGID, CAP_CHOWN, CAP_FOWNER, CAP_KILL
+// (et CAP_DAC_OVERRIDE pour ses volumes, à l'utilisateur 65532).
 func isolate(cmd *exec.Cmd, uid int) {
 	attr := &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	if uid >= 0 {
