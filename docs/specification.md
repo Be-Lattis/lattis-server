@@ -401,6 +401,7 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
 5. **Administration web** (édition `admin`) et mesures.
 6. **Réplicas** et routage, chart Helm autonome.
 7. **Application web** (édition `web`).
+8. **Montée en charge au-delà de quelques centaines de postes** (décidé par Louis le 19/10/2026) : les réplicas déchargent les lectures lourdes, mais chaque poste garde aujourd'hui une connexion `LISTEN` sur le parent et relit les deltas sur `rw` à chaque notification. Le nombre de connexions et le trafic de synchronisation du parent croissent avec le nombre de postes. Cible : `lattisd` écoute une seule fois par classeur, lit les deltas une fois et les relaie aux postes (WebSocket ou SSE), qui n'ouvrent plus sur le parent que des connexions courtes pour écrire. Ce jalon change le contrat client (§10, contrat §6) et se fait avec l'application. En attendant : `max_connections` à 400 par défaut et réplicas réglés (`hot_standby_feedback`), ce qui tient de l'ordre de 300 postes simultanés par parent (installation §3).
 
 Possibilités futures, **non confirmées** (rien de prévu tant que Louis ne les a pas validées) :
 - Variante du chart Helm sur l'opérateur **CloudNativePG** : bascule automatique sur un réplica, sauvegardes gérées (§17).
