@@ -5,6 +5,7 @@
 # Avec un réplica en lecture (§12) :
 #
 #   docker compose --profile replicas up --build
+#   (après avoir décommenté LATTIS_PG_RO_URLS et LATTIS_PG_PUBLIC_RO dans .env)
 #
 # Le lien pour choisir le mot de passe du premier propriétaire
 # (LATTIS_BOOTSTRAP_OWNER) s'affiche dans `docker compose logs lattisd`.
@@ -74,9 +75,10 @@ services:
       LATTIS_PUBLIC_URL: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
       LATTIS_PG_RW_URL: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@postgres:5432/lattis?sslmode=require
       LATTIS_PG_PUBLIC_RW: localhost:5432
-      # Réplica du profil « replicas » : surveillé, annoncé seulement s'il répond et suit le parent.
-      LATTIS_PG_RO_URLS: postgres://lattis_service:${LATTIS_SERVICE_PASSWORD}@replica:5432/lattis?sslmode=require&connect_timeout=3
-      LATTIS_PG_PUBLIC_RO: localhost:5433
+      # Réplica du profil « replicas » : vides par défaut (aucun réplica
+      # surveillé) ; les deux lignes à décommenter sont dans .env.example.
+      LATTIS_PG_RO_URLS: ${LATTIS_PG_RO_URLS:-}
+      LATTIS_PG_PUBLIC_RO: ${LATTIS_PG_PUBLIC_RO:-}
       LATTIS_PG_SSLMODE: require
       LATTIS_SIGNING_KEY_FILE: /etc/lattis/keys/signing.pem
       LATTIS_SECRETS_DIR: /etc/lattis/oauth

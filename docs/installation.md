@@ -23,7 +23,7 @@ Conséquences pratiques :
 ```sh
 cd deploy/compose
 cp .env.example .env            # mots de passe et adresse du premier propriétaire
-docker compose up --build       # ajouter --profile replicas pour un réplica sur le port 5433
+docker compose up --build       # réplica sur le port 5433 : décommenter les deux lignes LATTIS_PG_*_RO* de .env, puis --profile replicas
 docker compose logs lattisd | grep token=
 ```
 
