@@ -125,7 +125,11 @@ func TestComposeLogin(t *testing.T) {
 	t.Logf("connecté en %s, résumé %v", tr.PGRole, summary)
 
 	// Console d'administration : lattisd ouvre lui-même une connexion
-	// OAUTHBEARER sous l'identité du propriétaire.
+	// OAUTHBEARER sous l'identité du propriétaire. Le navigateur garde une
+	// session d'une installation précédente (ancien chemin /admin) : elle ne
+	// doit pas faire tourner la connexion en rond.
+	adminURL, _ := url.Parse(base + "/admin/")
+	jar.SetCookies(adminURL, []*http.Cookie{{Name: "lattis_admin", Value: "eyJwZXJpbWUiOnRydWV9.perime.perime", Path: "/admin"}})
 	resp, body = read(c.Get(base + "/admin/status"))
 	if strings.Contains(body, `type="password"`) {
 		resp, body = read(c.PostForm(base+resp.Request.URL.RequestURI(), url.Values{"req": {field(body, "req")},

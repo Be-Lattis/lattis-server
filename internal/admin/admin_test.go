@@ -139,6 +139,10 @@ func TestSetupSignsOwnerIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := e.browser()
+	// Session d'une installation précédente, sous l'ancien chemin /admin et
+	// signée d'une autre clé : elle ne doit pas faire tourner en rond.
+	srvURL, _ := url.Parse(e.srv.URL + "/admin/")
+	b.c.Jar.SetCookies(srvURL, []*http.Cookie{{Name: "lattis_admin", Value: "eyJwZXJpbWUiOnRydWV9.perime.perime", Path: "/admin"}})
 	_, body := b.get("/setup?token=" + token)
 	// L'adresse prévue n'est qu'une suggestion : on en choisit une autre.
 	chosen := testpg.Email("chosen")
@@ -149,6 +153,12 @@ func TestSetupSignsOwnerIn(t *testing.T) {
 	}
 	if !strings.Contains(body, chosen) {
 		t.Fatalf("connecté sous l'adresse choisie attendu : %s", chosen)
+	}
+	// Une nouvelle connexion (mot de passe) mène aussi à la console.
+	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/"}})
+	b.c.Jar.SetCookies(srvURL, []*http.Cookie{{Name: "lattis_admin", Value: "eyJwZXJpbWUiOnRydWV9.perime.perime", Path: "/admin"}})
+	if resp, body := b.login(chosen, pw, "/admin/server"); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin/server" || !strings.Contains(body, "Nom du serveur") {
+		t.Fatalf("connexion avec une ancienne session : %d %s", resp.StatusCode, resp.Request.URL)
 	}
 	// Le passe-droit ne sert qu'une fois : une nouvelle connexion redemande le mot de passe.
 	b.c.Jar.SetCookies(resp.Request.URL, []*http.Cookie{{Name: "lattis_admin", Value: "", MaxAge: -1, Path: "/"}})
