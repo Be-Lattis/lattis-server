@@ -157,7 +157,7 @@ func TestForms(t *testing.T) {
 	// Restriction « tous les rôles » : l'identité est visée aussi.
 	var rid string
 	must(val(owner.PGRole, `SELECT lattis.add_restriction($1::uuid, $2::uuid, 'insert', '{}', 'false', 'Ajout interdit')::text`, &rid, wb, tid))
-	must(val(owner.PGRole, `SELECT lattis.update_form($1::uuid, '{"max_per_respondent": null}', 2)`, nil, fid))
+	must(val(owner.PGRole, `SELECT lattis.update_form($1::uuid, '{"max_per_respondent": null}', 3)`, nil, fid))
 	if err := submit("Quimper", 3); err == nil {
 		t.Fatal("restriction d'ajout ignorée par le formulaire")
 	}
