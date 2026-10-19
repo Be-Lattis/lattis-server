@@ -333,7 +333,7 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatalf("rôle : %v", err)
 	}
 	if _, body = b.post("/admin/do/set_level", url.Values{"csrf": {csrf}, "back": {page}, "role_id": {custom},
-		"node": {"table:" + tid}, "level": {"reader"}, "read_filter": {`true) OR (true`}}); !strings.Contains(body, "filtre refusé") {
+		"node": {"table:" + tid}, "level": {"reader"}, "read_filter": {`true) OR (true`}}); !strings.Contains(body, "iltre refusé") {
 		t.Fatal("filtre dangereux accepté")
 	}
 	if _, body = b.post("/admin/do/set_level", url.Values{"csrf": {csrf}, "back": {page}, "role_id": {custom},
