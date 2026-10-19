@@ -3,7 +3,10 @@ package store_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/Be-Lattis/lattis-server/internal/testpg"
 )
@@ -52,5 +55,45 @@ func TestPublicFunctions(t *testing.T) {
 		if !slices.Contains(got, n) {
 			t.Errorf("lattis.%s n'est pas accordée", n)
 		}
+	}
+}
+
+// Tables du schéma lattis : un utilisateur ordinaire n'en lit aucune (seuls
+// les noms et pg_role des équipes, pour les listes de choix). Les noms des
+// tables restent visibles dans le catalogue de PostgreSQL, pas leur contenu.
+func TestInternalTablesHidden(t *testing.T) {
+	ctx := context.Background()
+	db := testpg.New(t)
+	plain := openUsers(t, db, "ordinaire")[0]
+	rows, err := db.Super.Query(ctx, `
+		SELECT c.relname || coalesce('(' || a.attname || ')', '')
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+		     AND has_column_privilege($1, c.oid, a.attnum, 'SELECT, INSERT, UPDATE, REFERENCES')
+		WHERE n.nspname = 'lattis' AND c.relkind IN ('r', 'v', 'm', 'p', 'S')
+		  AND (has_table_privilege($1, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+		       OR a.attname IS NOT NULL)
+		ORDER BY 1`, plain.PGRole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, n)
+	}
+	want := []string{"teams(id)", "teams(name)", "teams(parent_id)", "teams(pg_role)"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("lisible par un utilisateur ordinaire : %v", got)
+	}
+	err = db.AsUser(t, plain.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT count(*) FROM lattis.audit`)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "42501") {
+		t.Fatalf("journal lisible : %v", err)
 	}
 }
