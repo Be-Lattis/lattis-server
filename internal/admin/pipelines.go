@@ -106,7 +106,7 @@ func (s *Service) uploadPipeline(w http.ResponseWriter, r *http.Request) {
 }
 
 var pipelineModes = map[string]string{"append": "ajout à la suite", "upsert": "mise à jour par clé", "replace": "remplacement"}
-var pipelineTriggers = map[string]string{"schedule": "horaire", "manual": "à la demande", "upload": "fichier envoyé", "file": "dépôt"}
+var pipelineTriggers = map[string]string{"schedule": "horaire", "manual": "à la demande", "upload": "fichier envoyé", "file": "dépôt", "push": "envoi depuis l'application"}
 var pipelineStatuses = map[string]string{"ok": "réussi", "warning": "lignes rejetées", "error": "échec", "running": "en cours"}
 
 func pipelineSource(x map[string]any) string {
@@ -116,6 +116,14 @@ func pipelineSource(x map[string]any) string {
 	switch x["source_kind"] {
 	case "upload":
 		return "fichier " + format + " envoyé depuis cette page"
+	case "push":
+		o, _ := src["origin"].(map[string]any)
+		s := "tableau poussé depuis l'application"
+		if wb, _ := o["workbook"].(string); wb != "" {
+			t, _ := o["table"].(string)
+			s += fmt.Sprintf(" (classeur « %s », tableau « %s »)", wb, t)
+		}
+		return s
 	case "file":
 		p := str("pattern")
 		if p == "" {

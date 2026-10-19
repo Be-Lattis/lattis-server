@@ -18,6 +18,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
+	"github.com/Be-Lattis/lattis-server/internal/userdb"
 	"github.com/Be-Lattis/lattis-server/internal/webapp"
 )
 
@@ -35,6 +36,10 @@ type Server struct {
 	Replicas *replicas.Monitor
 	// Web : moteurs de l'édition web ; nil hors édition web.
 	Web *webapp.Manager
+	// Users : connexions sous l'identité d'un utilisateur ; Pipelines :
+	// réveil des pipelines (sources poussées, POST /api/push).
+	Users     userdb.Runner
+	Pipelines Kicker
 }
 
 // Handler renvoie le routeur avec ses intergiciels.
@@ -46,6 +51,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("POST /api/preview", s.preview)
+	mux.HandleFunc("POST /api/push/{id}", s.push)
+	mux.HandleFunc("GET /api/push/{id}", s.pushStatus)
 	s.Auth.Routes(mux)
 	if s.Admin != nil {
 		s.Admin.Routes(mux)
@@ -63,7 +70,10 @@ func (s *Server) Handler() http.Handler {
 				http.Error(w, "trop de requêtes", http.StatusTooManyRequests)
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+			// Un tableau poussé a sa propre limite (pipeline.MaxBytes).
+			if !strings.HasPrefix(p, "/api/push/") {
+				r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+			}
 		}
 		mux.ServeHTTP(w, r)
 	})

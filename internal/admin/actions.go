@@ -82,6 +82,7 @@ func (s *Service) actions() map[string]actionFunc {
 		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
 		"toggle_pipeline":      exec1(`SELECT lattis.update_pipeline($1::uuid, jsonb_build_object('enabled', $2::boolean))`, "Pipeline mis à jour.", false, "id", "enabled"),
 		"drop_pipeline":        exec1(`SELECT lattis.drop_pipeline($1::uuid)`, "Pipeline supprimé.", true, "id"),
+		"drop_pushed_source":   exec1(`SELECT lattis.drop_pushed_source($1::uuid)`, "Source poussée supprimée (donnée du Data Lake, pipeline et classeur technique).", true, "id"),
 		"set_team_parent":      exec1(`SELECT lattis.set_team_parent($1::uuid, $2::uuid)`, "Équipe déplacée.", false, "id", "parent_id"),
 		"rename_team":          exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
 		"drop_team":            exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),

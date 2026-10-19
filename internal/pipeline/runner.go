@@ -81,6 +81,23 @@ type Runner struct {
 	// soumis à la garde réseau.
 	HTTP *http.Client
 	Now  func() time.Time
+
+	wakeOnce sync.Once
+	wake     chan struct{}
+}
+
+func (r *Runner) wakeup() chan struct{} {
+	r.wakeOnce.Do(func() { r.wake = make(chan struct{}, Workers) })
+	return r.wake
+}
+
+// Kick réveille les relevés sans attendre l'intervalle (envoi depuis
+// l'application : le pipeline part tout de suite).
+func (r *Runner) Kick() {
+	select {
+	case r.wakeup() <- struct{}{}:
+	default:
+	}
 }
 
 func (r *Runner) now() time.Time {
@@ -143,6 +160,7 @@ func (r *Runner) Run(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case <-t.C:
+				case <-r.wakeup():
 				}
 			}
 		}()
@@ -327,7 +345,7 @@ func (r *Runner) Execute(ctx context.Context, p *Pipeline) Result {
 
 // moveFile range un fichier traité (dépôt, envoi) dans done/ ou failed/.
 func (r *Runner) moveFile(p *Pipeline, file, to string) {
-	if file == "" || (p.SourceKind != "file" && p.SourceKind != "upload") {
+	if file == "" || (p.SourceKind != "file" && p.SourceKind != "upload" && p.SourceKind != "push") {
 		return
 	}
 	dst := filepath.Join(r.dir(p), to)

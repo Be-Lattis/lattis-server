@@ -88,7 +88,7 @@ func (w withCleanup) Close() error {
 func (r *Runner) fetchFile(ctx context.Context, p *Pipeline) (path, file string, cleanup func(), err error) {
 	cleanup = func() {}
 	switch p.SourceKind {
-	case "upload":
+	case "upload", "push":
 		if p.PendingFile == "" {
 			return "", "", cleanup, errors.New("aucun fichier envoyé : utilisez « Exécuter avec un fichier »")
 		}

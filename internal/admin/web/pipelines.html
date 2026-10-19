@@ -43,17 +43,19 @@
 <section class="panel">
 <h2>{{$x.name}} {{with $x.runs}}{{with index . 0}}{{if eq (str .status) "ok"}}<span class="tag">réussi</span>{{else if eq (str .status) "warning"}}<span class="tag warn">lignes rejetées</span>{{else if eq (str .status) "error"}}<span class="tag off">échec</span>{{else}}<span class="tag">en cours</span>{{end}}{{end}}{{end}}{{if not $x.enabled}} <span class="tag off">suspendu</span>{{end}}</h2>
 <dl>
-<dt>Cible</dt><dd><a href="/admin/workbooks/{{$x.workbook_id}}">{{$x.workbook}}</a> › {{$x.table_name}} · {{pipelineMode $x.mode}}{{if $x.key_columns}} sur {{range $i, $k := $x.key_columns}}{{if $i}}, {{end}}« {{$k}} »{{end}}{{end}}</dd>
+<dt>Cible</dt><dd>{{if eq (str $x.workbook_kind) "source"}}<span class="tag">source poussée</span> {{end}}<a href="/admin/workbooks/{{$x.workbook_id}}">{{$x.workbook}}</a> › {{$x.table_name}} · {{pipelineMode $x.mode}}{{if $x.key_columns}} sur {{range $i, $k := $x.key_columns}}{{if $i}}, {{end}}« {{$k}} »{{end}}{{end}}</dd>
 <dt>Source</dt><dd>{{pipelineSource $x}}</dd>
 <dt>Horaire</dt><dd>{{if eq (str $x.schedule_kind) "every"}}toutes les {{str $x.schedule_minutes}} min{{else if eq (str $x.schedule_kind) "daily"}}chaque jour à {{$x.schedule_time}}{{else}}à la demande{{end}}{{with $x.next_run_at}} · prochaine exécution {{date .}}{{end}}</dd>
+{{with $x.datasets}}<dt>Data Lake</dt><dd>{{range $i, $ds := .}}{{if $i}}, {{end}}<a href="/admin/data">{{$ds.name}}</a> <code>donnees.{{$ds.sql_name}}</code>{{end}}</dd>{{end}}
 <dt>Identité</dt><dd><code>{{$x.identity}}</code></dd>
 </dl>
 <div class="buttons">
-{{if eq (str $x.source_kind) "upload"}}<form method="post" action="/admin/pipelines/{{$x.id}}/upload" enctype="multipart/form-data" class="row">{{template "csrf" $}}<input type="file" name="file" required aria-label="Fichier"><label class="inline"><input type="checkbox" name="simulate"> Simuler seulement</label><button class="ok">Exécuter avec ce fichier</button></form>
+{{if or (eq (str $x.source_kind) "upload") (eq (str $x.source_kind) "push")}}<form method="post" action="/admin/pipelines/{{$x.id}}/upload" enctype="multipart/form-data" class="row">{{template "csrf" $}}<input type="file" name="file" required aria-label="Fichier"><label class="inline"><input type="checkbox" name="simulate"> Simuler seulement</label><button class="ok">Exécuter avec ce fichier</button></form>
 {{else}}<form method="post" action="/admin/do/run_pipeline">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}"><button class="ok">Exécuter maintenant</button></form>
 <form method="post" action="/admin/do/simulate_pipeline">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}"><button title="Lit la source et montre ce qui serait écrit, sans rien changer">Simuler</button></form>{{end}}
 <form method="post" action="/admin/do/toggle_pipeline">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}"><input type="hidden" name="enabled" value="{{if $x.enabled}}false{{else}}true{{end}}"><button>{{if $x.enabled}}Suspendre{{else}}Reprendre{{end}}</button></form>
-<form method="post" action="/admin/do/drop_pipeline" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}">{{template "confirm"}}<button>Supprimer</button></form>
+{{if eq (str $x.workbook_kind) "source"}}<form method="post" action="/admin/do/drop_pushed_source" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}">{{template "confirm"}}<button title="Supprime aussi la donnée du Data Lake et le classeur technique">Supprimer la source</button></form>
+{{else}}<form method="post" action="/admin/do/drop_pipeline" class="danger">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}">{{template "confirm"}}<button>Supprimer</button></form>{{end}}
 </div>
 <h3>Exécutions</h3>
 {{if $x.runs}}<div class="scroll"><table class="compact"><thead><tr><th>Début</th><th>Déclenchement</th><th>Statut</th><th>Lues</th><th>Ajoutées</th><th>Modifiées</th><th>Supprimées</th><th>Rejetées</th><th>Détail</th></tr></thead><tbody>

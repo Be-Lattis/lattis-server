@@ -15,7 +15,7 @@
 <tbody>
 {{range .Data.Workbooks}}
 <tr>
-<td><a href="/admin/workbooks/{{.id}}">{{.title}}</a>{{if ne (str .state) "published"}} <span class="tag">{{.state}}</span>{{end}}</td>
+<td><a href="/admin/workbooks/{{.id}}">{{.title}}</a>{{if eq (str .kind) "source"}} <span class="tag" title="Classeur technique d'un tableau publié seul au Data Lake">source poussée</span>{{end}}{{if ne (str .state) "published"}} <span class="tag">{{.state}}</span>{{end}}</td>
 <td>{{if eq (str .mode) "frozen"}}Figé{{else}}Collaboratif{{end}}</td>
 <td>{{range $i, $o := .owners}}{{if $i}}, {{end}}{{$o}}{{end}}</td>
 <td>{{str .members}}</td>

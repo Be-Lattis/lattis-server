@@ -244,6 +244,7 @@ func serve(doMigrate bool) error {
 	runner := &pipeline.Runner{Store: st, Users: users, Dir: cfg.PipelineDir, SecretsDir: cfg.PipelineSecretsDir,
 		AllowedHosts: cfg.PipelineAllowedHosts, AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}
 	adminSvc.Pipelines = runner
+	srv.Users, srv.Pipelines = users, runner
 	go runner.Run(ctx)
 	errc := make(chan error, 2)
 	go func() {
