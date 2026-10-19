@@ -136,6 +136,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_WEB_CACHE_DIR` | `/var/lib/lattis/web` | Édition web : un répertoire par utilisateur (cache SQLite, fichiers envoyés). |
 | `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs simultanés (au-delà : 503). |
 | `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
+| `LATTIS_WEB_ENGINE_UIDS` | vide | Édition web, Linux : plage d'UID système (`200000-200999`, au moins `LATTIS_WEB_MAX_ENGINES` valeurs) ; chaque moteur tourne sous son propre UID et groupe, sans accès à la clé de signature, aux secrets ni aux caches des autres. Vide : même utilisateur que `lattisd`. Voir §5.1. |
 | `LATTIS_WEB_TOKEN_URL` | `http://127.0.0.1:<port>/engine/token` | Édition web : adresse où les moteurs demandent leurs jetons (à préciser si `lattisd` sert lui-même le TLS). |
 | `LATTIS_PUBLIC_URL` | (obligatoire) | URL publique, émetteur des jetons. |
 | `LATTIS_PG_RW_URL` | (obligatoire) | Connexion de service au parent (`lattis_service`), par exemple `postgres://lattis_service:<mdp>@postgres:5432/lattis?sslmode=require`. |
@@ -165,6 +166,12 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres commandes : `lattisd migrate`, `lattisd keygen FICHIER`, `lattisd public-keys [FICHIER]`, `lattisd init-dev DIR [HÔTE…]`, `lattisd version`.
 
 Image `be-lattis/server` : `POSTGRES_PASSWORD` (superutilisateur, jamais utilisé par `lattisd`), `LATTIS_SERVICE_PASSWORD`, `LATTIS_ISSUER` (= `LATTIS_PUBLIC_URL`), `LATTIS_REPLICATION_PASSWORD` (crée `lattis_replicator` si présent), fichiers dans `/etc/lattis/tls` et `/etc/lattis/keys/public.pem`. Point d'entrée `lattis-replica` : `LATTIS_PRIMARY_HOST`, `LATTIS_PRIMARY_PORT` (5432), `LATTIS_REPLICATION_PASSWORD`, `LATTIS_REPLICATION_SLOT` (nom, ou `auto` = nom d'hôte).
+
+### 5.1 Isoler les moteurs de l'édition web
+
+Par défaut, les moteurs `lattis-engine` tournent sous le même utilisateur système que `lattisd` : un moteur compromis pourrait lire la clé de signature, les secrets et les caches des autres utilisateurs. Avec `LATTIS_WEB_ENGINE_UIDS`, chaque moteur reçoit un UID (et un GID égal) de la plage, le même d'une session à l'autre tant qu'il est libre ; son répertoire de cache lui est donné et le répertoire parent passe en `0711` (traversable, pas lisible). Sous Linux, un moteur meurt aussi avec `lattisd`.
+
+`lattisd` doit alors pouvoir changer d'utilisateur : démarrez-le en root avec seulement les capacités `SETUID`, `SETGID`, `CHOWN` et `KILL` (Compose : `user: "0"`, `cap_drop: [ALL]`, `cap_add: [SETUID, SETGID, CHOWN, KILL]` ; Kubernetes : `securityContext.capabilities` équivalent). Gardez la clé de signature et les secrets lisibles par `lattisd` seul (`0600`).
 
 ## 6. Réglages du serveur (administration web)
 

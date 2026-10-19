@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,9 @@ type Config struct {
 	// WebIdle : inactivité avant son arrêt.
 	WebEngine string
 	WebIdle   time.Duration
+	// WebEngineUIDs : plage d'UID (et de GID) système des moteurs, un par
+	// moteur en cours ; [0, 0] : même utilisateur que lattisd.
+	WebEngineUIDs [2]int
 	// TrustProxy : faire confiance à X-Forwarded-For pour la limitation de débit.
 	TrustProxy bool
 	// ExtraRedirects : URI de redirection supplémentaires acceptées pour le
@@ -181,6 +185,21 @@ func parse(get func(string) string) (*Config, error) {
 		c.WebIdle = d
 	} else {
 		errs = append(errs, errors.New("LATTIS_WEB_IDLE : durée positive attendue (30m)"))
+	}
+	if v := def("LATTIS_WEB_ENGINE_UIDS", ""); v != "" {
+		lo, hi, _ := strings.Cut(v, "-")
+		first, err1 := strconv.Atoi(strings.TrimSpace(lo))
+		last, err2 := strconv.Atoi(strings.TrimSpace(hi))
+		switch {
+		case err1 != nil || err2 != nil || first < 1000 || last < first:
+			errs = append(errs, errors.New("LATTIS_WEB_ENGINE_UIDS : plage d'UID attendue (200000-200999, à partir de 1000)"))
+		case last-first+1 < c.WebMaxEngines:
+			errs = append(errs, fmt.Errorf("LATTIS_WEB_ENGINE_UIDS : %d UID pour %d moteurs (LATTIS_WEB_MAX_ENGINES)", last-first+1, c.WebMaxEngines))
+		case runtime.GOOS != "linux":
+			errs = append(errs, errors.New("LATTIS_WEB_ENGINE_UIDS : Linux seulement"))
+		default:
+			c.WebEngineUIDs = [2]int{first, last - first + 1}
+		}
 	}
 	if loc, err := time.LoadLocation(def("LATTIS_TIMEZONE", "Europe/Paris")); err == nil {
 		c.Timezone = loc

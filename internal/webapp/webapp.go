@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"net"
@@ -68,11 +69,13 @@ type Manager struct {
 	mu      sync.Mutex
 	engines map[string]*engine // par utilisateur
 	secrets map[string]string  // secret → utilisateur
+	uids    map[int]string     // UID système → utilisateur (LATTIS_WEB_ENGINE_UIDS)
 }
 
 type engine struct {
 	userID string
 	secret string
+	uid    int // UID système du moteur ; -1 : celui de lattisd
 	cmd    *exec.Cmd
 	stdin  io.Closer
 	proxy  *httputil.ReverseProxy
@@ -173,7 +176,19 @@ func (m *Manager) engine(ctx context.Context, u store.User) (*engine, error) {
 		return nil, ErrBusy
 	}
 	// Réservé pendant le démarrage : une seconde requête attend le même.
-	e := &engine{userID: u.ID, secret: randomSecret(), done: make(chan struct{}), started: make(chan struct{})}
+	e := &engine{userID: u.ID, secret: randomSecret(), uid: -1, done: make(chan struct{}), started: make(chan struct{})}
+	if r := m.Config.WebEngineUIDs; r[1] > 0 {
+		if m.uids == nil {
+			m.uids = map[int]string{}
+		}
+		uid, ok := pickUID(r[0], r[1], m.uids, u.ID)
+		if !ok {
+			m.mu.Unlock()
+			return nil, ErrBusy
+		}
+		e.uid = uid
+		m.uids[uid] = u.ID
+	}
 	m.engines[u.ID] = e
 	m.secrets[e.secret] = u.ID
 	m.mu.Unlock()
@@ -202,6 +217,17 @@ func (m *Manager) start(e *engine) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	if e.uid >= 0 {
+		// Chaque moteur sous son propre UID : il n'atteint que son répertoire
+		// (le parent reste traversable, pas lisible), ni les clés ni les
+		// secrets de lattisd, ni les autres moteurs.
+		if err := os.Chmod(m.Config.WebCacheDir, 0o711); err != nil {
+			return err
+		}
+		if err := ownTree(dir, e.uid); err != nil {
+			return fmt.Errorf("cache du moteur : %w", err)
+		}
+	}
 	cmd := exec.Command(m.Config.WebEngine,
 		"--addr", "127.0.0.1:0", "--dir", dir, "--base-path", "/app",
 		"--server", m.Config.Issuer(), "--token-url", m.TokenURL, "--idle", m.Config.WebIdle.String())
@@ -210,6 +236,7 @@ func (m *Manager) start(e *engine) error {
 		"XDG_CACHE_HOME=" + filepath.Join(dir, ".cache"), "XDG_DATA_HOME=" + filepath.Join(dir, ".local", "share"),
 		"LATTIS_ENGINE_SECRET=" + e.secret}
 	cmd.Dir = dir
+	isolate(cmd, e.uid)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -281,6 +308,25 @@ func (m *Manager) forget(e *engine) {
 		delete(m.engines, e.userID)
 	}
 	delete(m.secrets, e.secret)
+	if e.uid >= 0 && m.uids[e.uid] == e.userID {
+		delete(m.uids, e.uid)
+	}
+}
+
+// pickUID : UID de la plage pour un utilisateur, le même d'une fois sur
+// l'autre tant qu'il est libre (son cache n'a alors pas à changer de
+// propriétaire), sinon le suivant libre.
+func pickUID(first, count int, used map[int]string, user string) (int, bool) {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(user))
+	start := int(h.Sum32() % uint32(count))
+	for i := 0; i < count; i++ {
+		uid := first + (start+i)%count
+		if _, taken := used[uid]; !taken {
+			return uid, true
+		}
+	}
+	return 0, false
 }
 
 // Stop demande l'arrêt de tous les moteurs (fermeture de stdin) et attend.
