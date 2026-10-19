@@ -59,6 +59,11 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Web != nil {
 		s.Web.Routes(mux)
+	} else {
+		// Édition « gestion des rôles » : l'application web est refusée, avec
+		// une page qui le dit (plutôt qu'une page introuvable sans explication).
+		mux.HandleFunc("/app/", webDisabled)
+		mux.HandleFunc("/app", webDisabled)
 	}
 
 	limiter := newLimiter(max(s.Config.RateLimit, 1), time.Minute)
@@ -203,4 +208,19 @@ func securityHeaders(https bool, next http.HandlerFunc) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		next(w, r)
 	})
+}
+
+// webDisabled : réponse de /app/ quand l'édition web n'est pas activée.
+func webDisabled(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Édition web non activée</title></head><body>
+<h1>L'application web n'est pas activée sur ce serveur</h1>
+<p>Ce Serveur Lattis est installé en édition « gestion des rôles » : ouvrez vos classeurs avec l'application Lattis sur votre poste.</p>
+<p>Administrateur : l'édition web s'active avec <code>LATTIS_EDITION=web</code> (voir la documentation d'installation, §5.1).</p>
+<p><a href="/">Accueil du serveur</a></p>
+</body></html>
+`))
 }

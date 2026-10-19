@@ -1,6 +1,6 @@
 # Installer et configurer le Serveur Lattis
 
-Édition « gestion des rôles » (`LATTIS_EDITION=admin`) ; pour l'édition web (application dans le navigateur), voir en plus §5.1. Trois façons de le lancer : Docker Compose pour un essai, Docker Compose sur un serveur, ou Kubernetes avec le chart Helm. La configuration est la même partout : des variables d'environnement pour `lattisd` et PostgreSQL, le reste en base, modifiable depuis l'administration web.
+Édition « gestion des rôles » (`LATTIS_EDITION=admin`, application web désactivée) ; pour servir aussi l'application dans le navigateur, voir en plus §5.1 (quatre cas). Trois façons de le lancer : Docker Compose pour un essai, Docker Compose sur un serveur, ou Kubernetes avec le chart Helm. La configuration est la même partout : des variables d'environnement pour `lattisd` et PostgreSQL, le reste en base, modifiable depuis l'administration web.
 
 ## 1. Ce qu'il faut savoir avant de commencer
 
@@ -131,7 +131,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `LATTIS_EDITION` | `admin` | Édition : `admin`, ou `web` (application dans le navigateur, demande `LATTIS_WEB_ENGINE`). |
+| `LATTIS_EDITION` | `admin` | Édition : `admin` (application web désactivée, `/app/` refusée), ou `web` (application dans le navigateur, moteurs lancés selon `LATTIS_WEB_LAUNCHER`). Voir §5.1. |
 | `LATTIS_WEB_ENGINE` | vide | Édition web : chemin du binaire `lattis-engine` (dépôt de l'application), lancé une fois par utilisateur connecté. |
 | `LATTIS_WEB_CACHE_DIR` | `/var/lib/lattis/web` | Édition web : un répertoire par utilisateur (cache SQLite, fichiers envoyés). |
 | `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs simultanés (au-delà : 503). |
@@ -171,17 +171,25 @@ Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres comm
 
 Image `be-lattis/server` : `POSTGRES_PASSWORD` (superutilisateur, jamais utilisé par `lattisd`), `LATTIS_SERVICE_PASSWORD`, `LATTIS_ISSUER` (= `LATTIS_PUBLIC_URL`), `LATTIS_REPLICATION_PASSWORD` (crée `lattis_replicator` si présent), fichiers dans `/etc/lattis/tls` et `/etc/lattis/keys/public.pem`. Point d'entrée `lattis-replica` : `LATTIS_PRIMARY_HOST`, `LATTIS_PRIMARY_PORT` (5432), `LATTIS_REPLICATION_PASSWORD`, `LATTIS_REPLICATION_SLOT` (nom, ou `auto` = nom d'hôte).
 
-### 5.1 Édition web : choisir comment lancer les moteurs
+### 5.1 Application web : quatre cas
 
-L'édition web (`LATTIS_EDITION=web`) sert l'application dans le navigateur. Chaque utilisateur connecté reçoit son propre moteur `lattis-engine`, arrêté après `LATTIS_WEB_IDLE` d'inactivité. `LATTIS_WEB_LAUNCHER` dit où il tourne :
+Un Serveur Lattis peut aussi servir l'application dans le navigateur (`/app/`). Chaque utilisateur connecté y reçoit alors son propre moteur `lattis-engine`, arrêté après `LATTIS_WEB_IDLE` d'inactivité. Quatre cas, selon `LATTIS_EDITION` et `LATTIS_WEB_LAUNCHER` :
 
-| | `process` | `docker` | `kubernetes` |
-|---|---|---|---|
-| Pour qui | Un serveur unique, l'installation la plus simple | Un serveur Docker, isolation forte sans root pour `lattisd` | Un cluster |
-| Où tourne un moteur | Processus de `lattisd`, dans son conteneur | Conteneur à part, un par utilisateur | Pod à part, un par utilisateur |
-| Isolation | Avec `lattisd` en root : un utilisateur système par moteur. Sans root : aucune (déconseillé à plusieurs utilisateurs) | Conteneur verrouillé, mémoire, processeurs et processus limités | Pod verrouillé, ressources limitées, NetworkPolicy |
-| Ce qu'il faut en plus | L'image `lattisd:web` (qui contient le moteur) | Le mini lanceur `lattis-launcher`, l'image du moteur | Le chart Helm (`web.enabled`), l'image du moteur |
-| Démarrage d'un moteur | Immédiat | Une à deux secondes | Quelques secondes (tirage de l'image la première fois) |
+| | Désactivée (défaut) | `process` | `docker` | `kubernetes` |
+|---|---|---|---|---|
+| Réglage | `LATTIS_EDITION=admin` | `LATTIS_EDITION=web` (`LATTIS_WEB_LAUNCHER=process`, défaut) | `LATTIS_EDITION=web`, `LATTIS_WEB_LAUNCHER=docker` | Chart : `web.enabled: true` |
+| Pour qui | Les utilisateurs travaillent avec l'application de bureau seulement | Un serveur unique, l'installation la plus simple | Un serveur Docker, isolation forte sans root pour `lattisd` | Un cluster |
+| `/app/` | Refusée : page « L'application web n'est pas activée sur ce serveur » (404) ; la découverte annonce `"edition": "admin"` | Servie | Servie | Servie |
+| Où tourne un moteur | Aucun moteur | Processus de `lattisd`, dans son conteneur | Conteneur à part, un par utilisateur | Pod à part, un par utilisateur |
+| Isolation | Sans objet | Avec `lattisd` en root : un utilisateur système par moteur. Sans root : aucune (déconseillé à plusieurs utilisateurs) | Conteneur verrouillé, mémoire, processeurs et processus limités | Pod verrouillé, ressources limitées, NetworkPolicy |
+| Ce qu'il faut en plus | Rien (image `lattisd`) | L'image `lattisd:web` (qui contient le moteur) | Le mini lanceur `lattis-launcher`, l'image du moteur | L'image du moteur |
+| Démarrage d'un moteur | | Immédiat | Une à deux secondes | Quelques secondes (tirage de l'image la première fois) |
+
+Les quatre cas sont vérifiés par la CI (désactivée, `process` avec et sans isolation, `docker` de bout en bout ; `kubernetes` : génération du chart seulement).
+
+#### 5.1.0 Désactivée
+
+C'est l'installation par défaut, celle des §2 à §4 : rien à faire. Les classeurs s'ouvrent dans l'application de bureau ; une adresse `/app/…` (lien partagé par erreur, ancien favori) affiche que l'application web n'est pas activée. Pour l'activer plus tard, choisir l'un des trois cas suivants : les données ne changent pas.
 
 Images utilisées :
 
@@ -191,7 +199,7 @@ Images utilisées :
 | `lattisd:web` (`lattisd` avec le moteur, mode `process`) | `docker build -f docker/lattisd/Dockerfile --target web --build-arg ENGINE_IMAGE=<image du moteur> -t be-lattis/lattisd:web .` |
 | `lattis-launcher` (mode `docker`) | `docker build -f docker/launcher/Dockerfile -t be-lattis/lattis-launcher:dev .` |
 
-Dans tous les modes, `LATTIS_PUBLIC_URL` est aussi l'adresse que les moteurs contactent pour se connecter à PostgreSQL au nom de l'utilisateur.
+Dans les trois cas avec application web, `LATTIS_PUBLIC_URL` est aussi l'adresse que les moteurs contactent pour se connecter à PostgreSQL au nom de l'utilisateur.
 
 #### 5.1.1 Mode `process`
 

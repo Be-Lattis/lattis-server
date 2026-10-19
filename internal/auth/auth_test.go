@@ -364,3 +364,19 @@ func TestUpstreamOIDCFlow(t *testing.T) {
 		t.Fatalf("non invité : %d", resp.StatusCode)
 	}
 }
+
+// Édition « gestion des rôles » : /app/ refusée avec une page qui l'explique.
+func TestWebDisabled(t *testing.T) {
+	e := setup(t)
+	for _, p := range []string{"/app/", "/app", "/app/index.html?workbook=x"} {
+		resp, err := e.c.Get(e.srv.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(b), "pas activée") {
+			t.Fatalf("%s : %d %.200s", p, resp.StatusCode, b)
+		}
+	}
+}

@@ -61,6 +61,8 @@ jobs:
           docker compose up -d --no-build
           for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
           curl -sf http://localhost:8080/readyz
+          # Application web désactivée (édition admin) : /app/ refusée.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/app/)" = 404
       - name: Parcours d'un poste
         run: |
           TOKEN=$(docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env logs lattisd | grep -o 'token=[0-9a-f]*' | head -1 | cut -d= -f2)
