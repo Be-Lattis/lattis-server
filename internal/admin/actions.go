@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"slices"
@@ -76,6 +77,7 @@ func (s *Service) actions() map[string]actionFunc {
 		"remove_data_audience": exec1(`SELECT lattis.remove_data_audience($1::uuid)`, "Retiré de l'audience.", false, "id"),
 		"add_data_audience":    addDataAudience,
 		"create_pipeline":      createPipeline,
+		"create_workbook":      createWorkbook,
 		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
 		"toggle_pipeline":      exec1(`SELECT lattis.update_pipeline($1::uuid, jsonb_build_object('enabled', $2::boolean))`, "Pipeline mis à jour.", false, "id", "enabled"),
 		"drop_pipeline":        exec1(`SELECT lattis.drop_pipeline($1::uuid)`, "Pipeline supprimé.", true, "id"),
@@ -445,4 +447,55 @@ func createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	b, _ := json.Marshal(p)
 	_, err := tx.Exec(ctx, `SELECT lattis.create_pipeline($1::jsonb)`, string(b))
 	return "Pipeline créé.", err
+}
+
+var columnTypes = map[string]string{"texte": "text", "text": "text", "entier": "integer", "integer": "integer",
+	"décimal": "decimal", "decimal": "decimal", "nombre": "decimal", "date": "date", "date et heure": "datetime",
+	"datetime": "datetime", "booléen": "boolean", "boolean": "boolean", "oui/non": "boolean"}
+
+// createWorkbook : classeur publié vide (et son premier tableau), créé par
+// l'administrateur ; un autre propriétaire peut être désigné.
+func createWorkbook(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	var cols []map[string]string
+	if f.s("table") != "" {
+		for _, line := range strings.Split(f.r.PostFormValue("columns"), "\n") {
+			name, typ, _ := strings.Cut(line, ":")
+			name, typ = strings.TrimSpace(name), strings.ToLower(strings.TrimSpace(typ))
+			if name == "" {
+				continue
+			}
+			if typ == "" {
+				typ = "texte"
+			}
+			t, ok := columnTypes[typ]
+			if !ok {
+				return "", inputError(fmt.Sprintf("Colonne « %s » : type « %s » inconnu (texte, entier, décimal, date, date et heure, booléen).", name, typ))
+			}
+			cols = append(cols, map[string]string{"name": name, "type": t})
+		}
+		if len(cols) == 0 {
+			return "", inputError("Donnez au moins une colonne au premier tableau.")
+		}
+	}
+	var wb string
+	if err := tx.QueryRow(ctx, `SELECT lattis.create_workbook($1, $2)::text`, f.s("title"), f.s("mode")).Scan(&wb); err != nil {
+		return "", err
+	}
+	if cols != nil {
+		b, _ := json.Marshal(cols)
+		if _, err := tx.Exec(ctx, `SELECT lattis.create_table($1::uuid, $2, $3::jsonb)`, wb, f.s("table"), string(b)); err != nil {
+			return "", err
+		}
+	}
+	if _, err := tx.Exec(ctx, `SELECT lattis.finish_publish($1::uuid)`, wb); err != nil {
+		return "", err
+	}
+	msg := "Classeur « " + f.s("title") + " » créé."
+	if owner := strings.ToLower(f.s("owner")); owner != "" {
+		if _, err := tx.Exec(ctx, `SELECT lattis.invite($1, $2::uuid, ARRAY['owner'])`, owner, wb); err != nil {
+			return "", err
+		}
+		msg += " " + owner + " en est propriétaire."
+	}
+	return msg, nil
 }

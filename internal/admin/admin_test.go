@@ -276,6 +276,21 @@ func TestAdminConsole(t *testing.T) {
 	}
 	page := "/admin/workbooks/" + wb
 
+	// Création d'un classeur depuis la console, avec un premier tableau.
+	if _, body := b.post("/admin/do/create_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "title": {"Suivi console"},
+		"mode": {"collaborative"}, "table": {"Commandes"}, "columns": {"Client : texte\r\nMontant : décimal\r\nLivrée : booléen"}}); !strings.Contains(body, "Suivi console") || !strings.Contains(body, "créé") {
+		t.Fatalf("création de classeur : %s", body)
+	}
+	var cols int
+	if err := e.db.Super.QueryRow(ctx, `SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN lattis.workbooks w ON w.schema_name = n.nspname WHERE w.title = 'Suivi console' AND c.relname = 'Commandes' AND a.attname IN ('Client', 'Montant', 'Livrée')`).Scan(&cols); err != nil || cols != 3 {
+		t.Fatalf("tableau créé : %d colonnes, %v", cols, err)
+	}
+	if _, body := b.post("/admin/do/create_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "title": {"Mauvais"},
+		"mode": {"collaborative"}, "table": {"T"}, "columns": {"A : couleur"}}); !strings.Contains(body, "inconnu") {
+		t.Fatal("type de colonne inconnu accepté")
+	}
+
 	// Lien à partager : connexion exigée, accès vérifié, choix retenu.
 	if resp, body := b.get("/w/" + wb); resp.StatusCode != http.StatusOK || !strings.Contains(body, "Ventes console") || !strings.Contains(body, "Ouvrir dans Lattis") {
 		t.Fatalf("lien : %d %s", resp.StatusCode, body)

@@ -317,7 +317,8 @@ func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (an
 // --- Classeurs -----------------------------------------------------------------------------
 
 func loadWorkbooks(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
-	return queryJSON(ctx, tx, `SELECT lattis.admin_workbooks()`)
+	wbs, err := queryJSON(ctx, tx, `SELECT lattis.admin_workbooks()`)
+	return map[string]any{"Workbooks": wbs}, err
 }
 
 // nodeLevel : niveau propre d'un rôle sur un nœud, pour l'arborescence.
