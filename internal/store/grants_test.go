@@ -21,7 +21,7 @@ var publicAPI = []string{
 	"my_capabilities", "my_teams", "my_workbooks", "pipeline_targets", "publish_script", "record_open",
 	"remove_data_audience", "remove_provider", "remove_team_member", "rename_data_folder", "rename_team", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "run_pipeline", "save_meta", "set_config",
-	"set_data_publisher", "set_level", "set_team_parent", "set_workbook_creator", "since_covered", "sync_point",
+	"set_data_publisher", "set_level", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
 	"table_ref", "tombstones_since", "trg_notify", "trg_stamp", "unlink_dataset", "update_dataset", "update_pipeline",
 	"update_provider", "why_not", "workbook_acl", "workbook_members",
 }

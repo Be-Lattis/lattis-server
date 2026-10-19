@@ -227,10 +227,8 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'),
 			'data_publisher', pg_has_role(u.pg_role, 'lattis_data_publishers', 'MEMBER'),
 			'email_verified', u.email_verified,
-			'link_expires_at', (SELECT c.setup_expires_at FROM lattis.local_credentials c
-			                    WHERE c.user_id = u.id AND c.password_hash IS NULL),
-			'link_expired', (SELECT c.setup_expires_at < now() FROM lattis.local_credentials c
-			                 WHERE c.user_id = u.id AND c.password_hash IS NULL))
+			'link_expires_at', lattis.setup_link_expiry(u.id),
+			'link_expired', lattis.setup_link_expiry(u.id) < now())
 			ORDER BY u.email), '[]')
 		FROM (SELECT * FROM lattis.users
 		      WHERE $1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'

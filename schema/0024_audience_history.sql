@@ -142,3 +142,13 @@ GRANT EXECUTE ON FUNCTION lattis.dataset_audience_history(uuid) TO PUBLIC;
 
 -- Point de départ pour les données existantes.
 SELECT lattis.compile_dataset(id) FROM lattis.datasets;
+
+-- Échéance du lien de choix du mot de passe d'un compte qui n'en a pas
+-- encore (page Utilisateurs) ; NULL sinon. Propriétaires du serveur.
+CREATE FUNCTION lattis.setup_link_expiry(p_user_id uuid) RETURNS timestamptz
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+    SELECT c.setup_expires_at FROM lattis.local_credentials c
+    WHERE c.user_id = p_user_id AND c.password_hash IS NULL AND lattis.is_server_owner()
+$$;
+GRANT EXECUTE ON FUNCTION lattis.setup_link_expiry(uuid) TO PUBLIC;
