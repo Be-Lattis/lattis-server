@@ -52,6 +52,13 @@ var webFS embed.FS
 
 var pages = map[string]*template.Template{}
 
+// treeCtx : un nœud d'arbre et la page, pour les gabarits récursifs.
+type treeCtx struct {
+	Page view
+	Node *treeNode
+	All  any
+}
+
 // audienceCtx : audience d'une donnée ou d'un dossier, pour le gabarit « audience ».
 type audienceCtx struct {
 	Page            view
@@ -81,6 +88,8 @@ var funcs = template.FuncMap{
 		return providerField{Label: label, Name: name, Value: value, Help: help, Required: required}
 	},
 	"join": func(v []string) string { return strings.Join(v, " ") },
+	"node": func(page view, n *treeNode, all any) treeCtx { return treeCtx{Page: page, Node: n, All: all} },
+	"leaf": func(item map[string]any) *treeNode { return &treeNode{Item: item} },
 	"audienceCtx": func(page view, entries any, dataset, folder string, teams any, inherit bool) audienceCtx {
 		return audienceCtx{Page: page, Entries: entries, Dataset: dataset, Folder: folder, Teams: teams, Inherit: inherit}
 	},

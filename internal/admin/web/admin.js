@@ -57,3 +57,26 @@ function applyShowIf() {
 document.addEventListener("change", applyShowIf);
 document.addEventListener("input", applyShowIf);
 applyShowIf();
+
+// Arbres repliables (équipes, catalogue) : repliés par défaut, état retenu
+// par ce navigateur, « Tout déplier / Tout replier ».
+(() => {
+  const key = "lattis-open:" + location.pathname;
+  let open = [];
+  try { open = JSON.parse(localStorage.getItem(key) || "[]"); } catch {}
+  const save = () => {
+    try {
+      localStorage.setItem(key, JSON.stringify([...document.querySelectorAll("details[data-remember][open]")].map((d) => d.id)));
+    } catch {}
+  };
+  for (const d of document.querySelectorAll("details[data-remember]")) {
+    if (open.includes(d.id)) d.open = true;
+    d.addEventListener("toggle", save);
+  }
+  for (const b of document.querySelectorAll("[data-tree]")) {
+    b.addEventListener("click", () => {
+      for (const d of document.querySelectorAll("details[data-remember]")) d.open = b.dataset.tree === "open";
+      save();
+    });
+  }
+})();

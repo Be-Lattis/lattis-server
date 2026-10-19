@@ -246,18 +246,43 @@ func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (a
 
 // --- Équipes -------------------------------------------------------------------------------
 
+// treeNode : un élément (équipe, dossier) et ses enfants, pour un arbre repliable.
+type treeNode struct {
+	Item     map[string]any
+	Children []*treeNode
+	Datasets []map[string]any // dossiers de données : données rangées ici
+}
+
+// buildTree range une liste ordonnée (id, parent_id) en arbre ; un élément
+// dont le parent manque reste à la racine.
+func buildTree(items []map[string]any) []*treeNode {
+	byID := map[string]*treeNode{}
+	for _, it := range items {
+		id, _ := it["id"].(string)
+		byID[id] = &treeNode{Item: it}
+	}
+	var roots []*treeNode
+	for _, it := range items {
+		id, _ := it["id"].(string)
+		parent, _ := it["parent_id"].(string)
+		if p, ok := byID[parent]; ok && parent != "" {
+			p.Children = append(p.Children, byID[id])
+		} else {
+			roots = append(roots, byID[id])
+		}
+	}
+	return roots
+}
+
 func loadTeams(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
-	teams, err := queryJSON(ctx, tx, `SELECT lattis.list_teams()`)
-	return map[string]any{"Teams": teams}, err
+	var teams []map[string]any
+	if err := tx.QueryRow(ctx, `SELECT lattis.list_teams()`).Scan(&teams); err != nil {
+		return nil, err
+	}
+	return map[string]any{"Teams": teams, "Tree": buildTree(teams)}, nil
 }
 
 // --- Données d'entreprise -------------------------------------------------------------------
-
-type dataEntry struct {
-	Folder  map[string]any
-	Dataset map[string]any
-	Depth   int
-}
 
 // loadData : catalogue en arbre, chaque donnée sous son dossier.
 func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
@@ -277,21 +302,16 @@ func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (an
 		f, _ := d["folder_id"].(string)
 		byFolder[f] = append(byFolder[f], d)
 	}
-	var tree []dataEntry
-	for _, f := range cat.Folders {
-		depth := 0
-		if n, ok := f["depth"].(float64); ok {
-			depth = int(n)
-		}
-		tree = append(tree, dataEntry{Folder: f, Depth: depth})
-		for _, d := range byFolder[f["id"].(string)] {
-			tree = append(tree, dataEntry{Dataset: d, Depth: depth + 1})
+	tree := buildTree(cat.Folders)
+	var fill func([]*treeNode)
+	fill = func(ns []*treeNode) {
+		for _, n := range ns {
+			n.Datasets = byFolder[n.Item["id"].(string)]
+			fill(n.Children)
 		}
 	}
-	for _, d := range byFolder[""] {
-		tree = append(tree, dataEntry{Dataset: d})
-	}
-	return map[string]any{"Catalog": map[string]any{"folders": cat.Folders}, "Tree": tree, "Teams": teams}, nil
+	fill(tree)
+	return map[string]any{"Catalog": map[string]any{"folders": cat.Folders}, "Tree": tree, "Loose": byFolder[""], "Teams": teams}, nil
 }
 
 // --- Classeurs -----------------------------------------------------------------------------

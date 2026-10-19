@@ -90,3 +90,12 @@ td.who { width: 170px; max-width: 170px; } td.who small { display: block; color:
 @media (max-width: 640px) { .team[class*="depth"] { margin-left: 0; } }
 .foot { max-width: 1100px; margin: 0 auto; padding: 8px 16px 24px; font-size: 12px; color: var(--muted); } .foot a { color: inherit; }
 .tag.warn { border-color: var(--warn); color: var(--warn); } .grid .wide { grid-column: 1 / -1; } textarea { display: block; width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: inherit; font: inherit; }
+details.tree > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+details.tree > summary::-webkit-details-marker { display: none; }
+details.tree > summary h2 { margin: 0; } details.tree > summary h2::before { content: "▸ "; color: var(--muted); }
+details.tree[open] > summary { margin-bottom: 12px; } details.tree[open] > summary h2::before { content: "▾ "; }
+details.tree details.tree { margin: 12px 0 0 12px; border-left: 3px solid var(--border); }
+details.tree details.tree > summary h2 { font-size: 15px; }
+details.sub { margin-bottom: 12px; } details.sub > summary { cursor: pointer; color: var(--accent); }
+.tree-tools { display: flex; gap: 8px; justify-content: flex-end; margin: 0 0 8px; }
+@media (max-width: 640px) { details.tree details.tree { margin-left: 0; } }
