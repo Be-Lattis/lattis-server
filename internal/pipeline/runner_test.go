@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -131,6 +132,29 @@ func TestPipelineUpload(t *testing.T) {
 	must(db.Super.QueryRow(ctx, `SELECT count(*) FROM `+tbl).Scan(&n))
 	if n != 2 {
 		t.Fatalf("lignes après remplacement : %d", n)
+	}
+
+	// Structure : un renommage suit la clé ; la colonne clé et le tableau
+	// alimenté ne se suppriment pas.
+	var code string
+	must(db.Super.QueryRow(ctx, `SELECT column_id::text FROM `+pgx.Identifier{schema, "lattis_meta_columns"}.Sanitize()+` WHERE name = 'Code'`).Scan(&code))
+	must(db.AsUser(t, author.PGRole, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT lattis.rename_column($1::uuid, $2::uuid, $3::uuid, 'Réf')`, wb, tid, code)
+		return err
+	}))
+	var keys []string
+	must(db.Super.QueryRow(ctx, `SELECT key_columns FROM lattis.pipelines WHERE id = $1`, pid).Scan(&keys))
+	if len(keys) != 1 || keys[0] != "Réf" {
+		t.Fatalf("clé après renommage : %v", keys)
+	}
+	for q, want := range map[string]string{
+		`SELECT lattis.drop_column($1::uuid, $2::uuid, '` + code + `'::uuid)`: "clé du pipeline",
+		`SELECT lattis.drop_table($1::uuid, $2::uuid)`:                        "pipeline",
+	} {
+		err := db.AsUser(t, author.PGRole, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, q, wb, tid); return err })
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s : %v", q, err)
+		}
 	}
 
 	// Suppression : l'identité technique est désactivée.

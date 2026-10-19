@@ -247,7 +247,9 @@ Toutes les fonctions sont dans le schéma `lattis`, `SECURITY DEFINER` avec `sea
 
 ### 9.3 Structure (concepteurs)
 
-`create_table(workbook_id, name, columns jsonb) → table_id`, `rename_table`, `drop_table`, `add_column(table_id, name, type, after)`, `rename_column`, `drop_column`, `alter_column_type`, `set_key(table_id, column)`, `create_index`, `drop_index`, `save_meta(workbook_id, kind, payload jsonb)` (mise en page), `publish_script(workbook_id, name, source) → version`.
+`create_table(workbook_id, name, columns jsonb) → table_id`, `rename_table(workbook_id, table_id, name)`, `drop_table(workbook_id, table_id)`, `add_column(workbook_id, table_id, name, type, after column_id, local_id) → column_id`, `rename_column(workbook_id, table_id, column_id, name)`, `drop_column(workbook_id, table_id, column_id)`, `alter_column_type(workbook_id, table_id, column_id, type)`, `set_key(workbook_id, table_id, column_id)` (index unique ; NULL retire la clé), `create_index(workbook_id, table_id, column_ids[], unique) → nom`, `drop_index(workbook_id, table_id, nom)`, `table_indexes(workbook_id, table_id)`, `save_meta(workbook_id, kind, payload jsonb)` (mise en page), `publish_script(workbook_id, name, source) → version`.
+
+Dans la même transaction, ces fonctions recompilent les droits, refont les vues du Data Lake tirées du tableau et suivent les pipelines (nom du tableau, colonnes clés et correspondances) et les colonnes masquées. Une colonne citée par un filtre (rôle, restriction, audience) n'est ni renommée, ni supprimée, ni convertie ; un tableau qui alimente le Data Lake ou un pipeline ne se supprime pas.
 
 ## 10. Contrat de synchronisation
 

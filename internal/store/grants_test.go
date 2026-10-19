@@ -11,7 +11,7 @@ import (
 // publicAPI est la liste exacte des fonctions appelables par tout rôle
 // connecté. Toute autre fonction lattis.* est interne à lattis_service.
 var publicAPI = []string{
-	"abort_publish", "actor", "add_data_audience", "add_data_audience_by_email", "add_provider", "add_restriction",
+	"abort_publish", "actor", "add_column", "alter_column_type", "create_index", "drop_column", "drop_index", "drop_table", "add_data_audience", "add_data_audience_by_email", "add_provider", "add_restriction",
 	"add_team_member", "admin_pipelines", "admin_status", "admin_workbooks", "allow_tenant", "can_create_workbooks",
 	"can_publish_data", "changes_since", "check_drift", "compile_acl", "create_data_folder", "create_dataset",
 	"create_password_account", "create_pipeline", "create_role", "create_table", "create_team", "create_workbook",
@@ -19,10 +19,10 @@ var publicAPI = []string{
 	"drop_pipeline", "drop_restriction", "drop_role", "drop_team", "drop_workbook", "enable_user", "finish_publish",
 	"grant_role", "invite", "is_server_owner", "link_dataset", "list_teams", "login_summary", "move_data_folder",
 	"my_capabilities", "my_teams", "my_workbooks", "pipeline_targets", "publish_script", "record_open",
-	"remove_data_audience", "remove_provider", "remove_team_member", "rename_data_folder", "rename_team", "republish",
+	"remove_data_audience", "remove_provider", "remove_team_member", "rename_column", "rename_data_folder", "rename_table", "rename_team", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "run_pipeline", "save_meta", "set_config",
-	"set_data_publisher", "set_level", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
-	"table_ref", "tombstones_since", "trg_notify", "trg_stamp", "unlink_dataset", "update_dataset", "update_pipeline",
+	"set_data_publisher", "set_key", "set_level", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
+	"table_indexes", "table_ref", "tombstones_since", "trg_notify", "trg_stamp", "unlink_dataset", "update_dataset", "update_pipeline",
 	"update_provider", "why_not", "workbook_acl", "workbook_members",
 }
 
