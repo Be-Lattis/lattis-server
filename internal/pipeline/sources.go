@@ -1,12 +1,7 @@
 package pipeline
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
-	"encoding/csv"
-	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/pkg/sftp"
@@ -33,12 +27,6 @@ const (
 	MaxRows  = 2_000_000
 	MaxCells = 20_000_000
 )
-
-// Table est une source lue : en-têtes, puis lignes de textes (nil : vide).
-type Table struct {
-	Header []string
-	Rows   [][]*string
-}
 
 // Source décrit où lire (colonne source de lattis.pipelines).
 type Source struct {
@@ -58,43 +46,104 @@ type Source struct {
 	JSONPath  string            `json:"json_path"`
 }
 
-// fetchBytes lit une source de fichier (envoi, dépôt, HTTP, SFTP).
-func (r *Runner) fetchBytes(ctx context.Context, p *Pipeline) ([]byte, string, error) {
+// openSource ouvre la source d'un pipeline, lue ensuite ligne à ligne : la
+// mémoire ne dépend pas de sa taille. file : fichier envoyé ou déposé, à
+// ranger après l'exécution.
+func (r *Runner) openSource(ctx context.Context, p *Pipeline) (src rowSource, file string, err error) {
+	if p.SourceKind == "sql" {
+		src, err = r.querySQL(ctx, p)
+		return src, "", err
+	}
+	path, file, cleanup, err := r.fetchFile(ctx, p)
+	if err != nil {
+		return nil, file, err
+	}
+	format := p.Format
+	if format == "sql" {
+		format = "csv"
+	}
+	src, err = openFile(format, path, p.Source)
+	if err != nil {
+		cleanup()
+		return nil, file, err
+	}
+	return withCleanup{src, cleanup}, file, nil
+}
+
+// withCleanup efface la copie locale d'une source distante à la fermeture.
+type withCleanup struct {
+	rowSource
+	cleanup func()
+}
+
+func (w withCleanup) Close() error {
+	err := w.rowSource.Close()
+	w.cleanup()
+	return err
+}
+
+// fetchFile donne le chemin local d'une source de fichier. Envoi et dépôt
+// sont lus sur place ; HTTP et SFTP sont d'abord copiés sur disque (bornés
+// à MaxBytes), copie effacée par cleanup.
+func (r *Runner) fetchFile(ctx context.Context, p *Pipeline) (path, file string, cleanup func(), err error) {
+	cleanup = func() {}
 	switch p.SourceKind {
 	case "upload":
 		if p.PendingFile == "" {
-			return nil, "", errors.New("aucun fichier envoyé : utilisez « Exécuter avec un fichier »")
+			return "", "", cleanup, errors.New("aucun fichier envoyé : utilisez « Exécuter avec un fichier »")
 		}
-		name := filepath.Join(r.dir(p), "uploads", p.PendingFile)
-		b, err := readLimited(name)
-		return b, name, err
+		path = filepath.Join(r.dir(p), "uploads", p.PendingFile)
+		return path, path, cleanup, checkSize(path)
 	case "file":
-		name, err := r.nextDropped(p)
+		path, err = r.nextDropped(p)
 		if err != nil {
-			return nil, "", err
+			return "", "", cleanup, err
 		}
-		b, err := readLimited(name)
-		return b, name, err
-	case "http":
-		return r.fetchHTTP(ctx, p)
-	case "sftp":
-		b, err := r.fetchSFTP(ctx, p)
-		return b, p.Source.Path, err
+		return path, path, cleanup, checkSize(path)
+	case "http", "sftp":
+		if err := os.MkdirAll(r.dir(p), 0o750); err != nil {
+			return "", "", cleanup, err
+		}
+		f, err := os.CreateTemp(r.dir(p), "source-*")
+		if err != nil {
+			return "", "", cleanup, err
+		}
+		cleanup = func() { f.Close(); os.Remove(f.Name()) }
+		if p.SourceKind == "http" {
+			err = r.fetchHTTP(ctx, p, f)
+		} else {
+			err = r.fetchSFTP(ctx, p, f)
+		}
+		if err == nil {
+			err = f.Close()
+		}
+		if err != nil {
+			cleanup()
+			return "", "", func() {}, err
+		}
+		return f.Name(), "", cleanup, nil
 	}
-	return nil, "", fmt.Errorf("source %q sans fichier", p.SourceKind)
+	return "", "", cleanup, fmt.Errorf("source %q sans fichier", p.SourceKind)
 }
 
-func readLimited(name string) ([]byte, error) {
-	f, err := os.Open(name)
+func checkSize(name string) error {
+	st, err := os.Stat(name)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
-	if err == nil && len(b) > MaxBytes {
-		err = fmt.Errorf("fichier trop gros (plus de %d Mo)", MaxBytes>>20)
+	if st.Size() > MaxBytes {
+		return fmt.Errorf("fichier trop gros (plus de %d Mo)", MaxBytes>>20)
 	}
-	return b, err
+	return nil
+}
+
+// copyLimited copie au plus MaxBytes, sinon erreur.
+func copyLimited(dst io.Writer, src io.Reader, what string) error {
+	n, err := io.Copy(dst, io.LimitReader(src, MaxBytes+1))
+	if err == nil && n > MaxBytes {
+		err = fmt.Errorf("%s trop gros (plus de %d Mo)", what, MaxBytes>>20)
+	}
+	return err
 }
 
 // nextDropped : plus ancien fichier du dossier de dépôt qui correspond au motif.
@@ -131,17 +180,17 @@ func (r *Runner) nextDropped(p *Pipeline) (string, error) {
 // errNothing : rien à lire (dossier de dépôt vide) ; l'exécution n'est pas une erreur.
 var errNothing = errors.New("aucun fichier à traiter")
 
-func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline) ([]byte, string, error) {
+func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline, dst io.Writer) error {
 	u := p.Source.URL
 	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-		return nil, "", errors.New("adresse http(s):// attendue")
+		return errors.New("adresse http(s):// attendue")
 	}
 	if p.SecretRef != "" && !strings.HasPrefix(u, "https://") {
-		return nil, "", errors.New("un secret ne part que sur une adresse https://")
+		return errors.New("un secret ne part que sur une adresse https://")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
 	for k, v := range p.Source.Headers {
 		req.Header.Set(k, v)
@@ -149,7 +198,7 @@ func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline) ([]byte, string, er
 	if p.SecretRef != "" {
 		secret, err := r.secret(p.SecretRef)
 		if err != nil {
-			return nil, "", err
+			return err
 		}
 		switch p.Source.Auth {
 		case "header":
@@ -163,39 +212,35 @@ func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline) ([]byte, string, er
 	}
 	resp, err := r.client().Do(req)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return nil, "", fmt.Errorf("réponse HTTP %d", resp.StatusCode)
+		return fmt.Errorf("réponse HTTP %d", resp.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, MaxBytes+1))
-	if err == nil && len(b) > MaxBytes {
-		err = fmt.Errorf("réponse trop grosse (plus de %d Mo)", MaxBytes>>20)
-	}
-	return b, u, err
+	return copyLimited(dst, resp.Body, "réponse")
 }
 
-func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline) ([]byte, error) {
+func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline, dst io.Writer) error {
 	s := p.Source
 	if s.Host == "" || s.User == "" || s.Path == "" {
-		return nil, errors.New("SFTP : hôte, utilisateur et chemin attendus")
+		return errors.New("SFTP : hôte, utilisateur et chemin attendus")
 	}
 	if !strings.HasPrefix(s.HostKey, "SHA256:") {
-		return nil, errors.New("SFTP : empreinte de la clé du serveur (SHA256:…) obligatoire")
+		return errors.New("SFTP : empreinte de la clé du serveur (SHA256:…) obligatoire")
 	}
 	if p.SecretRef == "" {
-		return nil, errors.New("SFTP : secret (mot de passe ou clé privée) manquant")
+		return errors.New("SFTP : secret (mot de passe ou clé privée) manquant")
 	}
 	secret, err := r.secret(p.SecretRef)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var auth ssh.AuthMethod
 	if strings.Contains(secret, "PRIVATE KEY") {
 		signer, err := ssh.ParsePrivateKey([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("SFTP : clé privée illisible : %w", err)
+			return fmt.Errorf("SFTP : clé privée illisible : %w", err)
 		}
 		auth = ssh.PublicKeys(signer)
 	} else {
@@ -214,34 +259,30 @@ func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline) ([]byte, error) {
 		}}
 	conn, err := r.dialer(s.Host).DialContext(ctx, "tcp", net.JoinHostPort(s.Host, strconv.Itoa(port)))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	c, chans, reqs, err := ssh.NewClientConn(conn, s.Host, cfg)
 	if err != nil {
 		conn.Close()
-		return nil, err
+		return err
 	}
 	client := ssh.NewClient(c, chans, reqs)
 	defer client.Close()
 	sc, err := sftp.NewClient(client)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer sc.Close()
 	f, err := sc.Open(s.Path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
-	if err == nil && len(b) > MaxBytes {
-		err = fmt.Errorf("fichier trop gros (plus de %d Mo)", MaxBytes>>20)
-	}
-	return b, err
+	return copyLimited(dst, f, "fichier")
 }
 
-// fetchSQL lit une base PostgreSQL externe, en lecture seule.
-func (r *Runner) fetchSQL(ctx context.Context, p *Pipeline) (*Table, error) {
+// querySQL lit une base PostgreSQL externe, en lecture seule, ligne à ligne.
+func (r *Runner) querySQL(ctx context.Context, p *Pipeline) (rowSource, error) {
 	if p.SecretRef == "" || strings.TrimSpace(p.Source.Query) == "" {
 		return nil, errors.New("SQL : chaîne de connexion (secret) et requête attendues")
 	}
@@ -250,323 +291,65 @@ func (r *Runner) fetchSQL(ctx context.Context, p *Pipeline) (*Table, error) {
 		return nil, err
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
 	conn, err := pgx.Connect(cctx, strings.TrimSpace(dsn))
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("SQL : connexion : %w", err)
 	}
-	defer conn.Close(context.Background())
-	tx, err := conn.BeginTx(cctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	q := &sqlSource{conn: conn, cancel: cancel}
+	q.tx, err = conn.BeginTx(cctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err == nil {
+		q.rows, err = q.tx.Query(cctx, p.Source.Query, pgx.QueryResultFormats{pgx.TextFormatCode})
+		if err != nil {
+			err = fmt.Errorf("SQL : %w", err)
+		}
+	}
 	if err != nil {
+		q.Close()
 		return nil, err
 	}
-	defer tx.Rollback(context.Background())
-	rows, err := tx.Query(cctx, p.Source.Query, pgx.QueryResultFormats{pgx.TextFormatCode})
-	if err != nil {
-		return nil, fmt.Errorf("SQL : %w", err)
+	for _, f := range q.rows.FieldDescriptions() {
+		q.header = append(q.header, f.Name)
 	}
-	defer rows.Close()
-	t := &Table{}
-	for _, f := range rows.FieldDescriptions() {
-		t.Header = append(t.Header, f.Name)
-	}
-	for rows.Next() {
-		raw := rows.RawValues()
-		row := make([]*string, len(raw))
-		for i, v := range raw {
-			if v != nil {
-				s := string(v)
-				row[i] = &s
-			}
-		}
-		t.Rows = append(t.Rows, row)
-		if len(t.Rows) > MaxRows {
-			return nil, fmt.Errorf("plus de %d lignes", MaxRows)
-		}
-	}
-	return t, rows.Err()
+	return q, nil
 }
 
-// parse lit un fichier selon son format.
-func parse(format string, b []byte, s Source) (*Table, error) {
-	switch format {
-	case "csv":
-		return parseCSV(b, s.Delimiter)
-	case "xlsx":
-		return parseXLSX(b, s.Sheet)
-	case "json":
-		return parseJSON(b, s.JSONPath)
-	}
-	return nil, fmt.Errorf("format %q inconnu", format)
+type sqlSource struct {
+	conn   *pgx.Conn
+	tx     pgx.Tx
+	rows   pgx.Rows
+	cancel context.CancelFunc
+	header []string
 }
 
-func parseCSV(b []byte, delim string) (*Table, error) {
-	b = bytes.TrimPrefix(b, []byte("\xef\xbb\xbf"))
-	if !utf8.Valid(b) {
-		// Fichiers Excel « CSV » enregistrés en Windows-1252 / Latin-1.
-		r := make([]rune, len(b))
-		for i, c := range b {
-			r[i] = rune(c)
-		}
-		b = []byte(string(r))
-	}
-	sep := ';'
-	switch delim {
-	case ",", ";", "\t", "|":
-		sep = rune(delim[0])
-	default:
-		first, _, _ := bytes.Cut(b, []byte("\n"))
-		best := 0
-		for _, c := range []rune{';', ',', '\t', '|'} {
-			if n := bytes.Count(first, []byte(string(c))); n > best {
-				best, sep = n, c
-			}
-		}
-	}
-	cr := csv.NewReader(bytes.NewReader(b))
-	cr.Comma = sep
-	cr.FieldsPerRecord = -1
-	cr.LazyQuotes = true
-	t := &Table{}
-	for {
-		rec, err := cr.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("CSV : %w", err)
-		}
-		if t.Header == nil {
-			for _, h := range rec {
-				t.Header = append(t.Header, strings.TrimSpace(h))
-			}
-			continue
-		}
-		row := make([]*string, len(rec))
-		for i := range rec {
-			v := rec[i]
-			row[i] = &v
-		}
-		t.Rows = append(t.Rows, row)
-		if len(t.Rows) > MaxRows {
-			return nil, fmt.Errorf("plus de %d lignes", MaxRows)
-		}
-	}
-	if t.Header == nil {
-		return nil, errors.New("CSV vide")
-	}
-	return t, nil
-}
+func (q *sqlSource) Header() []string { return q.header }
 
-func parseJSON(b []byte, path string) (*Table, error) {
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil, fmt.Errorf("JSON : %w", err)
-	}
-	for _, k := range strings.FieldsFunc(path, func(r rune) bool { return r == '.' }) {
-		m, ok := v.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("JSON : « %s » introuvable", path)
-		}
-		v = m[k]
-	}
-	list, ok := v.([]any)
-	if !ok {
-		return nil, errors.New("JSON : un tableau d'objets est attendu")
-	}
-	t := &Table{}
-	index := map[string]int{}
-	for _, it := range list {
-		obj, ok := it.(map[string]any)
-		if !ok {
-			return nil, errors.New("JSON : un tableau d'objets est attendu")
-		}
-		keys := make([]string, 0, len(obj))
-		for k := range obj {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			if _, ok := index[k]; !ok {
-				index[k] = len(t.Header)
-				t.Header = append(t.Header, k)
-			}
-		}
-	}
-	for _, it := range list {
-		obj := it.(map[string]any)
-		row := make([]*string, len(t.Header))
-		for k, val := range obj {
-			if val == nil {
-				continue
-			}
-			var s string
-			switch x := val.(type) {
-			case string:
-				s = x
-			case float64:
-				s = strconv.FormatFloat(x, 'f', -1, 64)
-			case bool:
-				s = strconv.FormatBool(x)
-			default:
-				bb, _ := json.Marshal(x)
-				s = string(bb)
-			}
-			row[index[k]] = &s
-		}
-		t.Rows = append(t.Rows, row)
-		if len(t.Rows) > MaxRows {
-			return nil, fmt.Errorf("plus de %d lignes", MaxRows)
-		}
-	}
-	return t, nil
-}
-
-// parseXLSX lit la première feuille (ou celle nommée) d'un classeur .xlsx :
-// textes partagés et en ligne, nombres (les dates restent des numéros de série
-// Excel, convertis selon le type de la colonne cible).
-func parseXLSX(b []byte, sheet string) (*Table, error) {
-	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
-	if err != nil {
-		return nil, fmt.Errorf("xlsx : %w", err)
-	}
-	files := map[string]*zip.File{}
-	for _, f := range zr.File {
-		files[f.Name] = f
-	}
-	read := func(name string, v any) error {
-		f, ok := files[name]
-		if !ok {
-			return fmt.Errorf("xlsx : %s absent", name)
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		defer rc.Close()
-		return xml.NewDecoder(io.LimitReader(rc, MaxBytes*2)).Decode(v)
-	}
-	var shared struct {
-		SI []struct {
-			T string `xml:"t"`
-			R []struct {
-				T string `xml:"t"`
-			} `xml:"r"`
-		} `xml:"si"`
-	}
-	if _, ok := files["xl/sharedStrings.xml"]; ok {
-		if err := read("xl/sharedStrings.xml", &shared); err != nil {
+func (q *sqlSource) Next() ([]*string, error) {
+	if !q.rows.Next() {
+		if err := q.rows.Err(); err != nil {
 			return nil, err
 		}
+		return nil, io.EOF
 	}
-	strs := make([]string, len(shared.SI))
-	for i, si := range shared.SI {
-		s := si.T
-		for _, r := range si.R {
-			s += r.T
-		}
-		strs[i] = s
-	}
-	// Feuille : par son nom dans workbook.xml, sinon la première.
-	var wb struct {
-		Sheets []struct {
-			Name string `xml:"name,attr"`
-			RID  string `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships id,attr"`
-		} `xml:"sheets>sheet"`
-	}
-	var rels struct {
-		Rel []struct {
-			ID     string `xml:"Id,attr"`
-			Target string `xml:"Target,attr"`
-		} `xml:"Relationship"`
-	}
-	target := "xl/worksheets/sheet1.xml"
-	if read("xl/workbook.xml", &wb) == nil && read("xl/_rels/workbook.xml.rels", &rels) == nil && len(wb.Sheets) > 0 {
-		rid := wb.Sheets[0].RID
-		for _, s := range wb.Sheets {
-			if sheet != "" && strings.EqualFold(s.Name, sheet) {
-				rid = s.RID
-			}
-		}
-		for _, r := range rels.Rel {
-			if r.ID == rid {
-				target = "xl/" + strings.TrimPrefix(strings.TrimPrefix(r.Target, "/xl/"), "/")
-			}
+	raw := q.rows.RawValues()
+	row := make([]*string, len(raw))
+	for i, v := range raw {
+		if v != nil {
+			s := string(v)
+			row[i] = &s
 		}
 	}
-	var ws struct {
-		Rows []struct {
-			C []struct {
-				R  string `xml:"r,attr"`
-				T  string `xml:"t,attr"`
-				V  string `xml:"v"`
-				IS struct {
-					T string `xml:"t"`
-				} `xml:"is"`
-			} `xml:"c"`
-		} `xml:"sheetData>row"`
-	}
-	if err := read(target, &ws); err != nil {
-		return nil, err
-	}
-	t := &Table{}
-	for _, row := range ws.Rows {
-		var cells []*string
-		for _, c := range row.C {
-			col := colIndex(c.R)
-			if col < 0 {
-				col = len(cells)
-			}
-			for len(cells) <= col {
-				cells = append(cells, nil)
-			}
-			var v string
-			switch c.T {
-			case "s":
-				n, err := strconv.Atoi(c.V)
-				if err == nil && n >= 0 && n < len(strs) {
-					v = strs[n]
-				}
-			case "inlineStr":
-				v = c.IS.T
-			case "b":
-				v = map[string]string{"1": "true", "0": "false"}[c.V]
-			default:
-				v = c.V
-			}
-			if v != "" {
-				cells[col] = &v
-			}
-		}
-		if t.Header == nil {
-			for _, c := range cells {
-				h := ""
-				if c != nil {
-					h = strings.TrimSpace(*c)
-				}
-				t.Header = append(t.Header, h)
-			}
-			continue
-		}
-		t.Rows = append(t.Rows, cells)
-		if len(t.Rows) > MaxRows {
-			return nil, fmt.Errorf("plus de %d lignes", MaxRows)
-		}
-	}
-	if t.Header == nil {
-		return nil, errors.New("xlsx : feuille vide")
-	}
-	return t, nil
+	return row, nil
 }
 
-// colIndex : « C12 » → 2.
-func colIndex(ref string) int {
-	n := 0
-	for _, c := range ref {
-		if c < 'A' || c > 'Z' {
-			break
-		}
-		n = n*26 + int(c-'A'+1)
+func (q *sqlSource) Close() error {
+	if q.rows != nil {
+		q.rows.Close()
 	}
-	return n - 1
+	if q.tx != nil {
+		_ = q.tx.Rollback(context.Background())
+	}
+	err := q.conn.Close(context.Background())
+	q.cancel()
+	return err
 }

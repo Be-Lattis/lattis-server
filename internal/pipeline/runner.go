@@ -302,24 +302,7 @@ func scanPipeline(row pgx.Row) (*Pipeline, error) {
 func (r *Runner) Execute(ctx context.Context, p *Pipeline) Result {
 	ctx, cancel := context.WithTimeout(ctx, MaxRun)
 	defer cancel()
-	var (
-		t    *Table
-		file string
-		err  error
-	)
-	if p.SourceKind == "sql" {
-		t, err = r.fetchSQL(ctx, p)
-	} else {
-		var b []byte
-		b, file, err = r.fetchBytes(ctx, p)
-		if err == nil {
-			format := p.Format
-			if format == "sql" {
-				format = "csv"
-			}
-			t, err = parse(format, b, p.Source)
-		}
-	}
+	src, file, err := r.openSource(ctx, p)
 	if errors.Is(err, errNothing) {
 		return Result{Status: "ok", Err: "aucun fichier à traiter"}
 	}
@@ -327,7 +310,8 @@ func (r *Runner) Execute(ctx context.Context, p *Pipeline) Result {
 		r.moveFile(p, file, "failed")
 		return Result{Status: "error", Err: err.Error()}
 	}
-	res, err := r.write(ctx, p, t, false)
+	res, err := r.write(ctx, p, src, false)
+	src.Close()
 	if err != nil {
 		r.moveFile(p, file, "failed")
 		res.Status, res.Err = "error", err.Error()
@@ -416,24 +400,12 @@ func (r *Runner) Simulate(ctx context.Context, id, file string) (Result, error) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, MaxRun)
 	defer cancel()
-	var t *Table
-	if p.SourceKind == "sql" {
-		t, err = r.fetchSQL(ctx, p)
-	} else {
-		var b []byte
-		b, _, err = r.fetchBytes(ctx, p)
-		if err == nil {
-			format := p.Format
-			if format == "sql" {
-				format = "csv"
-			}
-			t, err = parse(format, b, p.Source)
-		}
-	}
+	src, _, err := r.openSource(ctx, p)
 	if err != nil {
 		return Result{Status: "error", Err: err.Error()}, nil
 	}
-	res, err := r.write(ctx, p, t, true)
+	defer src.Close()
+	res, err := r.write(ctx, p, src, true)
 	if err != nil {
 		res.Status, res.Err = "error", err.Error()
 		return res, nil

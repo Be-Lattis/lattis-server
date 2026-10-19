@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -21,16 +22,14 @@ type target struct {
 
 const maxRejects = 20
 
-// write convertit les lignes et les écrit dans le tableau, sous l'identité
-// technique du pipeline, dans une seule transaction.
 // errDryRun annule la transaction d'une simulation.
 var errDryRun = errors.New("simulation")
 
-func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table, dry bool) (Result, error) {
-	res := Result{Read: len(t.Rows)}
-	if cells := len(t.Rows) * len(t.Header); cells > MaxCells {
-		return res, fmt.Errorf("source trop volumineuse : %d cellules (au plus %d)", cells, MaxCells)
-	}
+// write convertit les lignes et les écrit dans le tableau, sous l'identité
+// technique du pipeline, dans une seule transaction. Les lignes passent de
+// la source à une table temporaire par COPY, une à la fois.
+func (r *Runner) write(ctx context.Context, p *Pipeline, src rowSource, dry bool) (Result, error) {
+	var res Result
 	u, err := r.Store.User(ctx, p.UserID)
 	if err != nil {
 		return res, fmt.Errorf("identité technique : %w", err)
@@ -44,55 +43,11 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table, dry bool) (Re
 	}
 	err = r.Users.As(ctx, u, func(tx pgx.Tx) error {
 		tbl := pgx.Identifier{schema, p.TableName}
-		cols, err := r.targets(ctx, tx, tbl, p, t)
+		cols, err := r.targets(ctx, tx, tbl, p, src.Header())
 		if err != nil {
 			return err
 		}
-		// Conversion, lignes rejetées comptées et échantillonnées.
-		var rows [][]any
-		keys := map[string]int{}
 		keyIdx := keyIndexes(cols, p.KeyColumns)
-		for i, src := range t.Rows {
-			vals := make([]any, len(cols)+1)
-			bad := false
-			for j, c := range cols {
-				var raw *string
-				if c.src < len(src) {
-					raw = src[c.src]
-				}
-				v, err := convert(raw, c.pgType)
-				if err != nil {
-					res.reject(i+2, c.name, raw, err)
-					bad = true
-					break
-				}
-				vals[j+1] = v
-			}
-			if bad {
-				continue
-			}
-			if p.Mode != "append" && len(keyIdx) > 0 {
-				k := keyString(vals[1:], keyIdx)
-				if k == "" {
-					res.reject(i+2, strings.Join(p.KeyColumns, ", "), nil, errors.New("clé incomplète"))
-					continue
-				}
-				if prev, ok := keys[k]; ok {
-					// Même clé plus bas dans la source : la dernière l'emporte.
-					rows[prev] = nil
-					res.reject(i+2, strings.Join(p.KeyColumns, ", "), &k, errors.New("clé en double (la ligne suivante l'emporte)"))
-				}
-				keys[k] = len(rows)
-			}
-			rows = append(rows, vals)
-		}
-		kept := rows[:0]
-		for _, v := range rows {
-			if v != nil {
-				kept = append(kept, v)
-			}
-		}
-		rows = kept
 
 		// Positions des nouvelles lignes, après la dernière (clés d'ordre).
 		var last *string
@@ -101,13 +56,10 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table, dry bool) (Re
 				return err
 			}
 		}
-		key := ""
+		feed := &feeder{src: src, cols: cols, width: len(src.Header()), res: &res,
+			keyIdx: keyIdx, keyed: p.Mode != "append" && len(keyIdx) > 0, keyName: strings.Join(p.KeyColumns, ", ")}
 		if last != nil {
-			key = validKey(*last)
-		}
-		for i := range rows {
-			key = afterKey(key)
-			rows[i][0] = key
+			feed.pos = validKey(*last)
 		}
 
 		names := make([]string, len(cols))
@@ -115,16 +67,47 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table, dry bool) (Re
 			names[i] = pgx.Identifier{c.name}.Sanitize()
 		}
 		colList := strings.Join(names, ", ")
-		tmpCols := []string{`"__pos" text`}
+		tmpCols := []string{`"__pos" text`, `"__n" integer`}
 		for i, c := range cols {
 			tmpCols = append(tmpCols, names[i]+" "+c.pgType)
 		}
 		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE lattis_in (`+strings.Join(tmpCols, ", ")+`) ON COMMIT DROP`); err != nil {
 			return err
 		}
-		copyCols := append([]string{"__pos"}, columnNames(cols)...)
-		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"lattis_in"}, copyCols, pgx.CopyFromRows(rows)); err != nil {
+		copyCols := append([]string{"__pos", "__n"}, columnNames(cols)...)
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"lattis_in"}, copyCols, feed); err != nil {
+			if feed.err != nil {
+				return feed.err
+			}
 			return fmt.Errorf("chargement : %w", err)
+		}
+		// Même clé plusieurs fois : la dernière ligne l'emporte.
+		if feed.keyed {
+			var keys, texts []string
+			for _, k := range p.KeyColumns {
+				id := pgx.Identifier{k}.Sanitize()
+				keys = append(keys, id)
+				texts = append(texts, id+"::text")
+			}
+			drows, err := tx.Query(ctx, `DELETE FROM lattis_in WHERE "__n" IN (
+				SELECT "__n" FROM (SELECT "__n", row_number() OVER (PARTITION BY `+strings.Join(keys, ", ")+` ORDER BY "__n" DESC) AS rn
+				                   FROM lattis_in) d WHERE rn > 1)
+				RETURNING "__n", concat_ws(' | ', `+strings.Join(texts, ", ")+`)`)
+			if err != nil {
+				return err
+			}
+			for drows.Next() {
+				var n int
+				var k string
+				if err := drows.Scan(&n, &k); err != nil {
+					drows.Close()
+					return err
+				}
+				res.reject(n, feed.keyName, &k, errors.New("clé en double (une ligne plus bas l'emporte)"))
+			}
+			if err := drows.Err(); err != nil {
+				return err
+			}
 		}
 
 		switch {
@@ -214,7 +197,7 @@ func (res *Result) reject(row int, col string, raw *string, err error) {
 
 // targets : colonnes du tableau alimentées, avec leur type et leur colonne
 // source (correspondance explicite, sinon même nom sans tenir compte de la casse).
-func (r *Runner) targets(ctx context.Context, tx pgx.Tx, tbl pgx.Identifier, p *Pipeline, t *Table) ([]target, error) {
+func (r *Runner) targets(ctx context.Context, tx pgx.Tx, tbl pgx.Identifier, p *Pipeline, header []string) ([]target, error) {
 	rows, err := tx.Query(ctx, `SELECT attname, format_type(atttypid, atttypmod) FROM pg_attribute
 		WHERE attrelid = $1::regclass AND attnum > 0 AND NOT attisdropped AND attname NOT LIKE 'lattis\_%' ORDER BY attnum`, tbl.Sanitize())
 	if err != nil {
@@ -222,7 +205,7 @@ func (r *Runner) targets(ctx context.Context, tx pgx.Tx, tbl pgx.Identifier, p *
 	}
 	defer rows.Close()
 	index := map[string]int{}
-	for i, h := range t.Header {
+	for i, h := range header {
 		if _, ok := index[strings.ToLower(h)]; !ok {
 			index[strings.ToLower(h)] = i
 		}
@@ -249,7 +232,7 @@ func (r *Runner) targets(ctx context.Context, tx pgx.Tx, tbl pgx.Identifier, p *
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("aucune colonne de la source ne correspond au tableau « %s » (en-têtes lus : %s)",
-			p.TableName, strings.Join(t.Header, ", "))
+			p.TableName, strings.Join(header, ", "))
 	}
 	for _, k := range p.KeyColumns {
 		found := false
@@ -262,6 +245,76 @@ func (r *Runner) targets(ctx context.Context, tx pgx.Tx, tbl pgx.Identifier, p *
 	}
 	return out, nil
 }
+
+// feeder passe les lignes converties de la source à COPY ; les lignes
+// refusées sont comptées dans le résultat.
+type feeder struct {
+	src     rowSource
+	cols    []target
+	width   int
+	res     *Result
+	keyIdx  []int
+	keyed   bool
+	keyName string
+	pos     string
+	line    int
+	cells   int
+	vals    []any
+	err     error
+}
+
+func (f *feeder) Next() bool {
+	for {
+		row, err := f.src.Next()
+		if err == io.EOF {
+			return false
+		}
+		if err != nil {
+			f.err = err
+			return false
+		}
+		f.line++
+		f.res.Read++
+		if f.cells += max(len(row), f.width); f.cells > MaxCells {
+			f.err = fmt.Errorf("source trop volumineuse : plus de %d cellules", MaxCells)
+			return false
+		}
+		if f.res.Read > MaxRows {
+			f.err = fmt.Errorf("plus de %d lignes", MaxRows)
+			return false
+		}
+		vals := make([]any, len(f.cols)+2)
+		bad := false
+		for j, c := range f.cols {
+			var raw *string
+			if c.src < len(row) {
+				raw = row[c.src]
+			}
+			v, err := convert(raw, c.pgType)
+			if err != nil {
+				f.res.reject(f.line+1, c.name, raw, err)
+				bad = true
+				break
+			}
+			vals[j+2] = v
+		}
+		if bad {
+			continue
+		}
+		if f.keyed && keyString(vals[2:], f.keyIdx) == "" {
+			f.res.reject(f.line+1, f.keyName, nil, errors.New("clé incomplète"))
+			continue
+		}
+		f.pos = afterKey(f.pos)
+		vals[0], vals[1] = f.pos, f.line+1
+		f.vals = vals
+		return true
+	}
+}
+
+func (f *feeder) Values() ([]any, error) { return f.vals, nil }
+
+func (f *feeder) Err() error { return f.err }
 
 func columnNames(cols []target) []string {
 	out := make([]string, len(cols))

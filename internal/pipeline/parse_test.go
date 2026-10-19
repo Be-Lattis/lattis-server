@@ -36,6 +36,28 @@ func TestParseJSON(t *testing.T) {
 	}
 }
 
+// Lecture en flux : clés voisines sautées, chemin absent signalé, valeur
+// Latin-1 isolée au-delà du début d'un CSV UTF-8 corrigée.
+func TestStreaming(t *testing.T) {
+	tb, err := parseJSON([]byte(`{"meta":{"pages":[1,2],"x":{"y":"z"}},"data":{"total":2,"items":[{"a":1},{"b":"deux"}]}}`), "data.items")
+	if err != nil || len(tb.Rows) != 2 || len(tb.Header) != 2 || *tb.Rows[1][1] != "deux" {
+		t.Fatalf("JSON : %+v %v", tb, err)
+	}
+	if _, err := parseJSON([]byte(`{"data":{}}`), "data.items"); err == nil {
+		t.Fatal("chemin absent accepté")
+	}
+	var b bytes.Buffer
+	b.WriteString("Code;Libellé\n")
+	for i := 0; i < 5000; i++ {
+		b.WriteString("A;Écrou inox\n")
+	}
+	b.WriteString("B;Caf\xe9\n")
+	tb, err = parseCSV(b.Bytes(), "")
+	if err != nil || len(tb.Rows) != 5001 || *tb.Rows[5000][1] != "Café" || *tb.Rows[0][1] != "Écrou inox" {
+		t.Fatalf("CSV : %d lignes, %v", len(tb.Rows), err)
+	}
+}
+
 func TestParseXLSX(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
