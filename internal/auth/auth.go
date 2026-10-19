@@ -451,6 +451,9 @@ func (s *Service) complete(w http.ResponseWriter, r *http.Request, p store.Provi
 // --- Comptes à mot de passe ------------------------------------------------------------
 
 func (s *Service) passwordForm(w http.ResponseWriter, r *http.Request, p store.Provider, signed, email, msg string) {
+	if req, err := s.parseRequest(signed); err == nil {
+		allowFormTarget(w, req.RedirectURI)
+	}
 	csrf := s.csrf(w, r)
 	v := view{Title: "Connexion", Error: msg, Action: "/login/" + p.ID, Req: signed, CSRF: csrf, Email: email}
 	if ps, err := s.Store.Providers(r.Context()); err == nil && len(ps) > 1 {
@@ -858,4 +861,21 @@ func ClientIP(r *http.Request, trustProxy bool) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// allowFormTarget ajoute l'origine de retour du client à « form-action » :
+// le formulaire de mot de passe se termine par une redirection vers
+// l'application (http://127.0.0.1:<port>/callback), que les navigateurs
+// bloquent sinon (CSP form-action s'applique aussi aux redirections), et le
+// clic sur « Se connecter » semble ne rien faire.
+func allowFormTarget(w http.ResponseWriter, redirectURI string) {
+	u, err := url.Parse(redirectURI)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return
+	}
+	origin := u.Scheme + "://" + u.Host
+	h := w.Header()
+	if csp := h.Get("Content-Security-Policy"); csp != "" && !strings.Contains(csp, "form-action 'self' "+origin) {
+		h.Set("Content-Security-Policy", strings.Replace(csp, "form-action 'self'", "form-action 'self' "+origin, 1))
+	}
 }

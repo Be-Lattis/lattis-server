@@ -169,6 +169,10 @@ func TestPasswordFlow(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `type="password"`) {
 		t.Fatalf("formulaire attendu : %d", resp.StatusCode)
 	}
+	// Le navigateur doit pouvoir suivre la redirection finale vers l'application.
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' http://127.0.0.1:53682") {
+		t.Fatalf("form-action sans l'adresse de retour : %s", csp)
+	}
 	action := resp.Request.URL.Path
 	f = fields(body)
 	if resp, _ := e.post(e.srv.URL+action, url.Values{"req": {f["req"]}, "csrf": {f["csrf"]}, "email": {email}, "password": {"mauvais mot de passe"}}); resp.StatusCode != http.StatusUnauthorized {
