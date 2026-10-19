@@ -1,0 +1,60 @@
+/* Formulaire Lattis : d'abord pour téléphone. Palette contrôlée (8 couleurs). */
+:root { color-scheme: light dark; --bg: #f4f5f7; --card: #fff; --text: #1d2125; --muted: #5f6b76; --border: #c9d0d6; --error: #b42318; --error-soft: #fdecea; --accent: #217346; --on-accent: #fff; --soft: #e8f3ec; }
+.accent-green  { --accent: #217346; --soft: #e8f3ec; }
+.accent-teal   { --accent: #0f766e; --soft: #e0f2f1; }
+.accent-blue   { --accent: #1d5fbf; --soft: #e6eefb; }
+.accent-indigo { --accent: #4338ca; --soft: #ebeafd; }
+.accent-purple { --accent: #7e22ce; --soft: #f3e8fd; }
+.accent-red    { --accent: #b42318; --soft: #fdecea; }
+.accent-orange { --accent: #b45309; --soft: #fdf1e2; }
+.accent-gray, .accent-slate { --accent: #475467; --soft: #eef0f3; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111417; --card: #1a1e22; --text: #e7eaed; --muted: #a0aab4; --border: #3c444c; --error: #f97066; --error-soft: #3a1d1b; --on-accent: #fff; }
+  body[class^="accent-"] { --soft: color-mix(in srgb, var(--accent) 22%, var(--card)); }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+.sheet { max-width: 680px; margin: 0 auto; background: var(--card); min-height: 100vh; padding: 0 20px 28px; border-top: 6px solid var(--accent); }
+@media (min-width: 720px) { .sheet { margin: 24px auto; min-height: 0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); } }
+.banner { display: block; width: calc(100% + 40px); margin: 0 -20px; max-height: 220px; object-fit: cover; }
+.head { display: flex; align-items: center; gap: 14px; padding: 22px 0 6px; }
+.logo { width: 56px; height: 56px; object-fit: contain; flex: none; }
+h1 { margin: 0; font-size: 24px; line-height: 1.25; }
+h2 { margin: 0 0 4px; font-size: 18px; color: var(--accent); }
+.intro, .desc, .privacy { color: var(--text); } .intro p, .desc p { margin: 8px 0; }
+.privacy { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+a { color: var(--accent); }
+.legend { color: var(--muted); font-size: 14px; margin: 14px 0 4px; }
+.req { color: var(--error); }
+.section { margin: 26px 0 4px; padding-top: 14px; border-top: 1px solid var(--border); }
+.field { margin: 18px 0; }
+.field > label, legend { display: block; font-weight: 600; margin-bottom: 4px; }
+fieldset { border: 0; margin: 0; padding: 0; }
+.help { margin: 0 0 6px; color: var(--muted); font-size: 14px; }
+input:not([type=checkbox]):not([type=radio]), select, textarea {
+  display: block; width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: inherit; font: inherit; }
+textarea { min-height: 110px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+input[readonly] { background: var(--soft); }
+input[type=checkbox], input[type=radio] { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; flex: none; }
+.check, .opt { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 400; cursor: pointer; }
+.opt { padding: 4px 0; }
+.invalid input, .invalid select, .invalid textarea { border-color: var(--error); }
+.err { margin: 6px 0 0; color: var(--error); font-size: 14px; font-weight: 600; }
+.note { padding: 10px 14px; border-radius: 8px; background: var(--soft); }
+.note.error { background: var(--error-soft); color: var(--error); font-weight: 600; }
+.note.preview { background: color-mix(in srgb, #e3b341 22%, var(--card)); }
+.actions { margin: 26px 0 0; }
+button, .button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px 22px; border: 0; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+button[type=submit] { width: 100%; }
+@media (min-width: 720px) { button[type=submit] { width: auto; min-width: 200px; } }
+.locate { min-height: 40px; padding: 8px 14px; background: var(--soft); color: var(--accent); border: 1px solid var(--accent); }
+.where { display: block; margin: 6px 0; color: var(--muted); font-size: 14px; }
+.latlon { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .latlon label { font-weight: 400; font-size: 14px; color: var(--muted); }
+.trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.done { padding: 20px 0; } .thanks { font-size: 18px; }
+.foot { max-width: 680px; margin: 0 auto; padding: 12px 20px 28px; color: var(--muted); font-size: 13px; text-align: center; }
+[hidden] { display: none !important; }
+.unit { display: flex; align-items: center; gap: 8px; } .unit span { color: var(--muted); flex: none; }

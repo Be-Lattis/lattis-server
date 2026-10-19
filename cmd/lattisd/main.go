@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"log/slog"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/forms"
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
 	"github.com/Be-Lattis/lattis-server/internal/metrics"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
@@ -245,6 +247,7 @@ func serve(doMigrate bool) error {
 		AllowedHosts: cfg.PipelineAllowedHosts, AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}
 	adminSvc.Pipelines = runner
 	srv.Users, srv.Pipelines = users, runner
+	srv.Forms = &forms.Handler{Store: st, Users: users, Keys: keys, Session: adminSvc.Session}
 	go runner.Run(ctx)
 	errc := make(chan error, 2)
 	go func() {
@@ -278,6 +281,12 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 		case <-t.C:
 			if err := st.Purge(ctx); err != nil {
 				slog.Warn("purge des jetons", "err", err)
+			}
+			if err := st.AsActor(ctx, "lattisd (formulaires)", func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `SELECT lattis.forms_housekeeping()`)
+				return err
+			}); err != nil {
+				slog.Warn("entretien des formulaires", "err", err)
 			}
 		}
 	}

@@ -1,0 +1,80 @@
+{{define "top"}}<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{if .Title}}{{.Title}}{{else}}{{index .T "not_found_title"}}{{end}}</title>
+<link rel="stylesheet" href="/form-static/form.css">
+<script src="/form-static/form.js" defer></script>
+</head>
+<body class="accent-{{if .Accent}}{{.Accent}}{{else}}green{{end}}">
+<main class="sheet">
+{{if .Banner}}<img class="banner" src="{{.Banner}}" alt="">{{end}}
+<header class="head">{{if .Logo}}<img class="logo" src="{{.Logo}}" alt="">{{end}}<h1>{{if .Title}}{{.Title}}{{else}}{{index .T "not_found_title"}}{{end}}</h1></header>
+{{end}}
+
+{{define "bottom"}}
+</main>
+<footer class="foot">{{if .Server}}{{.Server}} · {{end}}{{index .T "powered"}}</footer>
+</body>
+</html>{{end}}
+
+{{define "form"}}{{template "top" .}}
+{{if .Preview}}<p class="note preview">{{index .T "preview"}}</p>{{end}}
+{{with .Intro}}<div class="intro">{{md .}}</div>{{end}}
+{{if .Message}}<p class="note error" role="alert">{{.Message}}</p>{{end}}
+<form method="post" action="{{.Action}}" novalidate data-draft="{{.Action}}">
+<input type="hidden" name="t" value="{{.Token}}">
+<p class="trap" aria-hidden="true"><label>Site web <input name="website" tabindex="-1" autocomplete="off"></label></p>
+<p class="legend">{{index .T "required_mark"}}</p>
+{{range .Fields}}
+{{if .Section}}<section class="section"><h2>{{.Title}}</h2>{{with .Description}}<div class="desc">{{md .}}</div>{{end}}</section>
+{{else}}
+{{$id := .ID}}<div class="field{{if .Error}} invalid{{end}}">
+{{if eq .Widget "checkbox"}}
+<label class="check"><input type="checkbox" id="{{.ID}}" name="{{.Name}}"{{if eq .Value "true" "on"}} checked{{end}}{{if .Locked}} disabled{{end}}{{if .Error}} aria-invalid="true" aria-describedby="{{.ID}}_e"{{end}}> <span>{{.Label}}{{if .Required}} <span class="req">*</span>{{end}}</span></label>
+{{else if or (eq .Widget "radio") (eq .Widget "yesno")}}
+<fieldset{{if .Error}} aria-describedby="{{.ID}}_e"{{end}}><legend>{{.Label}}{{if .Required}} <span class="req">*</span>{{end}}</legend>
+{{with .Help}}<p class="help">{{.}}</p>{{end}}
+{{if eq .Widget "yesno"}}{{$f := .}}
+<label class="opt"><input type="radio" name="{{.Name}}" value="true"{{if eq .Value "true"}} checked{{end}}{{if .Locked}} disabled{{end}}> {{index $.T "yes"}}</label>
+<label class="opt"><input type="radio" name="{{.Name}}" value="false"{{if eq .Value "false"}} checked{{end}}{{if .Locked}} disabled{{end}}> {{index $.T "no"}}</label>
+{{else}}{{$f := .}}{{range .Options}}<label class="opt"><input type="radio" name="{{$f.Name}}" value="{{.}}"{{if eq . $f.Value}} checked{{end}}{{if $f.Locked}} disabled{{end}}> {{.}}</label>{{end}}{{end}}
+</fieldset>
+{{else}}
+<label for="{{.ID}}">{{.Label}}{{if .Required}} <span class="req">*</span>{{end}}</label>
+{{with .Help}}<p class="help">{{.}}</p>{{end}}
+{{if eq .Widget "select"}}{{$f := .}}<select id="{{.ID}}" name="{{.Name}}"{{if .Locked}} disabled{{end}}{{if .Error}} aria-invalid="true" aria-describedby="{{.ID}}_e"{{end}}><option value="">{{index $.T "choose"}}</option>{{range .Options}}<option{{if eq . $f.Value}} selected{{end}}>{{.}}</option>{{end}}</select>
+{{else if eq .Widget "textarea"}}<textarea id="{{.ID}}" name="{{.Name}}" rows="4"{{with .Placeholder}} placeholder="{{.}}"{{end}}{{if .MaxLength}} maxlength="{{.MaxLength}}"{{end}}{{if .Locked}} readonly{{end}}{{if .Error}} aria-invalid="true" aria-describedby="{{.ID}}_e"{{end}}>{{.Value}}</textarea>
+{{else if eq .Widget "position"}}<div class="position" data-position>
+<button type="button" class="locate" data-locate>{{index $.T "my_position"}}</button>
+<span class="where" data-where aria-live="polite" data-texts="{{index $.T "locating"}}|{{index $.T "located"}}|{{index $.T "no_position"}}"></span>
+<div class="latlon"><label>{{index $.T "latitude"}} <input name="{{.Name}}_lat" inputmode="decimal" value="{{.Lat}}" data-lat></label><label>{{index $.T "longitude"}} <input name="{{.Name}}_lon" inputmode="decimal" value="{{.Lon}}" data-lon></label></div>
+</div>
+{{else}}{{if .Unit}}<div class="unit">{{end}}<input id="{{.ID}}" name="{{.Name}}" type="{{.InputType}}" value="{{.Value}}"{{with .InputMode}} inputmode="{{.}}"{{end}}{{with .AutoKey}} autocomplete="{{.}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}}{{if .MaxLength}} maxlength="{{.MaxLength}}"{{end}}{{with .Min}} data-min="{{.}}"{{end}}{{with .Max}} data-max="{{.}}"{{end}}{{if .Locked}} readonly{{end}}{{if .Error}} aria-invalid="true" aria-describedby="{{.ID}}_e"{{end}}>{{if .Unit}}<span>{{.Unit}}</span></div>{{end}}
+{{end}}
+{{end}}
+{{if .Locked}}<p class="help">{{index $.T "locked"}}</p>{{if eq .Widget "checkbox" "radio" "yesno" "select"}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}{{end}}
+{{with .Error}}<p class="err" id="{{$id}}_e">{{.}}</p>{{end}}
+</div>
+{{end}}
+{{end}}
+<p class="actions"><button type="submit">{{.Submit}}</button></p>
+<p class="note offline" hidden data-offline>{{index .T "offline"}} <button type="button" data-retry>{{index .T "retry"}}</button></p>
+</form>
+{{with .Privacy}}<div class="privacy">{{md .}}</div>{{end}}
+{{template "bottom" .}}{{end}}
+
+{{define "thanks"}}{{template "top" .}}
+<div class="done" role="status">
+{{if .PreviewDone}}<p class="note preview">{{index .T "preview_done"}}</p>{{end}}
+{{if .Thanks}}<div class="thanks">{{md .Thanks}}</div>{{else}}<p class="thanks">{{index .T "thanks"}}</p>{{end}}
+{{with .Another}}<p class="actions"><a class="button" href="{{.}}">{{index $.T "another"}}</a></p>{{end}}
+</div>
+{{template "bottom" .}}{{end}}
+
+{{define "message"}}{{template "top" .}}
+{{with .Intro}}<div class="intro">{{md .}}</div>{{end}}
+{{with .Message}}<p class="note">{{.}}</p>{{end}}
+{{template "bottom" .}}{{end}}

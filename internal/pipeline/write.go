@@ -470,3 +470,7 @@ func parseTime(s string, dateOnly bool) (time.Time, error) {
 	}
 	return time.Time{}, errors.New("date et heure attendues (AAAA-MM-JJ HH:MM)")
 }
+
+// NextPos : position (clé d'ordre) d'une ligne ajoutée après last (vide :
+// tableau vide). Partagée avec les formulaires.
+func NextPos(last string) string { return afterKey(validKey(last)) }

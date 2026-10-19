@@ -14,6 +14,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/admin"
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/forms"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
@@ -40,6 +41,8 @@ type Server struct {
 	// réveil des pipelines (sources poussées, POST /api/push).
 	Users     userdb.Runner
 	Pipelines Kicker
+	// Forms : formulaires (/f/<code>) ; nil : absents.
+	Forms *forms.Handler
 }
 
 // Handler renvoie le routeur avec ses intergiciels.
@@ -53,6 +56,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("POST /api/push/{id}", s.push)
 	mux.HandleFunc("GET /api/push/{id}", s.pushStatus)
+	if s.Forms != nil {
+		s.Forms.Bearer = s.bearer
+		s.Forms.ClientIP = func(r *http.Request) string { return auth.ClientIP(r, s.Config.TrustProxy) }
+		s.Forms.Routes(mux)
+	}
 	s.Auth.Routes(mux)
 	if s.Admin != nil {
 		s.Admin.Routes(mux)
@@ -76,7 +84,7 @@ func (s *Server) Handler() http.Handler {
 				return
 			}
 			// Un tableau poussé a sa propre limite (pipeline.MaxBytes).
-			if !strings.HasPrefix(p, "/api/push/") {
+			if !strings.HasPrefix(p, "/api/push/") && !strings.HasPrefix(p, "/api/forms/") {
 				r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 			}
 		}

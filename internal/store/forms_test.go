@@ -171,6 +171,23 @@ func TestForms(t *testing.T) {
 		t.Fatalf("après suppression de colonne : %s %s", state, reason)
 	}
 
+	// Format de l'application : position sur deux colonnes, audience en
+	// identifiants, adresse complète.
+	must(val(owner.PGRole, `SELECT lattis.add_column($1::uuid, $2::uuid, 'Lat', 'decimal')`, nil, wb, tid))
+	must(val(owner.PGRole, `SELECT lattis.add_column($1::uuid, $2::uuid, 'Lon', 'decimal')`, nil, wb, tid))
+	var second map[string]string
+	must(val(owner.PGRole, `SELECT lattis.create_form($1::uuid, $2::uuid, $3::jsonb)`, &second, wb, tid,
+		`{"access": "audience", "audience": ["`+outsider.UserID+`"], "edit": "7 days", "definition": {"appearance": {"title": "Position", "accent": "slate"},
+		  "fields": [{"kind": "position", "latitude": "`+col("Lat")+`", "longitude": "`+col("Lon")+`"}]}}`))
+	if !strings.HasSuffix(second["url"], "/f/"+second["code"]) {
+		t.Fatalf("adresse : %v", second)
+	}
+	must(val(owner.PGRole, `SELECT lattis.list_forms($1::uuid)::text`, &list, wb))
+	if !strings.Contains(list, `"kind": "user"`) || !strings.Contains(list, `"max_per_respondent"`) {
+		t.Fatalf("liste (audience) : %s", list)
+	}
+	must(val(owner.PGRole, `SELECT lattis.drop_form($1::uuid)`, nil, second["id"]))
+
 	// Suppression : rôle interne parti, identité désactivée, lignes gardées.
 	must(val(owner.PGRole, `SELECT lattis.drop_form($1::uuid)`, nil, fid))
 	var roles, rows int
