@@ -192,11 +192,12 @@ func TestForms(t *testing.T) {
 	must(val(owner.PGRole, `SELECT lattis.drop_form($1::uuid)`, nil, fid))
 	var roles, rows int
 	var disabled bool
-	must(db.Super.QueryRow(ctx, `SELECT count(*) FROM pg_roles WHERE rolname LIKE 'wb\_%\_f\_%'`).Scan(&roles))
+	var names string
+	must(db.Super.QueryRow(ctx, `SELECT count(*), coalesce(string_agg(r.rolname, ','), '') FROM pg_roles r JOIN lattis.workbooks w ON r.rolname LIKE w.schema_name || '\_f\_%' WHERE w.id = $1`, wb).Scan(&roles, &names))
 	must(db.Super.QueryRow(ctx, `SELECT disabled FROM lattis.users WHERE pg_role = $1`, identity).Scan(&disabled))
 	must(db.Super.QueryRow(ctx, `SELECT count(*) FROM `+tbl).Scan(&rows))
 	if roles != 0 || !disabled || rows != 2 {
-		t.Fatalf("après suppression : %d rôles, désactivée %v, %d lignes", roles, disabled, rows)
+		t.Fatalf("après suppression : %d rôles (%s), désactivée %v, %d lignes", roles, names, disabled, rows)
 	}
 	_ = store.Enrollment{}
 }
