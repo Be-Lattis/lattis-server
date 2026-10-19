@@ -318,10 +318,13 @@ func TestAdminConsole(t *testing.T) {
 	if resp, body := b.get("/w/" + wb); resp.StatusCode != http.StatusOK || !strings.Contains(body, "Ventes console") || !strings.Contains(body, "Ouvrir dans Lattis") {
 		t.Fatalf("lien : %d %s", resp.StatusCode, body)
 	}
-	if _, body := b.get("/w/" + wb + "?open=desktop"); !strings.Contains(body, `url=lattis://open?server=`) {
+	if _, body := b.get("/w/" + wb); !strings.Contains(body, `href="lattis://open?server=`) {
+		t.Fatalf("le bouton doit lancer lattis:// directement : %s", body)
+	}
+	if _, body := b.get("/w/" + wb + "?open=desktop"); !strings.Contains(body, `data-href="lattis://open?server=`) {
 		t.Fatal("ouverture dans l'application attendue")
 	}
-	if _, body := b.get("/w/" + wb); !strings.Contains(body, `url=lattis://open?`) {
+	if _, body := b.get("/w/" + wb); !strings.Contains(body, `data-href="lattis://open?`) {
 		t.Fatal("choix non retenu")
 	}
 	if resp, body := b.get("/w/00000000-0000-0000-0000-000000000000"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "pas accès") {

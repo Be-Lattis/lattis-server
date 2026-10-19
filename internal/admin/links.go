@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"html/template"
 	"errors"
 	"net/http"
 	"net/url"
@@ -35,7 +36,9 @@ func DesktopLink(cfg *config.Config, id string) string {
 
 type linkData struct {
 	ID, Title   string
-	Desktop     string
+	// Desktop : lien lattis:// (type URL : html/template refuserait ce
+	// schéma dans un href).
+	Desktop     template.URL
 	Web         string // vide hors édition web
 	Download    string
 	Choice      string // desktop, web ou vide
@@ -55,7 +58,7 @@ func (s *Service) workbookLink(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/login?next="+url.QueryEscape("/w/"+id), http.StatusFound)
 		return
 	}
-	d := linkData{ID: id, Desktop: DesktopLink(s.Config, id), Download: s.Config.DownloadURL, Email: u.Email}
+	d := linkData{ID: id, Desktop: template.URL(DesktopLink(s.Config, id)), Download: s.Config.DownloadURL, Email: u.Email}
 	if s.Config.Edition == config.EditionWeb {
 		d.Web = "/app/?workbook=" + id
 	}

@@ -149,3 +149,18 @@ for (const f of document.querySelectorAll("form.danger")) {
   f.addEventListener("change", sync);
   sync();
 }
+
+// « Ouvrir dans Lattis » : le lien lattis:// part du clic (un navigateur
+// bloque un protocole externe lancé sans geste) ; le choix est retenu.
+for (const a of document.querySelectorAll("a[data-remember]")) {
+  a.addEventListener("click", () => {
+    document.cookie = "lattis_open=" + a.dataset.remember + "; path=/w/; max-age=31536000; samesite=lax" +
+      (location.protocol === "https:" ? "; secure" : "");
+  });
+}
+// Choix déjà retenu : tentative d'ouverture au chargement (le navigateur
+// peut demander confirmation ; sinon, le bouton reste là).
+const autoOpen = document.getElementById("autoopen");
+if (autoOpen && autoOpen.dataset.href) {
+  window.location.href = autoOpen.dataset.href;
+}
