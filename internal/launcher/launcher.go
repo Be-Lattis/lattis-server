@@ -98,6 +98,12 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := s.Config
+	// Volume de cache par utilisateur ; un moteur de la réserve de lattisd
+	// (pool-…) a un volume anonyme, supprimé avec son conteneur.
+	mount := map[string]any{"Type": "volume", "Source": c.VolumePrefix + in.UserID, "Target": "/home/nonroot"}
+	if strings.HasPrefix(in.UserID, "pool-") {
+		delete(mount, "Source")
+	}
 	spec := map[string]any{
 		"Image": c.Image,
 		"Cmd": []string{"--addr", "0.0.0.0:" + EnginePort, "--dir", "/home/nonroot", "--base-path", "/app",
@@ -118,7 +124,7 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 			"Tmpfs":          map[string]string{"/tmp": "size=64m"},
 			// Volume neuf monté sur le répertoire de nonroot : il en prend
 			// le propriétaire (65532).
-			"Mounts": []map[string]any{{"Type": "volume", "Source": c.VolumePrefix + in.UserID, "Target": "/home/nonroot"}},
+			"Mounts": []map[string]any{mount},
 		},
 	}
 	id, err := s.Docker.Run(ctx, name, spec)

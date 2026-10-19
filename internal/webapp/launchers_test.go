@@ -157,3 +157,70 @@ func TestKubeLauncher(t *testing.T) {
 	}
 	waitDone(t, inst)
 }
+
+// fakeLauncher : moteurs fictifs, arrêtés à la demande.
+type fakeLauncher struct {
+	mu    sync.Mutex
+	insts []*fakeInst
+}
+
+type fakeInst struct {
+	user string
+	done chan struct{}
+	once sync.Once
+}
+
+func (f *fakeInst) Addr() string          { return "127.0.0.1:1" }
+func (f *fakeInst) Done() <-chan struct{} { return f.done }
+func (f *fakeInst) Stop()                 { f.once.Do(func() { close(f.done) }) }
+func (f *fakeInst) Kill()                 { f.Stop() }
+
+func (f *fakeLauncher) Start(_ context.Context, s Spec) (Instance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i := &fakeInst{user: s.UserID, done: make(chan struct{})}
+	f.insts = append(f.insts, i)
+	return i, nil
+}
+
+// Réserve : N moteurs prêts en plus des attribués, plafond, remplacement.
+func TestPool(t *testing.T) {
+	f := &fakeLauncher{}
+	p := &Pool{Inner: f, Spare: 2, Max: 3}
+	eventually := func(what string, cond func() bool) {
+		t.Helper()
+		for i := 0; i < 200 && !cond(); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !cond() {
+			t.Fatalf("%s (prêts : %d)", what, p.Ready())
+		}
+	}
+	p.Warm()
+	eventually("deux moteurs prêts", func() bool { return p.Ready() == 2 })
+	a, err := p.Start(context.Background(), Spec{UserID: "a", Secret: "x"})
+	if err != nil || !strings.HasPrefix(a.(*poolInstance).Instance.(*fakeInst).user, PoolPrefix) || a.(*poolInstance).Secret() == "x" {
+		t.Fatalf("attribution : %v", err)
+	}
+	// 1 attribué + 2 prêts = plafond.
+	eventually("réserve refaite", func() bool { return p.Ready() == 2 })
+	if _, err := p.Start(context.Background(), Spec{UserID: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Start(context.Background(), Spec{UserID: "c"}); err != nil {
+		t.Fatal(err)
+	}
+	eventually("plus de place pour un moteur prêt", func() bool { return p.Ready() == 0 })
+	if _, err := p.Start(context.Background(), Spec{UserID: "d"}); err != ErrBusy {
+		t.Fatalf("au-delà du plafond : %v", err)
+	}
+	a.Kill() // session finie : le moteur disparaît, un neuf le remplace dans la réserve
+	eventually("moteur neuf après une fin de session", func() bool { return p.Ready() == 1 })
+	f.mu.Lock()
+	n := len(f.insts)
+	f.mu.Unlock()
+	if n != 4 { // 2 prêts, 1 refait après a, 1 après la fin de a
+		t.Fatalf("moteurs démarrés : %d", n)
+	}
+	p.StopAll()
+}

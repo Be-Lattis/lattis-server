@@ -104,7 +104,11 @@ web:
   engineImage:
     repository: ghcr.io/be-lattis/lattis-engine
     tag: main
+  # maxEngines : moteurs en tout (attribués et prêts) ; au-delà, page
+  # « Plus de ressources disponibles ». spare : moteurs gardés prêts
+  # d'avance (0 : démarrage à la connexion).
   maxEngines: 50
+  spare: 0
   idle: 30m
   # Requêtes de chaque pod ; memory est aussi sa limite.
   resources:

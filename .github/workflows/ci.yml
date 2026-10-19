@@ -102,12 +102,16 @@ jobs:
         run: |
           docker build -f docker/launcher/Dockerfile -t be-lattis/lattis-launcher:dev .
           cd deploy/compose
-          export LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web LATTIS_WEB_LAUNCHER=docker             LATTIS_WEB_LAUNCHER_URL=http://launcher:8090 LATTIS_WEB_LAUNCHER_TOKEN_FILE=/etc/lattis/launcher/token             LATTIS_WEB_TOKEN_URL=http://lattisd:8081/engine/token LATTIS_ENGINE_IMAGE=be-lattis/lattis-engine:ci
+          export LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web LATTIS_WEB_LAUNCHER=docker             LATTIS_WEB_LAUNCHER_URL=http://launcher:8090 LATTIS_WEB_LAUNCHER_TOKEN_FILE=/etc/lattis/launcher/token             LATTIS_WEB_TOKEN_URL=http://lattisd:8081/engine/token LATTIS_ENGINE_IMAGE=be-lattis/lattis-engine:ci LATTIS_WEB_POOL_SPARE=1
           docker compose --profile docker-engines up -d --no-build launcher lattisd
           for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
           cd ../..
           LATTIS_E2E_WEB_URL=http://localhost:8080 LATTIS_E2E_OWNER=vous@example.com go test -count=1 -v -run ComposeWeb ./internal/e2e/
           docker ps --filter label=lattis.engine=1 --format '{{.Names}}' | grep lattis-engine-
+          # Réserve : un moteur prêt en plus de celui attribué.
+          for i in $(seq 30); do [ "$(docker ps --filter label=lattis.engine=1 -q | wc -l)" -ge 2 ] && break; sleep 1; done
+          docker ps --filter label=lattis.engine=1 --format '{{.Names}}' | grep lattis-engine-pool-
+          [ "$(docker ps --filter label=lattis.engine=1 -q | wc -l)" -ge 2 ]
       - if: failure()
         working-directory: deploy/compose
         run: docker compose logs

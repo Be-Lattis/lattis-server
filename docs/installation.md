@@ -134,7 +134,8 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_EDITION` | `admin` | Édition : `admin` (application web désactivée, `/app/` refusée), ou `web` (application dans le navigateur, moteurs lancés selon `LATTIS_WEB_LAUNCHER`). Voir §5.1. |
 | `LATTIS_WEB_ENGINE` | vide | Édition web : chemin du binaire `lattis-engine` (dépôt de l'application), lancé une fois par utilisateur connecté. |
 | `LATTIS_WEB_CACHE_DIR` | `/var/lib/lattis/web` | Édition web : un répertoire par utilisateur (cache SQLite, fichiers envoyés). |
-| `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs simultanés (au-delà : 503). |
+| `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs, réserve comprise (au-delà : page « Plus de ressources disponibles », 503). |
+| `LATTIS_WEB_POOL_SPARE` | `0` | Édition web : moteurs gardés prêts d'avance, en plus de ceux utilisés (§5.1.4). |
 | `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
 | `LATTIS_WEB_LAUNCHER` | `process` | Édition web : lancement des moteurs, `process` (processus de `lattisd`), `docker` (conteneurs par le mini lanceur `lattis-launcher`) ou `kubernetes` (pods). Voir §5.1. |
 | `LATTIS_WEB_TOKEN_URL` | vide | Modes `docker` et `kubernetes` : adresse de `/engine/token` vue des moteurs (écoute interne `LATTIS_WEB_ENGINE_LISTEN`, `:8081` par défaut, à ne pas exposer). |
@@ -183,7 +184,8 @@ Un Serveur Lattis peut aussi servir l'application dans le navigateur (`/app/`). 
 | Où tourne un moteur | Aucun moteur | Processus de `lattisd`, dans son conteneur | Conteneur à part, un par utilisateur | Pod à part, un par utilisateur |
 | Isolation | Sans objet | Avec `lattisd` en root : un utilisateur système par moteur. Sans root : aucune (déconseillé à plusieurs utilisateurs) | Conteneur verrouillé, mémoire, processeurs et processus limités | Pod verrouillé, ressources limitées, NetworkPolicy |
 | Ce qu'il faut en plus | Rien (image `lattisd`) | L'image `lattisd:web` (qui contient le moteur) | Le mini lanceur `lattis-launcher`, l'image du moteur | L'image du moteur |
-| Démarrage d'un moteur | | Immédiat | Une à deux secondes | Quelques secondes (tirage de l'image la première fois) |
+| Démarrage d'un moteur | | Immédiat | Une à deux secondes | Quelques secondes (tirage de l'image la première fois) 
+| Réserve de moteurs prêts (§5.1.4) | | Oui | Oui | Oui |
 
 Les quatre cas sont vérifiés par la CI (désactivée, `process` avec et sans isolation, `docker` de bout en bout ; `kubernetes` : génération du chart seulement).
 
@@ -275,9 +277,16 @@ Pour un essai sur un poste, `localhost` ne convient pas : les moteurs le prendra
 
 Le chart crée le compte de service, ses droits et deux NetworkPolicy : seul `lattisd` joint les moteurs, et seuls les moteurs joignent le port des jetons de `lattisd`. Elles ne s'appliquent qu'avec un réseau de cluster qui les gère (Calico, Cilium…). Les moteurs doivent pouvoir joindre `publicURL` et `postgres.publicReadWrite` depuis le cluster. Le secret de chaque moteur est passé par une variable d'environnement de son pod : il est lisible par qui peut lire les pods de l'espace de noms.
 
-#### 5.1.4 Plus tard : réserve de moteurs
+#### 5.1.4 Réserve de moteurs prêts (les trois modes)
 
-Le code passe par une interface de lanceur, prête pour une réserve de moteurs démarrés d'avance qui supprimerait l'attente du premier démarrage. Elle demandera que `lattis-engine` accepte de recevoir l'utilisateur après son démarrage.
+Par défaut, un moteur démarre à la connexion de l'utilisateur. Avec `LATTIS_WEB_POOL_SPARE=N` (chart : `web.spare`), le serveur garde en plus N moteurs démarrés d'avance, prêts à recevoir quelqu'un : avec 15 personnes connectées et N = 2, 17 moteurs tournent. À la connexion, l'utilisateur reçoit un moteur prêt, sans attente, et un neuf démarre pour reformer la réserve.
+
+- **Un moteur ne sert qu'une fois** : attribué à une personne, il disparaît à la fin de sa session (inactivité `LATTIS_WEB_IDLE`, arrêt) et n'est jamais rendu à la réserve. Rien ne passe d'un utilisateur à l'autre.
+- **Plafond** : moteurs attribués et moteurs prêts restent ensemble sous `LATTIS_WEB_MAX_ENGINES` (chart : `web.maxEngines`). Quand il est atteint, la réserve ne se reforme plus, et une nouvelle connexion reçoit la page « Plus de ressources disponibles » (503), qui invite à réessayer ou à utiliser l'application de bureau. `LATTIS_WEB_POOL_SPARE` doit rester inférieur au plafond.
+- **Cache** : un moteur prêt ne sait pas encore pour qui il travaillera ; son répertoire de travail est éphémère, effacé avec lui. Sans réserve, chaque utilisateur garde son cache d'une session à l'autre ; avec, il le recharge depuis le serveur à chaque session.
+- **Ressources** : les moteurs prêts consomment de la mémoire en permanence (en mode `docker` et `kubernetes`, chacun selon ses limites). Deux à cinq suffisent en général à absorber les connexions du matin.
+
+Le moteur ne demande les jetons de l'utilisateur qu'à sa première connexion à PostgreSQL : `lattisd` rattache le secret du moteur prêt à l'utilisateur au moment de l'attribution. Aucune version particulière de `lattis-engine` n'est requise.
 
 ## 6. Réglages du serveur (administration web)
 

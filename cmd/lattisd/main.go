@@ -315,7 +315,11 @@ func webManager(cfg *config.Config, st *store.Store, keys *tokens.KeySet, sessio
 			m.TokenURL = u
 		}
 	}
-	slog.Info("moteurs web", "launcher", cfg.WebLauncher)
+	if cfg.WebSpare > 0 {
+		m.Launcher = &webapp.Pool{Inner: m.Launcher, Spare: cfg.WebSpare, Max: cfg.WebMaxEngines,
+			Template: webapp.Spec{Server: cfg.Issuer(), TokenURL: m.TokenURL, Idle: cfg.WebIdle}}
+	}
+	slog.Info("moteurs web", "launcher", cfg.WebLauncher, "spare", cfg.WebSpare, "max", cfg.WebMaxEngines)
 	return m, nil
 }
 

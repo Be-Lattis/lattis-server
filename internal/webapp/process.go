@@ -60,6 +60,10 @@ func (l *ProcessLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 	go func() {
 		<-inst.done
 		l.release(uid, s.UserID)
+		if isPool(s.UserID) {
+			// Répertoire d'un moteur de la réserve : éphémère.
+			_ = os.RemoveAll(filepath.Join(l.CacheDir, s.UserID))
+		}
 	}()
 	return inst, nil
 }

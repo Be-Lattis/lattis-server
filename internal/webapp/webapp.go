@@ -126,10 +126,14 @@ func (m *Manager) TokenHandler() http.Handler {
 
 // Init retire les moteurs laissés par une instance précédente de lattisd.
 func (m *Manager) Init(ctx context.Context) {
-	if c, ok := m.launcher().(Cleaner); ok {
+	l := m.launcher()
+	if c, ok := l.(Cleaner); ok {
 		if err := c.Cleanup(ctx); err != nil {
 			slog.Warn("moteurs web : nettoyage au démarrage", "err", err)
 		}
+	}
+	if w, ok := l.(interface{ Warm() }); ok {
+		w.Warm()
 	}
 }
 
@@ -158,7 +162,14 @@ func (m *Manager) app(w http.ResponseWriter, r *http.Request) {
 	e, err := m.engine(r.Context(), u)
 	if errors.Is(err, ErrBusy) {
 		w.Header().Set("Retry-After", "60")
-		http.Error(w, "Le serveur a atteint son nombre maximal de sessions web. Réessayez plus tard.", http.StatusServiceUnavailable)
+		if r.Method != http.MethodGet || isWebSocket(r) {
+			http.Error(w, "plus de ressources disponibles", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(busyPage))
 		return
 	}
 	if err != nil {
@@ -246,6 +257,14 @@ func (m *Manager) start(l Launcher, e *engine) error {
 		return err
 	}
 	e.inst = inst
+	// Moteur de la réserve : il présente son propre secret.
+	if ps, ok := inst.(interface{ Secret() string }); ok && ps.Secret() != e.secret {
+		m.mu.Lock()
+		delete(m.secrets, e.secret)
+		e.secret = ps.Secret()
+		m.secrets[e.secret] = e.userID
+		m.mu.Unlock()
+	}
 	go func() {
 		<-inst.Done()
 		m.forget(e)
@@ -286,7 +305,11 @@ func (m *Manager) Stop(ctx context.Context) {
 			all = append(all, e)
 		}
 	}
+	l := m.Launcher
 	m.mu.Unlock()
+	if p, ok := l.(interface{ StopAll() }); ok {
+		p.StopAll()
+	}
 	for _, e := range all {
 		e.inst.Stop()
 	}
@@ -344,3 +367,12 @@ func randomSecret() string {
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
+
+// busyPage : toutes les sessions web sont occupées (LATTIS_WEB_MAX_ENGINES).
+const busyPage = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plus de ressources disponibles</title></head><body>
+<h1>Plus de ressources disponibles</h1>
+<p>Toutes les sessions de l'application web de ce serveur sont occupées. Réessayez dans quelques minutes : une session se libère après une période d'inactivité.</p>
+<p>Vous pouvez aussi ouvrir vos classeurs avec l'application Lattis sur votre poste.</p>
+</body></html>
+`

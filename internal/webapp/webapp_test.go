@@ -153,3 +153,69 @@ func TestManager(t *testing.T) {
 		t.Fatalf("secret inconnu : %d", resp.StatusCode)
 	}
 }
+
+// Réserve devant des processus : l'utilisateur reçoit un moteur déjà
+// démarré, qui obtient bien ses jetons à lui ; au plafond, la page
+// « Plus de ressources disponibles ».
+func TestManagerPool(t *testing.T) {
+	pem, _ := tokens.GenerateKeyPEM()
+	keys, _ := tokens.ParseKeys(pem)
+	us := users{"a": {ID: "a", PGRole: "anne@acme.fr"}, "b": {ID: "b", PGRole: "bob@acme.fr"}, "c": {ID: "c", PGRole: "chloe@acme.fr"}}
+	m := &webapp.Manager{Users: us, Keys: keys, Session: func(r *http.Request) (store.User, error) {
+		if u, ok := us[r.Header.Get("X-Test-User")]; ok {
+			return u, nil
+		}
+		return store.User{}, errors.New("pas de session")
+	}}
+	mux := http.NewServeMux()
+	m.Routes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	pub, _ := url.Parse(srv.URL)
+	cache := t.TempDir()
+	m.Config = &config.Config{PublicURL: pub, WebEngine: os.Args[0], WebCacheDir: cache, WebMaxEngines: 2, WebIdle: time.Minute}
+	m.TokenURL = srv.URL + "/engine/token"
+	pool := &webapp.Pool{Inner: &webapp.ProcessLauncher{Bin: os.Args[0], CacheDir: cache}, Spare: 1, Max: 2,
+		Template: webapp.Spec{Server: srv.URL, TokenURL: m.TokenURL, Idle: time.Minute}}
+	m.Launcher = pool
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		m.Stop(ctx)
+	}()
+	m.Init(context.Background())
+	waitReady := func(n int) {
+		t.Helper()
+		for i := 0; i < 300 && pool.Ready() != n; i++ {
+			time.Sleep(20 * time.Millisecond)
+		}
+		if pool.Ready() != n {
+			t.Fatalf("moteurs prêts : %d, attendu %d", pool.Ready(), n)
+		}
+	}
+	waitReady(1)
+	get := func(user string) (int, string) {
+		req, _ := http.NewRequest("GET", srv.URL+"/app/", nil)
+		req.Header.Set("X-Test-User", user)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode, string(b)
+	}
+	code, body := get("a")
+	var got map[string]any
+	_ = json.Unmarshal([]byte(body), &got)
+	if code != http.StatusOK || got["pg_role"] != "anne@acme.fr" {
+		t.Fatalf("moteur de la réserve : %d %s", code, body)
+	}
+	waitReady(1) // 1 attribué + 1 prêt = plafond
+	if code, body := get("b"); code != http.StatusOK || !strings.Contains(body, "bob@acme.fr") {
+		t.Fatalf("second utilisateur : %d %s", code, body)
+	}
+	if code, body := get("c"); code != http.StatusServiceUnavailable || !strings.Contains(body, "Plus de ressources disponibles") {
+		t.Fatalf("au plafond : %d %s", code, body)
+	}
+}

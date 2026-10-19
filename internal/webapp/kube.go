@@ -136,7 +136,7 @@ func (k *KubeLauncher) PodSpec(s Spec, name string) map[string]any {
 		meta["ownerReferences"] = []map[string]any{{"apiVersion": "v1", "kind": "Pod", "name": c.OwnerPod, "uid": c.OwnerUID}}
 	}
 	data := map[string]any{"name": "data", "emptyDir": map[string]any{}}
-	if c.CacheSize != "" {
+	if c.CacheSize != "" && !isPool(s.UserID) {
 		data = map[string]any{"name": "data", "persistentVolumeClaim": map[string]string{"claimName": "lattis-web-" + s.UserID}}
 	}
 	resources := map[string]any{"requests": map[string]string{"cpu": c.CPU, "memory": c.Memory},
@@ -180,7 +180,7 @@ func (k *KubeLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 	if err := k.deleteAll(ctx, s.UserID); err != nil {
 		return nil, err
 	}
-	if k.Cfg.CacheSize != "" {
+	if k.Cfg.CacheSize != "" && !isPool(s.UserID) {
 		pvc := map[string]any{"apiVersion": "v1", "kind": "PersistentVolumeClaim",
 			"metadata": map[string]any{"name": "lattis-web-" + s.UserID, "labels": map[string]string{labelApp: "lattis-engine", labelUser: s.UserID}},
 			"spec": map[string]any{"accessModes": []string{"ReadWriteOnce"},
