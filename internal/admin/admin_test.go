@@ -309,7 +309,8 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatalf("suppression du classeur : %s", body)
 	}
 	if _, body := b.post("/admin/do/create_workbook", url.Values{"csrf": {csrf}, "back": {"/admin/workbooks"}, "title": {"Mauvais"},
-		"mode": {"collaborative"}, "table": {"T"}, "columns": {"A : couleur"}}); !strings.Contains(body, "inconnu") {
+		"mode": {"collaborative"}, "table": {"T"}, "columns": {"A : couleur"}}); !strings.Contains(body, "inconnu") ||
+		!strings.Contains(body, "data-refill=") || !strings.Contains(body, "A : couleur") || strings.Contains(body, `data-refill="{&#34;action&#34;:&#34;/admin/do/create_workbook&#34;,&#34;fields&#34;:{&#34;csrf`) {
 		t.Fatal("type de colonne inconnu accepté")
 	}
 

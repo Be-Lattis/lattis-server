@@ -394,6 +394,8 @@ type view struct {
 	Edition   string
 	// Back : lien de retour d'une page de message.
 	Back string
+	// Refill : saisie à remettre dans le formulaire refusé (JSON).
+	Refill string
 }
 
 func (s *Service) page(name, title string, load loader) http.HandlerFunc {
@@ -405,7 +407,12 @@ func (s *Service) page(name, title string, load loader) http.HandlerFunc {
 		}
 		v := view{Title: title, Page: name, User: u, CSRF: s.csrf(w, r), Path: r.URL.RequestURI(),
 			Version: s.Version, Edition: string(s.Config.Edition)}
-		v.Flash, v.Error = s.takeFlash(w, r)
+		fl := s.takeFlash(w, r)
+		v.Flash, v.Error = fl.OK, fl.Err
+		if fl.Form != nil {
+			b, _ := json.Marshal(fl.Form)
+			v.Refill = string(b)
+		}
 		v.Flash, v.FlashLink = splitSetupLink(v.Flash)
 		var forbidden bool
 		err = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
@@ -534,6 +541,39 @@ func (s *Service) checkCSRF(r *http.Request) bool {
 type flash struct {
 	OK  string `json:"ok,omitempty"`
 	Err string `json:"err,omitempty"`
+	// Form : saisie du formulaire refusé, remise en place par admin.js.
+	Form *refill `json:"form,omitempty"`
+}
+
+// refill : formulaire (chemin d'action et champ id) et valeurs saisies.
+type refill struct {
+	Action string              `json:"action"`
+	ID     string              `json:"id,omitempty"`
+	Fields map[string][]string `json:"fields"`
+}
+
+// maxRefill borne la saisie gardée (le cookie du message fait au plus 4 ko).
+const maxRefill = 2000
+
+// keepInput : saisie d'un formulaire refusé, sans jeton, confirmations ni
+// secrets ; nil si rien à garder ou trop long.
+func keepInput(r *http.Request) *refill {
+	f := &refill{Action: r.URL.Path, ID: r.PostFormValue("id"), Fields: map[string][]string{}}
+	for k, v := range r.PostForm {
+		l := strings.ToLower(k)
+		if k == "csrf" || k == "back" || k == "id" || strings.HasPrefix(l, "confirm") ||
+			strings.Contains(l, "password") || strings.Contains(l, "secret") {
+			continue
+		}
+		f.Fields[k] = v
+	}
+	if len(f.Fields) == 0 {
+		return nil
+	}
+	if b, _ := json.Marshal(f); len(b) > maxRefill {
+		return nil
+	}
+	return f
 }
 
 func (s *Service) setFlash(w http.ResponseWriter, f flash) {
@@ -541,18 +581,18 @@ func (s *Service) setFlash(w http.ResponseWriter, f flash) {
 	s.setCookie(w, flashCookie, base64.RawURLEncoding.EncodeToString(b), "/admin", time.Minute, http.SameSiteStrictMode)
 }
 
-func (s *Service) takeFlash(w http.ResponseWriter, r *http.Request) (string, string) {
+func (s *Service) takeFlash(w http.ResponseWriter, r *http.Request) flash {
 	c, err := r.Cookie(flashCookie)
 	if err != nil {
-		return "", ""
+		return flash{}
 	}
 	s.clearCookie(w, flashCookie, "/admin")
 	b, err := base64.RawURLEncoding.DecodeString(c.Value)
 	var f flash
 	if err != nil || json.Unmarshal(b, &f) != nil {
-		return "", ""
+		return flash{}
 	}
-	return f.OK, f.Err
+	return f
 }
 
 // safeBack n'accepte qu'un chemin local de l'administration.

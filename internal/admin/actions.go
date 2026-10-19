@@ -146,12 +146,12 @@ func (s *Service) perform(w http.ResponseWriter, r *http.Request, fn actionFunc)
 	case err == nil:
 		s.setFlash(w, flash{OK: msg})
 	case errors.Is(err, errConfirm):
-		s.setFlash(w, flash{Err: "Cochez « Confirmer » pour cette action."})
+		s.setFlash(w, flash{Err: "Cochez « Confirmer » pour cette action.", Form: keepInput(r)})
 	case errors.As(err, &ie):
-		s.setFlash(w, flash{Err: string(ie)})
+		s.setFlash(w, flash{Err: string(ie), Form: keepInput(r)})
 	default:
 		if m, ok := userMessage(err); ok {
-			s.setFlash(w, flash{Err: m})
+			s.setFlash(w, flash{Err: m, Form: keepInput(r)})
 		} else {
 			s.fail(w, r, err)
 			return

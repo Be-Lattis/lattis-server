@@ -1,3 +1,26 @@
+// Saisie remise après une erreur : le formulaire refusé retrouve ses valeurs
+// (sauf fichiers, champs cachés, confirmations et secrets).
+const refilled = [];
+try {
+  const r = JSON.parse(document.querySelector("main")?.dataset.refill || "null");
+  const form = r && [...document.forms].find((f) =>
+    new URL(f.action, location.href).pathname === r.action &&
+    (!r.id || f.querySelector('input[name="id"]')?.value === r.id));
+  if (form) {
+    for (const [name, values] of Object.entries(r.fields)) {
+      const els = [...form.elements].filter((e) => e.name === name && e.type !== "file" && e.type !== "hidden");
+      els.forEach((el, n) => {
+        if (el.type === "checkbox" || el.type === "radio") el.checked = values.includes(el.value);
+        else if (el.multiple) for (const o of el.options) o.selected = values.includes(o.value);
+        else el.value = values[n] ?? values[0];
+        refilled.push(el);
+      });
+    }
+    form.closest("details")?.setAttribute("open", "");
+    form.scrollIntoView({ block: "center" });
+  }
+} catch { /* saisie illisible : formulaire vide */ }
+
 // Champs existants : bloqués jusqu'au clic sur leur crayon. Sans script,
 // ils restent simplement modifiables.
 document.documentElement.classList.add("js");
@@ -19,6 +42,12 @@ for (const c of document.querySelectorAll(".control")) {
     [...inputs].some((i, n) => (i.type === "checkbox" ? i.checked : i.value) !== initial[n]));
   c.addEventListener("input", mark);
   c.addEventListener("change", mark);
+}
+// Champ bloqué dont la saisie a été remise : ouvert, comme après le crayon.
+for (const el of refilled) {
+  const changed = el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked
+    : el.tagName === "SELECT" ? [...el.options].some((o) => o.selected !== o.defaultSelected) : el.value !== el.defaultValue;
+  if (changed) el.closest(".control.locked")?.querySelector(".pen")?.click();
 }
 // Un champ bloqué part quand même avec le formulaire (valeur inchangée).
 document.addEventListener("submit", (e) => {
