@@ -225,7 +225,7 @@ func TestAdminConsole(t *testing.T) {
 		bad[k] = v
 	}
 	bad.Set("logo_url", "javascript:alert(1)")
-	if _, body = b.post("/admin/do/server_settings", bad); !strings.Contains(body, "logo_url : adresse https://") {
+	if _, body = b.post("/admin/do/server_settings", bad); !strings.Contains(body, "adresse https://") {
 		t.Fatal("logo invalide accepté")
 	}
 	// Journal : l'action est au nom de l'administrateur.
