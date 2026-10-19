@@ -8,6 +8,9 @@ set -euo pipefail
 : "${LATTIS_ISSUER:?LATTIS_ISSUER manquant (URL publique de lattisd)}"
 LATTIS_PUBLIC_KEYS_FILE="${LATTIS_PUBLIC_KEYS_FILE:-/etc/lattis/keys/public.pem}"
 LATTIS_TLS_DIR="${LATTIS_TLS_DIR:-/etc/lattis/tls}"
+# Chaque poste garde une connexion ouverte (synchronisation), sous son propre
+# rôle : pas de pooler possible. 100 (défaut de PostgreSQL) tient ~80 postes.
+LATTIS_PG_MAX_CONNECTIONS="${LATTIS_PG_MAX_CONNECTIONS:-400}"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v service_password="$LATTIS_SERVICE_PASSWORD" -v dbname="$POSTGRES_DB" \
@@ -29,6 +32,12 @@ lattis_oauth.public_keys_file = '${LATTIS_PUBLIC_KEYS_FILE}'
 shared_preload_libraries = 'pg_stat_statements'
 hot_standby = on
 wal_keep_size = '1GB'
+max_connections = ${LATTIS_PG_MAX_CONNECTIONS}
+# Réplicas : le primaire garde les lignes que lit encore un réplica (pas
+# d'annulation des lectures longues par le vacuum) ; un rejeu bloqué par
+# une lecture attend au plus 30 s avant de l'annuler.
+hot_standby_feedback = on
+max_standby_streaming_delay = '30s'
 CONF
 
 cat > "$PGDATA/pg_hba.conf" <<HBA

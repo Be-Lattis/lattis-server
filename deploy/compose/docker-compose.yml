@@ -31,6 +31,7 @@ services:
       init: { condition: service_completed_successfully }
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      LATTIS_PG_MAX_CONNECTIONS: ${LATTIS_PG_MAX_CONNECTIONS:-400}
       POSTGRES_DB: lattis
       LATTIS_SERVICE_PASSWORD: ${LATTIS_SERVICE_PASSWORD:?}
       LATTIS_ISSUER: ${LATTIS_PUBLIC_URL:-http://localhost:8080}
