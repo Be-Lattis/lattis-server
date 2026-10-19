@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -40,9 +42,21 @@ func (s *Service) uploadPipeline(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Un gros fichier sur une liaison lente dépasse le délai de lecture du
+	// serveur public (30 s) : 15 minutes ici.
+	_ = http.NewResponseController(w).SetReadDeadline(s.now().Add(15 * time.Minute))
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil || !s.checkCSRF(r) {
-		s.message(w, r, http.StatusForbidden, "Demande refusée", "Fichier trop gros (100 Mo au plus) ou formulaire expiré : rechargez la page.")
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			s.message(w, r, http.StatusRequestEntityTooLarge, "Fichier trop gros", "Le fichier dépasse 100 Mo.")
+		} else {
+			s.message(w, r, http.StatusBadRequest, "Envoi interrompu", "Le fichier n'est pas arrivé en entier : réessayez.")
+		}
+		return
+	}
+	if !s.checkCSRF(r) {
+		s.message(w, r, http.StatusForbidden, "Page expirée", "Cette page était restée ouverte trop longtemps : revenez-y et recommencez.")
 		return
 	}
 	defer r.MultipartForm.RemoveAll()

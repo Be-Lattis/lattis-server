@@ -25,6 +25,9 @@ const maxRejects = 20
 // technique du pipeline, dans une seule transaction.
 func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table) (Result, error) {
 	res := Result{Read: len(t.Rows)}
+	if cells := len(t.Rows) * len(t.Header); cells > MaxCells {
+		return res, fmt.Errorf("source trop volumineuse : %d cellules (au plus %d)", cells, MaxCells)
+	}
 	u, err := r.Store.User(ctx, p.UserID)
 	if err != nil {
 		return res, fmt.Errorf("identité technique : %w", err)
@@ -68,7 +71,7 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table) (Result, erro
 			if p.Mode != "append" && len(keyIdx) > 0 {
 				k := keyString(vals[1:], keyIdx)
 				if k == "" {
-					res.reject(i+2, strings.Join(p.KeyColumns, ", "), nil, errors.New("clé vide"))
+					res.reject(i+2, strings.Join(p.KeyColumns, ", "), nil, errors.New("clé incomplète"))
 					continue
 				}
 				if prev, ok := keys[k]; ok {
@@ -140,7 +143,7 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, t *Table) (Result, erro
 			var on, set, diffT, diffS []string
 			for _, k := range p.KeyColumns {
 				id := pgx.Identifier{k}.Sanitize()
-				on = append(on, "t."+id+" IS NOT DISTINCT FROM s."+id)
+				on = append(on, "t."+id+" = s."+id)
 			}
 			for _, n := range names {
 				set = append(set, n+" = s."+n)
@@ -272,16 +275,14 @@ func keyIndexes(cols []target, keys []string) []int {
 }
 
 func keyString(vals []any, idx []int) string {
+	// Une clé sans aucune partie vide : la jointure se fait alors par « = »
+	// (indexable), au lieu de IS NOT DISTINCT FROM.
 	var b strings.Builder
-	empty := true
 	for _, i := range idx {
-		if vals[i] != nil {
-			empty = false
+		if vals[i] == nil {
+			return ""
 		}
 		fmt.Fprintf(&b, "%v\x00", vals[i])
-	}
-	if empty {
-		return ""
 	}
 	return b.String()
 }

@@ -158,6 +158,9 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_DOWNLOAD_URL` | vide | Page de téléchargement de l'application, proposée sur les liens vers un classeur (`/w/<id>`). |
 | `LATTIS_SOURCE_URL` | `https://github.com/Be-Lattis/lattis-server` | Lien « Code source » au pied des pages (AGPL-3.0, article 13) : à faire pointer vers le code de votre version si vous l'avez modifiée. |
 | `LATTIS_PIPELINE_DIR` | `/var/lib/lattis/pipelines` | Fichiers des pipelines d'ingestion : `<pipeline>/uploads` (envois depuis /admin), `<pipeline>/inbox` (dossier de dépôt), puis `done/` et `failed/`. Volume en écriture pour l'utilisateur de lattisd. |
+| `LATTIS_PIPELINE_SECRETS_DIR` | vide | Secrets des pipelines (mot de passe SFTP, jeton d'API, chaîne de connexion), un fichier par secret. Distinct du dossier des clients OAuth : un pipeline n'y a pas accès. Vide : pipelines sans secret seulement. |
+| `LATTIS_PIPELINE_ALLOWED_HOSTS` | vide | Hôtes, `*.domaine` ou réseaux CIDR internes que les pipelines et leurs alertes peuvent joindre. Sans eux, bouclage, réseaux privés, link-local et métadonnées du nuage sont refusés. |
+| `LATTIS_TIMEZONE` | `Europe/Paris` | Fuseau des horaires de pipelines, des dates importées sans fuseau et des dates affichées dans l'administration. |
 
 Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres commandes : `lattisd migrate`, `lattisd keygen FICHIER`, `lattisd public-keys [FICHIER]`, `lattisd init-dev DIR [HÔTE…]`, `lattisd version`.
 

@@ -851,9 +851,13 @@ func (s *Service) checkCSRF(r *http.Request) bool {
 // ClientIP renvoie l'adresse du client (pour la limitation de débit).
 func ClientIP(r *http.Request, trustProxy bool) string {
 	if trustProxy {
-		if f := r.Header.Get("X-Forwarded-For"); f != "" {
-			ip, _, _ := strings.Cut(f, ",")
-			return strings.TrimSpace(ip)
+		// Dernière adresse de la chaîne : celle que le mandataire de confiance
+		// a ajoutée. Les premières sont fournies par le client et ne prouvent rien.
+		if f := r.Header.Values("X-Forwarded-For"); len(f) > 0 {
+			parts := strings.Split(f[len(f)-1], ",")
+			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+				return ip
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

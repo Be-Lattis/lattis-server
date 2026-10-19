@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // base des fuseaux dans le binaire (image distroless)
 )
 
 // Edition choisit la version déployée (§4).
@@ -67,8 +68,15 @@ type Config struct {
 	// (AGPL-3.0, §13). À changer pour une version modifiée.
 	SourceURL string
 	// PipelineDir : fichiers des pipelines d'ingestion (envois, dépôts).
-	PipelineDir   string
-	ShutdownGrace time.Duration
+	PipelineDir string
+	// PipelineSecretsDir : secrets des pipelines, distinct de celui des
+	// clients OAuth ; PipelineAllowedHosts : hôtes internes joignables.
+	PipelineSecretsDir string
+	// Timezone : fuseau des horaires de pipelines, des dates importées et de
+	// l'affichage (LATTIS_TIMEZONE, Europe/Paris par défaut).
+	Timezone             *time.Location
+	PipelineAllowedHosts []string
+	ShutdownGrace        time.Duration
 	// RateLimit : requêtes par minute et par adresse sur /oauth/*, /login/*, /setup.
 	RateLimit int
 	// ReplicaMaxLag : retard au-delà duquel un réplica est retiré de la
@@ -90,25 +98,28 @@ func parse(get func(string) string) (*Config, error) {
 		return d
 	}
 	c := &Config{
-		Edition:        Edition(def("LATTIS_EDITION", string(EditionAdmin))),
-		ListenAddr:     def("LATTIS_LISTEN_ADDR", ":8080"),
-		MetricsAddr:    def("LATTIS_METRICS_ADDR", ":9464"),
-		TLSCertFile:    def("LATTIS_TLS_CERT_FILE", ""),
-		TLSKeyFile:     def("LATTIS_TLS_KEY_FILE", ""),
-		PGRWURL:        def("LATTIS_PG_RW_URL", ""),
-		PGDatabase:     def("LATTIS_PG_DATABASE", "lattis"),
-		PGSSLMode:      def("LATTIS_PG_SSLMODE", "verify-full"),
-		SigningKeyFile: def("LATTIS_SIGNING_KEY_FILE", ""),
-		SecretsDir:     def("LATTIS_SECRETS_DIR", ""),
-		BootstrapOwner: strings.ToLower(def("LATTIS_BOOTSTRAP_OWNER", "")),
-		MinClient:      def("LATTIS_MIN_CLIENT_VERSION", "0.0.0"),
-		WebCacheDir:    def("LATTIS_WEB_CACHE_DIR", "/var/lib/lattis/web"),
-		WebEngine:      def("LATTIS_WEB_ENGINE", ""),
-		ExtraRedirects: splitList(def("LATTIS_EXTRA_REDIRECT_URIS", "")),
-		DownloadURL:    def("LATTIS_DOWNLOAD_URL", ""),
-		SourceURL:      def("LATTIS_SOURCE_URL", "https://github.com/Be-Lattis/lattis-server"),
-		PipelineDir:    def("LATTIS_PIPELINE_DIR", "/var/lib/lattis/pipelines"),
-		ShutdownGrace:  15 * time.Second,
+		Edition:              Edition(def("LATTIS_EDITION", string(EditionAdmin))),
+		ListenAddr:           def("LATTIS_LISTEN_ADDR", ":8080"),
+		MetricsAddr:          def("LATTIS_METRICS_ADDR", ":9464"),
+		TLSCertFile:          def("LATTIS_TLS_CERT_FILE", ""),
+		TLSKeyFile:           def("LATTIS_TLS_KEY_FILE", ""),
+		PGRWURL:              def("LATTIS_PG_RW_URL", ""),
+		PGDatabase:           def("LATTIS_PG_DATABASE", "lattis"),
+		PGSSLMode:            def("LATTIS_PG_SSLMODE", "verify-full"),
+		SigningKeyFile:       def("LATTIS_SIGNING_KEY_FILE", ""),
+		SecretsDir:           def("LATTIS_SECRETS_DIR", ""),
+		BootstrapOwner:       strings.ToLower(def("LATTIS_BOOTSTRAP_OWNER", "")),
+		MinClient:            def("LATTIS_MIN_CLIENT_VERSION", "0.0.0"),
+		WebCacheDir:          def("LATTIS_WEB_CACHE_DIR", "/var/lib/lattis/web"),
+		WebEngine:            def("LATTIS_WEB_ENGINE", ""),
+		ExtraRedirects:       splitList(def("LATTIS_EXTRA_REDIRECT_URIS", "")),
+		DownloadURL:          def("LATTIS_DOWNLOAD_URL", ""),
+		SourceURL:            def("LATTIS_SOURCE_URL", "https://github.com/Be-Lattis/lattis-server"),
+		PipelineDir:          def("LATTIS_PIPELINE_DIR", "/var/lib/lattis/pipelines"),
+		PipelineSecretsDir:   def("LATTIS_PIPELINE_SECRETS_DIR", ""),
+		Timezone:             time.UTC,
+		PipelineAllowedHosts: splitList(def("LATTIS_PIPELINE_ALLOWED_HOSTS", "")),
+		ShutdownGrace:        15 * time.Second,
 	}
 	if c.Edition != EditionAdmin && c.Edition != EditionWeb {
 		errs = append(errs, fmt.Errorf("LATTIS_EDITION : admin ou web, pas %q", c.Edition))
@@ -170,6 +181,11 @@ func parse(get func(string) string) (*Config, error) {
 		c.WebIdle = d
 	} else {
 		errs = append(errs, errors.New("LATTIS_WEB_IDLE : durée positive attendue (30m)"))
+	}
+	if loc, err := time.LoadLocation(def("LATTIS_TIMEZONE", "Europe/Paris")); err == nil {
+		c.Timezone = loc
+	} else {
+		errs = append(errs, fmt.Errorf("LATTIS_TIMEZONE : fuseau inconnu (%v)", err))
 	}
 	c.TrustProxy = def("LATTIS_TRUST_PROXY", "false") == "true"
 	if n, err := strconv.Atoi(def("LATTIS_RATE_LIMIT", "120")); err == nil && n > 0 {

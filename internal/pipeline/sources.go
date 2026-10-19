@@ -28,8 +28,11 @@ import (
 // MaxBytes borne la taille d'une source (fichier, réponse HTTP).
 const MaxBytes = 100 << 20
 
-// MaxRows borne le nombre de lignes lues.
-const MaxRows = 2_000_000
+// MaxRows borne le nombre de lignes lues, MaxCells lignes × colonnes.
+const (
+	MaxRows  = 2_000_000
+	MaxCells = 20_000_000
+)
 
 // Table est une source lue : en-têtes, puis lignes de textes (nil : vide).
 type Table struct {
@@ -133,6 +136,9 @@ func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline) ([]byte, string, er
 	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
 		return nil, "", errors.New("adresse http(s):// attendue")
 	}
+	if p.SecretRef != "" && !strings.HasPrefix(u, "https://") {
+		return nil, "", errors.New("un secret ne part que sur une adresse https://")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, "", err
@@ -206,8 +212,7 @@ func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline) ([]byte, error) {
 			}
 			return nil
 		}}
-	d := net.Dialer{Timeout: 30 * time.Second}
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(s.Host, strconv.Itoa(port)))
+	conn, err := r.dialer(s.Host).DialContext(ctx, "tcp", net.JoinHostPort(s.Host, strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +444,7 @@ func parseXLSX(b []byte, sheet string) (*Table, error) {
 			return err
 		}
 		defer rc.Close()
-		return xml.NewDecoder(io.LimitReader(rc, MaxBytes*4)).Decode(v)
+		return xml.NewDecoder(io.LimitReader(rc, MaxBytes*2)).Decode(v)
 	}
 	var shared struct {
 		SI []struct {

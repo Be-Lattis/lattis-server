@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -73,8 +74,13 @@ type Runner struct {
 	SecretsDir string
 	AdminURL   string // pour les alertes
 	Metrics    Counter
-	HTTP       *http.Client
-	Now        func() time.Time
+	// AllowedHosts : hôtes ou réseaux internes que les sources et alertes
+	// peuvent joindre malgré la garde réseau (LATTIS_PIPELINE_ALLOWED_HOSTS).
+	AllowedHosts []string
+	// HTTP remplace le client des sources et alertes (tests) ; nil : client
+	// soumis à la garde réseau.
+	HTTP *http.Client
+	Now  func() time.Time
 }
 
 func (r *Runner) now() time.Time {
@@ -88,14 +94,14 @@ func (r *Runner) client() *http.Client {
 	if r.HTTP != nil {
 		return r.HTTP
 	}
-	return &http.Client{Timeout: 5 * time.Minute}
+	return r.guardedClient(5 * time.Minute)
 }
 
 func (r *Runner) dir(p *Pipeline) string { return filepath.Join(r.Dir, p.ID) }
 
 func (r *Runner) secret(ref string) (string, error) {
 	if r.SecretsDir == "" {
-		return "", fmt.Errorf("secret %q : LATTIS_SECRETS_DIR manquant", ref)
+		return "", fmt.Errorf("secret %q : LATTIS_PIPELINE_SECRETS_DIR manquant", ref)
 	}
 	if strings.ContainsAny(ref, `/\`) || ref == ".." || ref == "." {
 		return "", fmt.Errorf("référence de secret invalide : %q", ref)
@@ -108,18 +114,50 @@ func (r *Runner) secret(ref string) (string, error) {
 }
 
 // Run relève les pipelines dus jusqu'à l'arrêt du contexte.
+// Workers : exécutions simultanées par lattisd.
+const Workers = 3
+
+// MaxRun : durée maximale d'une exécution ; au-delà, une exécution « en
+// cours » est tenue pour interrompue (arrêt de lattisd).
+const MaxRun = 30 * time.Minute
+
 func (r *Runner) Run(ctx context.Context) {
-	t := time.NewTicker(Interval)
+	var wg sync.WaitGroup
+	for range Workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			t := time.NewTicker(Interval)
+			defer t.Stop()
+			for {
+				for {
+					ran, err := r.RunDue(ctx)
+					if err != nil {
+						slog.Error("pipelines", "err", err)
+					}
+					if !ran || ctx.Err() != nil {
+						break
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+			}
+		}()
+	}
+	go r.housekeeping(ctx)
+	wg.Wait()
+}
+
+// housekeeping : exécutions interrompues passées en échec, historique borné.
+func (r *Runner) housekeeping(ctx context.Context) {
+	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
-		for {
-			ran, err := r.RunDue(ctx)
-			if err != nil {
-				slog.Error("pipelines", "err", err)
-			}
-			if !ran || ctx.Err() != nil {
-				break
-			}
+		if err := r.Clean(ctx); err != nil {
+			slog.Warn("pipelines : nettoyage", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -127,6 +165,23 @@ func (r *Runner) Run(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// Clean passe en échec les exécutions restées « en cours » au-delà de MaxRun
+// et garde les 200 dernières exécutions de chaque pipeline.
+func (r *Runner) Clean(ctx context.Context) error {
+	limit := r.now().Add(-MaxRun - 5*time.Minute)
+	if _, err := r.Store.DB.Exec(ctx, `UPDATE lattis.pipeline_runs SET status = 'error', finished_at = now(),
+		error = 'exécution interrompue (arrêt de lattisd)' WHERE status = 'running' AND started_at < $1`, limit); err != nil {
+		return err
+	}
+	if _, err := r.Store.DB.Exec(ctx, `UPDATE lattis.pipelines SET running_since = NULL WHERE running_since < $1`, limit); err != nil {
+		return err
+	}
+	_, err := r.Store.DB.Exec(ctx, `DELETE FROM lattis.pipeline_runs r WHERE r.id IN (
+		SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY pipeline_id ORDER BY started_at DESC) AS n
+		                FROM lattis.pipeline_runs) x WHERE x.n > 200)`)
+	return err
 }
 
 // RunDue planifie les pipelines sans échéance, puis exécute au plus un
@@ -139,7 +194,7 @@ func (r *Runner) RunDue(ctx context.Context) (bool, error) {
 	var runID string
 	err := r.Store.AsActor(ctx, "lattisd (pipelines)", func(tx pgx.Tx) error {
 		var err error
-		p, err = scanPipeline(tx.QueryRow(ctx, selectPipeline+` WHERE enabled AND next_run_at <= now()
+		p, err = scanPipeline(tx.QueryRow(ctx, selectPipeline+` WHERE enabled AND next_run_at <= now() AND running_since IS NULL
 			ORDER BY next_run_at LIMIT 1 FOR UPDATE SKIP LOCKED`))
 		if errors.Is(err, pgx.ErrNoRows) {
 			p = nil
@@ -159,8 +214,8 @@ func (r *Runner) RunDue(ctx context.Context) (bool, error) {
 			p.ID, trigger).Scan(&runID); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE lattis.pipelines SET next_run_at = $2, pending_file = NULL, pending_trigger = NULL WHERE id = $1`,
-			p.ID, r.next(p, r.now()))
+		_, err = tx.Exec(ctx, `UPDATE lattis.pipelines SET next_run_at = $2, pending_file = NULL, pending_trigger = NULL,
+			running_since = now() WHERE id = $1`, p.ID, r.next(p, r.now()))
 		return err
 	})
 	if err != nil || p == nil {
@@ -238,7 +293,7 @@ func scanPipeline(row pgx.Row) (*Pipeline, error) {
 
 // Execute lit la source et écrit dans le tableau ; le résultat dit comment.
 func (r *Runner) Execute(ctx context.Context, p *Pipeline) Result {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, MaxRun)
 	defer cancel()
 	var (
 		t    *Table
@@ -295,6 +350,12 @@ func (r *Runner) moveFile(p *Pipeline, file, to string) {
 }
 
 func (r *Runner) finish(ctx context.Context, p *Pipeline, runID string, res Result) error {
+	// Plus d'exécution en cours : le pipeline peut repartir.
+	defer func() {
+		if _, err := r.Store.DB.Exec(context.Background(), `UPDATE lattis.pipelines SET running_since = NULL WHERE id = $1`, p.ID); err != nil {
+			slog.Warn("pipeline : fin d'exécution", "pipeline", p.ID, "err", err)
+		}
+	}()
 	rejects, _ := json.Marshal(res.Rejects)
 	if res.Rejects == nil {
 		rejects = []byte("[]")

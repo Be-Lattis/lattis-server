@@ -191,6 +191,8 @@ func serve(doMigrate bool) error {
 	go reps.Run(ctx)
 	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version}
 	authSvc.AdminURL = "/admin/"
+	// Horaires des pipelines, dates importées et affichage : fuseau du serveur.
+	time.Local = cfg.Timezone
 	auth.SourceURL, admin.SourceURL = cfg.SourceURL, cfg.SourceURL
 	srv := &httpserver.Server{Config: cfg, Store: st, Keys: keys, Auth: authSvc, Admin: adminSvc, Replicas: reps}
 	if cfg.Edition == config.EditionWeb {
@@ -225,8 +227,8 @@ func serve(doMigrate bool) error {
 	internal := &http.Server{Addr: cfg.MetricsAddr, Handler: metricsMux, ReadHeaderTimeout: 10 * time.Second}
 
 	go purgeLoop(ctx, st)
-	go (&pipeline.Runner{Store: st, Users: users, Dir: cfg.PipelineDir, SecretsDir: cfg.SecretsDir,
-		AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}).Run(ctx)
+	go (&pipeline.Runner{Store: st, Users: users, Dir: cfg.PipelineDir, SecretsDir: cfg.PipelineSecretsDir,
+		AllowedHosts: cfg.PipelineAllowedHosts, AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}).Run(ctx)
 	errc := make(chan error, 2)
 	go func() {
 		slog.Info("lattisd à l'écoute", "addr", cfg.ListenAddr, "issuer", cfg.Issuer(), "edition", cfg.Edition)
