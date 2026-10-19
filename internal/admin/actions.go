@@ -348,10 +348,10 @@ func setLevel(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 func userByEmail(ctx context.Context, tx pgx.Tx, email string) (string, error) {
 	var uid string
 	var verified bool
-	err := tx.QueryRow(ctx, `SELECT id::text, email_verified FROM lattis.users WHERE email = $1 AND NOT disabled
+	err := tx.QueryRow(ctx, `SELECT id::text, email_verified FROM lattis.users WHERE email = $1
 		ORDER BY email_verified DESC, last_login_at DESC NULLS LAST LIMIT 1`, email).Scan(&uid, &verified)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", inputError("Aucun compte actif pour " + email + " : créez-le (page Utilisateurs) ou invitez la personne à un classeur.")
+		return "", inputError("Aucun compte pour " + email + " : créez-le (page Utilisateurs) ou invitez la personne à un classeur.")
 	}
 	if err == nil && !verified {
 		return "", inputError("L'adresse " + email + " a été choisie par la personne elle-même et n'est pas vérifiée : elle ne peut pas recevoir de droits par adresse.")
