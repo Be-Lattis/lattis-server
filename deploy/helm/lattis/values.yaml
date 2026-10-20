@@ -28,7 +28,21 @@ secrets:
   providersSecret: ""
 
 lattisd:
-  replicaCount: 1
+  # Deux lattisd au moins : une mise à jour (ou la perte d'un nœud) ne coupe
+  # pas le service. Les mises à jour remplacent un pod à la fois, sans
+  # jamais descendre sous replicaCount (docs/mise-a-jour.md §5).
+  replicaCount: 2
+  # À l'arrêt d'un pod : sortie du service (/readyz en 503), puis
+  # shutdownDelay pendant lequel il sert encore (le temps que l'Ingress le
+  # retire), puis shutdownGrace pour finir les requêtes en cours.
+  shutdownDelay: 5s
+  shutdownGrace: 15s
+  terminationGracePeriodSeconds: 45
+  # Garde au moins un lattisd pendant les opérations sur les nœuds
+  # (vidage d'un nœud) quand replicaCount > 1.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   bootstrapOwner: ""   # adresse du premier propriétaire du serveur
   migrate: true        # migrations au démarrage
   trustProxy: true     # derrière un Ingress
@@ -45,6 +59,11 @@ lattisd:
     enabled: false
     className: ""
     annotations: {}
+    # Édition web avec plusieurs lattisd : une personne doit retrouver le
+    # lattisd qui porte son moteur. Avec ingress-nginx, le chart pose une
+    # affinité par cookie ; pour un autre contrôleur, mettre false et donner
+    # l'équivalent dans annotations.
+    stickyWeb: true
     host: ""
     tls: []            # [{secretName: lattis-tls, hosts: [lattis.example.com]}]
 

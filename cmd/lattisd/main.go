@@ -150,7 +150,9 @@ func migrateOnly(args []string) error {
 	switch {
 	case *status:
 		fmt.Printf("lattisd %s : base en version %d, migrations embarquées jusqu'à %d\n", httpserver.Version, s.Current, s.Latest)
-		if s.Newer() {
+		if s.Newer() && s.Compatible {
+			fmt.Println("La base est plus récente que ce lattisd, sans migration incompatible : il peut encore la servir.")
+		} else if s.Newer() {
 			fmt.Println("La base est plus récente que ce lattisd : installez un lattisd au moins aussi récent.")
 		}
 		for _, m := range s.Pending {
@@ -188,6 +190,12 @@ func checkSchema(ctx context.Context, st *store.Store, doMigrate bool) error {
 	if err != nil {
 		return fmt.Errorf("état des migrations : %w", err)
 	}
+	if s.Newer() && s.Compatible {
+		// Déploiement progressif ou retour à la version précédente : les
+		// migrations en plus ne cassent pas ce lattisd.
+		slog.Warn("base plus récente que ce lattisd, mais compatible : service assuré", "base", s.Current, "lattisd", s.Latest)
+		return nil
+	}
 	if s.Newer() {
 		return fmt.Errorf("base en version %d, plus récente que ce lattisd (migrations jusqu'à %d) : installez un lattisd au moins aussi récent que celui qui a migré la base", s.Current, s.Latest)
 	}
@@ -220,8 +228,12 @@ func serve(doMigrate bool) error {
 	if err != nil {
 		return fmt.Errorf("clé de signature : %w", err)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// sig : demande d'arrêt ; ctx : vie des tâches de fond, annulée après
+	// le délai de sortie du service (LATTIS_SHUTDOWN_DELAY).
+	sig, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
 
 	st, err := store.Open(ctx, cfg.PGRWURL)
 	if err != nil {
@@ -359,12 +371,24 @@ func serve(doMigrate bool) error {
 	select {
 	case err := <-errc:
 		return err
-	case <-ctx.Done():
+	case <-sig.Done():
 	}
+	// Arrêt sans couper personne : /readyz répond 503 tout de suite, le
+	// répartiteur retire ce lattisd, qui continue de servir pendant
+	// LATTIS_SHUTDOWN_DELAY ; puis les flux /api/events se ferment (les
+	// postes se réabonnent ailleurs) et les requêtes en cours se terminent.
+	srv.Drain()
+	if cfg.ShutdownDelay > 0 {
+		slog.Info("arrêt demandé : sortie du service", "delay", cfg.ShutdownDelay)
+		time.Sleep(cfg.ShutdownDelay)
+	}
+	srv.Events.Drain()
 	sctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
 	defer cancel()
 	_ = internal.Shutdown(sctx)
-	return public.Shutdown(sctx)
+	err = public.Shutdown(sctx)
+	cancelRun()
+	return err
 }
 
 func purgeLoop(ctx context.Context, st *store.Store) {

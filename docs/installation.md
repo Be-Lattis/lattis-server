@@ -122,7 +122,7 @@ Points à connaître :
 - **Postes hors du cluster** : le parent passe par `postgres.service` (souvent `LoadBalancer`). Chaque réplica est annoncé séparément (`replicas.publicEndpoints`, un par pod, dans l'ordre `-replica-0`, `-replica-1`…) : il faut donc une adresse par pod (un `LoadBalancer` par pod, ou un routage TCP par nom). Sans `publicEndpoints`, ce sont les noms DNS internes des pods, valables seulement pour des postes dans le cluster.
 - **Ajouter un réplica** : augmenter `replicas.count` (et `publicEndpoints`). Le pod copie le parent au premier démarrage (`pg_basebackup`), ce qui peut être long sur une grosse base ; il n'est annoncé qu'une fois à jour.
 - **Retirer un réplica** : réduire `replicas.count`, puis supprimer son emplacement sur le parent, sinon le parent garde ses WAL : `SELECT pg_drop_replication_slot('lattis_replica_2');` (nom = nom du pod, tirets en `_`).
-- **Plusieurs `lattisd`** (`lattisd.replicaCount`) : possible, tout l'état est en base ; la limite de débit est comptée par instance.
+- **Plusieurs `lattisd`** (`lattisd.replicaCount`, 2 par défaut) : tout l'état est en base ; la limite de débit est comptée par instance. Les mises à jour se font sans interruption (`docs/mise-a-jour.md`, « Sans interruption »). Édition web : affinité par cookie posée pour ingress-nginx (`lattisd.ingress.stickyWeb`), l'équivalent est à donner pour un autre contrôleur.
 - **Clé de signature** : les pods PostgreSQL en tirent la clé publique au démarrage. Après une rotation (§8), redémarrer `lattisd` puis les pods PostgreSQL (`kubectl rollout restart statefulset`).
 - **Bascule** : le chart ne promeut pas un réplica tout seul. Si le parent est perdu : `kubectl exec` dans un réplica, `pg_ctl promote`, puis faire pointer le parent sur lui (ou restaurer une sauvegarde). Pour une bascule automatique et des sauvegardes gérées, une intégration à l'opérateur CloudNativePG est une possibilité future, non confirmée (spécification §17).
 
@@ -165,6 +165,8 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_TLS_CERT_FILE`, `LATTIS_TLS_KEY_FILE` | vide | HTTPS servi par `lattisd` lui-même (sans mandataire). |
 | `LATTIS_TRUST_PROXY` | `false` | Lire l'adresse du client dans `X-Forwarded-For`. |
 | `LATTIS_METRICS_ADDR` | `:9464` | Adresse de `/metrics` (réseau interne). |
+| `LATTIS_SHUTDOWN_DELAY` | `0s` | À l'arrêt, temps pendant lequel `lattisd` sert encore après être sorti du service (`/readyz` en 503) ; 5 s dans le chart (`docs/mise-a-jour.md`). |
+| `LATTIS_SHUTDOWN_GRACE` | `15s` | À l'arrêt, temps laissé aux requêtes en cours. |
 | `LATTIS_RATE_LIMIT` | `120` | Requêtes par minute et par adresse sur `/oauth/*`, `/login/*`, `/setup`. |
 | `LATTIS_MIN_CLIENT_VERSION` | `0.0.0` | Version minimale de Lattis acceptée (publiée dans la découverte). |
 | `LATTIS_EXTRA_REDIRECT_URIS` | vide | URI de redirection supplémentaires pour l'application de bureau (en plus du bouclage local). |

@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: lattisd
 spec:
   type: {{ .Values.lattisd.service.type }}
+  {{- if and .Values.web.enabled (gt (int .Values.lattisd.replicaCount) 1) }}
+  # Édition web : une personne reste sur le lattisd qui porte son moteur
+  # (accès sans Ingress ; l'Ingress a sa propre affinité).
+  sessionAffinity: ClientIP
+  {{- end }}
   selector: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 4 }}
   ports:
     - { name: http, port: {{ .Values.lattisd.service.port }}, targetPort: http }
@@ -22,6 +27,10 @@ metadata:
   labels: {{- include "lattis.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.lattisd.replicaCount }}
+  # Un pod à la fois, l'ancien retiré seulement quand le nouveau est prêt.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
   selector:
     matchLabels: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 6 }}
   template:
@@ -34,6 +43,7 @@ spec:
       {{- if .Values.web.enabled }}
       serviceAccountName: {{ $fn }}-lattisd
       {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.lattisd.terminationGracePeriodSeconds }}
       securityContext:
         runAsNonRoot: true
         fsGroup: 65532
@@ -51,7 +61,11 @@ spec:
             - { name: LATTIS_EDITION, value: web }
             - { name: LATTIS_WEB_LAUNCHER, value: kubernetes }
             - { name: LATTIS_WEB_K8S_IMAGE, value: "{{ .Values.web.engineImage.repository }}:{{ .Values.web.engineImage.tag }}" }
-            - { name: LATTIS_WEB_TOKEN_URL, value: "http://{{ $fn }}-lattisd.{{ .Release.Namespace }}.svc:8081/engine/token" }
+            # Jetons des moteurs : demandés au pod qui les a lancés (seul à
+            # connaître leur secret), pas au Service, qui répartit entre pods.
+            - name: LATTIS_POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - { name: LATTIS_WEB_TOKEN_URL, value: "http://$(LATTIS_POD_IP):8081/engine/token" }
             - { name: LATTIS_WEB_MAX_ENGINES, value: {{ .Values.web.maxEngines | quote }} }
             - { name: LATTIS_WEB_POOL_SPARE, value: {{ .Values.web.spare | quote }} }
             - { name: LATTIS_WEB_IDLE, value: {{ .Values.web.idle | quote }} }
@@ -89,6 +103,8 @@ spec:
             - { name: LATTIS_SECRETS_DIR, value: /etc/lattis/oauth }
             {{- end }}
             - { name: LATTIS_METRICS_ADDR, value: ":9464" }
+            - { name: LATTIS_SHUTDOWN_DELAY, value: {{ .Values.lattisd.shutdownDelay | quote }} }
+            - { name: LATTIS_SHUTDOWN_GRACE, value: {{ .Values.lattisd.shutdownGrace | quote }} }
             {{- with .Values.lattisd.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -150,7 +166,14 @@ kind: Ingress
 metadata:
   name: {{ $fn }}-lattisd
   labels: {{- include "lattis.labels" . | nindent 4 }}
-  {{- with .Values.lattisd.ingress.annotations }}
+  {{- $ann := dict }}
+  {{- if and .Values.web.enabled .Values.lattisd.ingress.stickyWeb (gt (int .Values.lattisd.replicaCount) 1) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/affinity" "cookie" }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/session-cookie-name" "lattis_route" }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/affinity-mode" "persistent" }}
+  {{- end }}
+  {{- $ann = merge (deepCopy (.Values.lattisd.ingress.annotations | default dict)) $ann }}
+  {{- with $ann }}
   annotations: {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
@@ -170,6 +193,18 @@ spec:
               service:
                 name: {{ $fn }}-lattisd
                 port: { name: http }
+{{- end }}
+{{- if and .Values.lattisd.podDisruptionBudget.enabled (gt (int .Values.lattisd.replicaCount) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fn }}-lattisd
+  labels: {{- include "lattis.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.lattisd.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "lattis.selector" (dict "root" . "component" "lattisd") | nindent 6 }}
 {{- end }}
 {{- if .Values.metrics.serviceMonitor.enabled }}
 ---

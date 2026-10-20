@@ -42,10 +42,25 @@ func TestMigrations(t *testing.T) {
 	if _, err := db.Super.Exec(ctx, `INSERT INTO lattis.schema_version (version, name) VALUES ($1, 'future.sql')`, latest+1); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := migrate.Check(ctx, db.Store.DB); !st.Newer() {
-		t.Fatal("base plus récente non détectée")
+	if st, _ := migrate.Check(ctx, db.Store.DB); !st.Newer() || !st.Compatible || !st.Serves() {
+		t.Fatalf("base plus récente, compatible : %+v", st)
+	}
+	// Migration compatible en plus : ce lattisd reste prêt (déploiement
+	// progressif, retour à la version précédente).
+	if err := migrate.Ready(ctx, db.Store.DB); err != nil {
+		t.Fatalf("prêt sur une base en avance compatible : %v", err)
 	}
 	if _, err := migrate.Up(ctx, db.Store.DB); !errors.Is(err, migrate.ErrNewer) {
 		t.Fatalf("montée sur une base plus récente : %v", err)
+	}
+	// Migration incompatible au-delà : plus prêt, refus au démarrage.
+	if _, err := db.Super.Exec(ctx, `INSERT INTO lattis.schema_version (version, name, incompatible) VALUES ($1, 'future2.sql', true)`, latest+2); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := migrate.Check(ctx, db.Store.DB); st.Compatible || st.Serves() {
+		t.Fatalf("migration incompatible non vue : %+v", st)
+	}
+	if err := migrate.Ready(ctx, db.Store.DB); !errors.Is(err, migrate.ErrNewer) {
+		t.Fatalf("prêt malgré une migration incompatible : %v", err)
 	}
 }

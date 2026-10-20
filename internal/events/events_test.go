@@ -173,4 +173,13 @@ func TestRelay(t *testing.T) {
 	if hub.Subscribers() != 1 {
 		t.Fatalf("abonnés : %d", hub.Subscribers())
 	}
+	// Arrêt de lattisd : le flux se ferme avec « restart » (le poste se
+	// réabonne ailleurs), les nouveaux abonnements sont refusés.
+	hub.Drain()
+	next(t, c, "restart")
+	c2, cancel2 := stream(t, srv.URL+"?u=reader&data=1")
+	defer cancel2()
+	if e := <-c2; e.kind != "status" || e.data["code"] != http.StatusServiceUnavailable {
+		t.Fatalf("abonnement pendant l'arrêt : %+v", e)
+	}
 }

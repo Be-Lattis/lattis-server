@@ -221,6 +221,7 @@ Au lieu d'un `LISTEN` par poste sur le parent, le poste suit ses classeurs par u
   - `reset` `{}` : des événements ont pu se perdre (lattisd a dû rouvrir son écoute, ou le poste lisait trop lentement) : resynchroniser tous les classeurs suivis.
   - `revoked` `{"workbook"}` : le poste a perdu l'accès au classeur (après `*acl`) ; il n'en reçoit plus les changements.
   - `expired` `{}` : le jeton d'accès du flux a expiré ; lattisd ferme le flux. Se réabonner avec un jeton neuf (un compte désactivé est alors refusé, `401`).
+  - `restart` `{}` : ce lattisd s'arrête (mise à jour) ; il ferme le flux. Se réabonner tout de suite (même jeton) : la demande arrive à un autre lattisd. Pendant l'arrêt, un abonnement reçoit `503` avec `Retry-After: 1`.
   - `presence` `{"workbook", "users": [{"id", "name", "email"}]}` : les membres qui suivent le classeur par le relais (un par utilisateur, quel que soit son nombre de postes), envoyé à chaque arrivée ou départ d'un poste ; le poste s'y trouve lui-même.
 - **Lire sur un réplica** : avant de lire les deltas sur `ro`, attendre que le réplica ait rejoué la position reçue : `SELECT pg_last_wal_replay_lsn() >= '<lsn>'::pg_lsn` (quelques dizaines de millisecondes d'ordinaire ; au-delà de quelques secondes, lire sur `rw`).
 - **Reconnexion** : à la coupure du flux, rouvrir (avec un délai croissant), puis resynchroniser depuis le dernier `since` comme après `reset`.

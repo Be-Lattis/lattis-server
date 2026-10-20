@@ -73,6 +73,8 @@ type Hub struct {
 
 	mu        sync.Mutex
 	subs      map[string]map[*sub]struct{} // canal → abonnés
+	draining  chan struct{}
+	drainOnce sync.Once
 	dataSubs  map[*sub]struct{}
 	lastUse   map[string]time.Time // canal → dernier abonné parti
 	listening map[string]bool
@@ -80,8 +82,19 @@ type Hub struct {
 	once      sync.Once
 }
 
+// Drain ferme les flux en cours avec l'événement « restart » (le poste se
+// réabonne, auprès d'un autre lattisd) et refuse les nouveaux.
+func (h *Hub) Drain() {
+	if h == nil {
+		return
+	}
+	h.init()
+	h.drainOnce.Do(func() { close(h.draining) })
+}
+
 func (h *Hub) init() {
 	h.once.Do(func() {
+		h.draining = make(chan struct{})
 		h.subs = map[string]map[*sub]struct{}{}
 		h.dataSubs = map[*sub]struct{}{}
 		h.lastUse = map[string]time.Time{}
@@ -509,6 +522,13 @@ func (h *Hub) Handler(bearer func(*http.Request) (store.User, time.Time, error))
 			http.Error(w, fmt.Sprintf("de 1 à %d classeurs, ou data=1", maxWorkbook), http.StatusBadRequest)
 			return
 		}
+		select {
+		case <-h.draining:
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "lattisd en cours d'arrêt", http.StatusServiceUnavailable)
+			return
+		default:
+		}
 		s, err := h.subscribe(r.Context(), u, wbs, data)
 		if errors.Is(err, ErrForbidden) {
 			http.Error(w, err.Error(), http.StatusForbidden)
@@ -559,6 +579,10 @@ func (h *Hub) Handler(bearer func(*http.Request) (store.User, time.Time, error))
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-h.draining:
+				write(w, "restart", map[string]any{})
+				_ = rc.Flush()
 				return
 			case <-expired:
 				write(w, "expired", map[string]any{})

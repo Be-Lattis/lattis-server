@@ -14,7 +14,7 @@ Une nouvelle image apporte donc ses réglages sans `ALTER SYSTEM`. Ne modifiez p
 **`lattisd`** :
 
 1. Il lit la version du schéma (`lattis.schema_version`).
-2. Si la base a été migrée par un `lattisd` plus récent, il **refuse de démarrer** : installez une version au moins aussi récente.
+2. Si la base a été migrée par un `lattisd` plus récent, il ne démarre que si aucune des migrations en plus n'est marquée incompatible (voir « Sans interruption ») ; sinon il **refuse de démarrer** : installez une version au moins aussi récente.
 3. S'il manque des migrations :
    - avec `--migrate` (Compose et chart Helm par défaut), il les applique, chacune dans sa transaction ;
    - sans `--migrate`, il refuse de démarrer et dit quelle commande lancer.
@@ -54,13 +54,42 @@ docker compose up -d --build
 docker compose logs lattisd | grep -i migration
 ```
 
-**Kubernetes** : `helm upgrade lattis deploy/helm/lattis -n lattis -f lattis-values.yaml`. Avec plusieurs `lattisd`, le nouveau pod migre au démarrage ; les anciens pods continuent de servir pendant ce temps (les migrations ajoutent sans retirer ce dont l'ancienne version a besoin, sauf mention contraire dans les notes de version).
+**Kubernetes** : `helm upgrade lattis deploy/helm/lattis -n lattis -f lattis-values.yaml`. Sans interruption, voir ci-dessous.
+
+Docker Compose fait tourner un seul `lattisd` : la mise à jour le remplace, d'où une coupure de quelques secondes (les postes de bureau gardent leurs connexions à PostgreSQL ; seuls la connexion au compte, l'administration, le relais des changements et l'application web s'interrompent).
 
 Ensuite, la page **État** de l'administration montre la version du schéma, le nombre de connexions PostgreSQL permises et les écarts éventuels.
 
+## Sans interruption (Kubernetes)
+
+Avec le chart par défaut, `helm upgrade` ne coupe pas le service :
+
+- **Deux `lattisd` au moins** (`lattisd.replicaCount: 2`), remplacés un à la fois : un nouveau pod démarre, migre, devient prêt, puis seulement un ancien s'arrête (`maxSurge: 1`, `maxUnavailable: 0`). Un PodDisruptionBudget garde un `lattisd` pendant le vidage d'un nœud.
+- **Les anciens pods restent dans le service pendant la migration.** `/readyz` accepte une base en avance tant qu'aucune des migrations en plus n'est marquée incompatible : l'ancienne version continue donc de répondre pendant tout le déploiement.
+- **Arrêt en douceur** : un pod qui s'arrête passe `/readyz` en 503, continue de servir `LATTIS_SHUTDOWN_DELAY` (5 s dans le chart) le temps que l'Ingress le retire, ferme les flux `/api/events` avec l'événement `restart` (le poste se réabonne auprès d'un autre `lattisd`), puis finit les requêtes en cours (`LATTIS_SHUTDOWN_GRACE`, 15 s). `terminationGracePeriodSeconds` (45 s) couvre le tout.
+- **Retour en arrière sans restauration** : comme l'ancienne version sert une base migrée compatible, `helm rollback` suffit tant qu'aucune migration incompatible n'est passée.
+
+Ce qui s'interrompt encore :
+
+- **Application web** : les moteurs appartiennent au `lattisd` qui les a lancés. Quand ce pod est remplacé, les personnes qu'il servait doivent recharger la page (leur cache est gardé). Avec plusieurs `lattisd`, une personne doit retrouver le pod qui porte son moteur : le chart pose une affinité par cookie pour ingress-nginx (`lattisd.ingress.stickyWeb`) ; avec un autre contrôleur, donnez l'équivalent dans `lattisd.ingress.annotations`.
+- **Une migration incompatible** : les anciens pods sortent du service dès qu'elle est appliquée, jusqu'à ce que les nouveaux soient prêts (courte coupure). Les notes de version le signalent.
+- **PostgreSQL** : changer l'image du parent le redémarre, pour tout le monde.
+
+### Règle pour écrire une migration
+
+Une migration doit rester **compatible avec la version précédente de `lattisd`**, qui tourne encore pendant le déploiement : ajouter des tables, colonnes (avec valeur par défaut ou NULL) et fonctions, remplacer une fonction en gardant sa signature et son sens. Retirer ou renommer se fait en deux temps : la version N cesse de s'en servir, la version N+1 le retire.
+
+Une migration qui ne peut pas respecter cette règle porte la ligne :
+
+```sql
+-- lattis:incompatible
+```
+
+Elle est notée comme telle dans `lattis.schema_version` : les `lattisd` plus anciens refusent alors la base (`/readyz` en 503, refus au démarrage), et le retour en arrière demande la restauration d'une sauvegarde.
+
 ## Revenir en arrière
 
-Les migrations ne se défont pas : un `lattisd` plus ancien refuse de démarrer sur une base migrée par un plus récent (c'est voulu, il ne connaît pas les nouvelles tables). Pour revenir en arrière :
+Les migrations ne se défont pas. Si aucune migration incompatible n'est passée depuis la version d'avant, il suffit de réinstaller l'ancienne image (`helm rollback`, ou l'ancienne image avec Compose) : elle sert la base migrée. Sinon, un `lattisd` plus ancien refuse de démarrer sur la base (c'est voulu, elle a changé sous lui), et il faut :
 
 1. arrêter `lattisd` ;
 2. restaurer la sauvegarde :

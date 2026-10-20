@@ -24,6 +24,24 @@ type Migration struct {
 	Version int
 	Name    string
 	SQL     string
+	// Incompatible : la migration casse le lattisd précédent (ligne
+	// « -- lattis:incompatible » dans le fichier). Par défaut, une migration
+	// est compatible : elle ajoute ou remplace sans retirer ce dont la
+	// version précédente de lattisd a besoin, qui continue donc de servir
+	// pendant un déploiement progressif (docs/mise-a-jour.md).
+	Incompatible bool
+}
+
+// IncompatibleMarker : ligne qui marque une migration incompatible.
+const IncompatibleMarker = "-- lattis:incompatible"
+
+func incompatible(sql string) bool {
+	for _, line := range strings.Split(sql, "\n") {
+		if strings.TrimSpace(line) == IncompatibleMarker {
+			return true
+		}
+	}
+	return false
 }
 
 // lockKey sert de verrou consultatif : deux lattisd qui démarrent ensemble
@@ -51,7 +69,7 @@ func All() ([]Migration, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Migration{Version: v, Name: name, SQL: string(body)})
+		out = append(out, Migration{Version: v, Name: name, SQL: string(body), Incompatible: incompatible(string(body))})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Version < out[j].Version })
 	for i := range out {
@@ -101,10 +119,17 @@ type Status struct {
 	// Modified : migrations appliquées dont le fichier embarqué a changé
 	// depuis (à examiner : la base ne les rejouera pas).
 	Modified []string
+	// Compatible : base plus récente que ce lattisd, mais sans migration
+	// incompatible au-delà de ses migrations : il peut encore la servir
+	// (déploiement progressif, retour à la version précédente).
+	Compatible bool
 }
 
 // Newer : la base est plus récente que les migrations embarquées.
 func (s Status) Newer() bool { return s.Current > s.Latest }
+
+// Serves : ce lattisd peut servir la base (à jour, ou en avance compatible).
+func (s Status) Serves() bool { return s.Current == s.Latest || (s.Newer() && s.Compatible) }
 
 func checksum(m Migration) string {
 	h := sha256.Sum256([]byte(m.SQL))
@@ -123,7 +148,8 @@ func ensure(ctx context.Context, q interface {
 			applied_at timestamptz NOT NULL DEFAULT now()
 		);
 		ALTER TABLE lattis.schema_version ADD COLUMN IF NOT EXISTS sha256 text;
-		ALTER TABLE lattis.schema_version ADD COLUMN IF NOT EXISTS lattisd text`)
+		ALTER TABLE lattis.schema_version ADD COLUMN IF NOT EXISTS lattisd text;
+		ALTER TABLE lattis.schema_version ADD COLUMN IF NOT EXISTS incompatible boolean NOT NULL DEFAULT false`)
 	if err != nil {
 		return fmt.Errorf("table schema_version : %w", err)
 	}
@@ -168,6 +194,12 @@ func Check(ctx context.Context, db *pgxpool.Pool) (Status, error) {
 			}
 		}
 	}
+	if st.Newer() {
+		st.Compatible, err = compatibleAbove(ctx, db, st.Latest)
+		if err != nil {
+			return st, err
+		}
+	}
 	for _, m := range all {
 		switch {
 		case m.Version > cur:
@@ -177,6 +209,49 @@ func Check(ctx context.Context, db *pgxpool.Pool) (Status, error) {
 		}
 	}
 	return st, nil
+}
+
+// compatibleAbove : aucune migration appliquée au-delà de latest n'est
+// marquée incompatible (base migrée par un lattisd qui note la marque).
+func compatibleAbove(ctx context.Context, db *pgxpool.Pool, latest int) (bool, error) {
+	var noted bool
+	if err := db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'lattis' AND table_name = 'schema_version' AND column_name = 'incompatible')`).Scan(&noted); err != nil {
+		return false, err
+	}
+	if !noted {
+		return false, nil
+	}
+	var bad bool
+	err := db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM lattis.schema_version WHERE version > $1 AND incompatible)`, latest).Scan(&bad)
+	return !bad, err
+}
+
+// ErrPending : migrations pas encore appliquées.
+var ErrPending = errors.New("migrations en retard")
+
+// Ready : ce lattisd peut-il servir la base ? Rapide (sonde /readyz) : une
+// lecture de la version, et des marques seulement si la base est en avance.
+func Ready(ctx context.Context, db *pgxpool.Pool) error {
+	cur, err := Current(ctx, db)
+	if err != nil {
+		return err
+	}
+	latest := Latest()
+	switch {
+	case cur == latest:
+		return nil
+	case cur < latest:
+		return fmt.Errorf("%w (base en version %d, lattisd en %d)", ErrPending, cur, latest)
+	}
+	ok, err := compatibleAbove(ctx, db, latest)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w : base en version %d avec une migration incompatible au-delà de %d", ErrNewer, cur, latest)
+	}
+	return nil
 }
 
 // Version : version de lattisd notée avec chaque migration appliquée.
@@ -244,8 +319,8 @@ func run(ctx context.Context, db *pgxpool.Pool, max int, dry bool) (int, error) 
 		if dry {
 			return nil
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO lattis.schema_version (version, name, sha256, lattisd) VALUES ($1, $2, $3, $4)`,
-			m.Version, m.Name, checksum(m), Version)
+		_, err := tx.Exec(ctx, `INSERT INTO lattis.schema_version (version, name, sha256, lattisd, incompatible) VALUES ($1, $2, $3, $4, $5)`,
+			m.Version, m.Name, checksum(m), Version, m.Incompatible)
 		return err
 	}
 	applied := 0

@@ -121,6 +121,10 @@ type Config struct {
 	Timezone             *time.Location
 	PipelineAllowedHosts []string
 	ShutdownGrace        time.Duration
+	// ShutdownDelay : à l'arrêt, temps pendant lequel lattisd continue de
+	// servir après être sorti du service (/readyz en 503), le temps que le
+	// répartiteur le retire.
+	ShutdownDelay time.Duration
 	// RateLimit : requêtes par minute et par adresse sur /oauth/*, /login/*, /setup.
 	RateLimit int
 	// ReplicaMaxLag : retard au-delà duquel un réplica est retiré de la
@@ -247,6 +251,16 @@ func parse(get func(string) string) (*Config, error) {
 		c.WebMaxEngines = n
 	} else {
 		errs = append(errs, errors.New("LATTIS_WEB_MAX_ENGINES : entier positif attendu"))
+	}
+	if d, err := time.ParseDuration(def("LATTIS_SHUTDOWN_DELAY", "0s")); err == nil && d >= 0 {
+		c.ShutdownDelay = d
+	} else {
+		errs = append(errs, errors.New("LATTIS_SHUTDOWN_DELAY : durée attendue (5s)"))
+	}
+	if d, err := time.ParseDuration(def("LATTIS_SHUTDOWN_GRACE", "15s")); err == nil && d > 0 {
+		c.ShutdownGrace = d
+	} else {
+		errs = append(errs, errors.New("LATTIS_SHUTDOWN_GRACE : durée positive attendue (15s)"))
 	}
 	if d, err := time.ParseDuration(def("LATTIS_WEB_IDLE", "30m")); err == nil && d > 0 {
 		c.WebIdle = d

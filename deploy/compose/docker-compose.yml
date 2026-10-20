@@ -69,6 +69,8 @@ services:
   lattisd:
     # Édition web : LATTIS_IMAGE=be-lattis/lattisd:web LATTIS_EDITION=web
     image: ${LATTIS_IMAGE:-be-lattis/lattisd:dev}
+    # Laisse finir les requêtes en cours à l'arrêt (LATTIS_SHUTDOWN_GRACE).
+    stop_grace_period: 30s
     depends_on:
       postgres: { condition: service_healthy }
     environment:

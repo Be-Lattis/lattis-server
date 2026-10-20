@@ -4,9 +4,11 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/lalamefine/lattis/protocol"
@@ -46,7 +48,12 @@ type Server struct {
 	Forms *forms.Handler
 	// Events : relais des changements aux postes (GET /api/events).
 	Events *events.Hub
+
+	draining atomic.Bool
 }
+
+// Drain sort lattisd du service : /readyz répond 503, le reste continue.
+func (s *Server) Drain() { s.draining.Store(true) }
 
 // Handler renvoie le routeur avec ses intergiciels.
 func (s *Server) Handler() http.Handler {
@@ -182,13 +189,18 @@ func (s *Server) jwks(w http.ResponseWriter, r *http.Request) {
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	v, err := migrate.Current(ctx, s.Store.DB)
-	if err != nil {
-		http.Error(w, "PostgreSQL injoignable", http.StatusServiceUnavailable)
+	if s.draining.Load() {
+		http.Error(w, "arrêt en cours", http.StatusServiceUnavailable)
 		return
 	}
-	if v != migrate.Latest() {
-		http.Error(w, "migrations en retard", http.StatusServiceUnavailable)
+	// Base à jour, ou en avance sans migration incompatible : pendant un
+	// déploiement progressif, l'ancienne version reste dans le service.
+	if err := migrate.Ready(ctx, s.Store.DB); err != nil {
+		if !errors.Is(err, migrate.ErrPending) && !errors.Is(err, migrate.ErrNewer) {
+			http.Error(w, "PostgreSQL injoignable", http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	_, _ = w.Write([]byte("ok\n"))
