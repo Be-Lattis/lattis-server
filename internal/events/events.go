@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,10 +42,20 @@ const (
 
 // Event : un changement poussé à un poste.
 type Event struct {
-	Kind     string `json:"-"`                  // change, data, reset, revoked
-	Workbook string `json:"workbook,omitempty"` // classeur (change, revoked)
+	Kind     string `json:"-"`                  // change, data, reset, revoked, presence
+	Workbook string `json:"workbook,omitempty"` // classeur (change, revoked, presence)
 	Payload  string `json:"payload,omitempty"`  // charge du NOTIFY (identifiant de tableau, *meta, *acl…)
 	LSN      string `json:"lsn,omitempty"`      // position WAL du parent après le changement
+	// Users : membres qui suivent le classeur en ce moment (presence), un
+	// par utilisateur, quel que soit son nombre de postes.
+	Users []Present `json:"users,omitempty"`
+}
+
+// Present : un membre qui suit un classeur (événement presence).
+type Present struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
 }
 
 type sub struct {
@@ -346,20 +357,57 @@ func (h *Hub) subscribe(ctx context.Context, u store.User, workbooks []string, d
 	}
 	h.mu.Unlock()
 	h.poke()
+	for ch := range s.channels {
+		h.presence(ch)
+	}
 	return s, nil
+}
+
+// presence envoie à chaque poste qui suit le classeur du canal ch la liste
+// des membres qui le suivent (arrivée ou départ d'un poste). Un abonné qui
+// n'a pas encore reçu « ready » la reçoit à sa suite.
+func (h *Hub) presence(ch string) {
+	h.mu.Lock()
+	var targets []*sub
+	seen := map[string]bool{}
+	var users []Present
+	wb := ""
+	for s := range h.subs[ch] {
+		targets = append(targets, s)
+		wb = s.channels[ch]
+		if !seen[s.user.ID] {
+			seen[s.user.ID] = true
+			name := s.user.DisplayName
+			if name == "" {
+				name = s.user.Email
+			}
+			users = append(users, Present{ID: s.user.ID, Name: name, Email: s.user.Email})
+		}
+	}
+	h.mu.Unlock()
+	slices.SortFunc(users, func(a, b Present) int { return strings.Compare(a.Name, b.Name) })
+	for _, s := range targets {
+		h.send(s, Event{Kind: "presence", Workbook: wb, Users: users})
+	}
 }
 
 func (h *Hub) unsubscribe(s *sub) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	s.closed = true
+	var left []string
 	for ch := range s.channels {
 		delete(h.subs[ch], s)
 		if len(h.subs[ch]) == 0 {
 			h.lastUse[ch] = time.Now()
+		} else {
+			left = append(left, ch)
 		}
 	}
 	delete(h.dataSubs, s)
+	h.mu.Unlock()
+	for _, ch := range left {
+		h.presence(ch)
+	}
 }
 
 // recheckWorkers : vérifications de droits simultanées après un « *acl ».

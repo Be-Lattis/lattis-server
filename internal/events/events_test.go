@@ -149,6 +149,10 @@ func TestRelay(t *testing.T) {
 	c, cancel = stream(t, srv.URL+"?u=reader&data=1&workbooks="+wb)
 	defer cancel()
 	next(t, c, "ready")
+	// Présence : les membres qui suivent le classeur (ici le lecteur seul).
+	if e := next(t, c, "presence"); e.data["workbook"] != wb || len(e.data["users"].([]any)) != 1 {
+		t.Fatalf("présence : %+v", e.data)
+	}
 	must(as(owner, `INSERT INTO `+pgx.Identifier{schema, "Lignes"}.Sanitize()+` (lattis_id, "Article") VALUES (gen_random_uuid(), 'Vis')`, nil))
 	e := next(t, c, "change")
 	if e.data["workbook"] != wb || e.data["payload"] != tid || e.data["lsn"] == nil {
