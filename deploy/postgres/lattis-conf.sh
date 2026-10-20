@@ -33,3 +33,19 @@ if [ "$(id -u)" = 0 ]; then
 	chown postgres:postgres "$PGDATA/lattis.conf"
 fi
 chmod 0600 "$PGDATA/lattis.conf"
+
+# Certificat TLS : recopié à chaque démarrage depuis /etc/lattis/tls (un
+# certificat renouvelé est pris au redémarrage), clé remise en 0600 (un
+# rattachement de volume peut l'avoir rendue lisible par le groupe, ce que
+# PostgreSQL refuse).
+tls="${LATTIS_TLS_DIR:-/etc/lattis/tls}"
+if [ -s "$tls/server.crt" ] && [ -s "$tls/server.key" ]; then
+	install -m 0644 "$tls/server.crt" "$PGDATA/server.crt"
+	install -m 0600 "$tls/server.key" "$PGDATA/server.key"
+fi
+if [ -f "$PGDATA/server.key" ]; then
+	chmod 0600 "$PGDATA/server.key"
+	if [ "$(id -u)" = 0 ]; then
+		chown postgres:postgres "$PGDATA/server.key" "$PGDATA/server.crt" 2>/dev/null || true
+	fi
+fi

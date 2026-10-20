@@ -50,6 +50,10 @@ spec:
       {{- end }}
       securityContext:
         fsGroup: 999
+        # Pas de changement récursif des droits quand le volume est rattaché
+        # (déplacement du pod) : il rendrait server.key lisible par le groupe
+        # et PostgreSQL refuserait de démarrer.
+        fsGroupChangePolicy: OnRootMismatch
       initContainers: {{- include "lattis.publicKeysInit" . | nindent 8 }}
       containers:
         - name: postgres
