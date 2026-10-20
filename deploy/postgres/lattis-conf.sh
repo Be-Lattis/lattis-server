@@ -8,6 +8,8 @@
 #                               au moins autant que son parent
 #   LATTIS_PG_STANDBY_DELAY     attente maximale d'un rejeu bloqué par une
 #                               lecture sur un réplica (30s)
+#   LATTIS_PG_IDLE_TX_TIMEOUT   session fermée si elle reste plus longtemps
+#                               « idle in transaction » (5min ; 0 : jamais)
 set -euo pipefail
 : "${PGDATA:?}"
 [ -s "$PGDATA/PG_VERSION" ] || exit 0
@@ -19,6 +21,10 @@ max_connections = ${LATTIS_PG_MAX_CONNECTIONS:-400}
 # bloqué par une lecture attend au plus ce délai avant de l'annuler.
 hot_standby_feedback = on
 max_standby_streaming_delay = '${LATTIS_PG_STANDBY_DELAY:-30s}'
+# Une transaction oubliée ouverte retient le point de reprise de tous les postes
+# (sync_point : plus petit xid en cours) : chaque notification leur fait relire
+# tout ce qui a changé depuis. Les sauvegardes (pg_dump) ne sont pas « idle ».
+idle_in_transaction_session_timeout = '${LATTIS_PG_IDLE_TX_TIMEOUT:-5min}'
 CONF
 if ! grep -q "^include_if_exists = 'lattis.conf'" "$PGDATA/postgresql.conf"; then
 	printf "\n# Réglages gérés par l'image be-lattis/server (en dernier : ils l'emportent).\ninclude_if_exists = 'lattis.conf'\n" >> "$PGDATA/postgresql.conf"
