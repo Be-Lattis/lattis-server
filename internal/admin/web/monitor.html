@@ -1,0 +1,23 @@
+{{define "body"}}{{$d := .Data}}<div data-refresh="30">
+{{if not $d.Running}}<section class="panel"><p class="muted">Premier relevé en cours : revenez dans quelques secondes.</p></section>
+{{else}}
+<div class="stats">
+<div class="stat"><span class="label">Utilisateurs connectés</span><span class="value">{{$d.Last.Users}}</span><small>{{$d.Last.Desktop}} sur le bureau · {{$d.Last.Web}} en web</small></div>
+{{if $d.Web}}<div class="stat"><span class="label">Moteurs web</span><span class="value">{{$d.Engines}}</span><small>{{$d.Last.Engines}} attribués · {{$d.Last.Ready}} prêts</small></div>
+<div class="stat"><span class="label">Mémoire des moteurs</span><span class="value">{{if ge $d.Last.EngineMem 0}}{{bytes $d.Last.EngineMem}}{{else}}?{{end}}</span><small>{{if $d.PerEngine}}{{bytes $d.PerEngine}} par moteur{{else if $d.MemErr}}inconnue{{else}}aucun moteur{{end}}</small></div>{{end}}
+<div class="stat"><span class="label">Mémoire de lattisd</span><span class="value">{{bytes $d.Last.ServerMem}}</span><small>ce serveur</small></div>
+</div>
+<section class="panel">
+<h2>Utilisateurs{{if $d.Web}} et moteurs{{end}}</h2>
+<p class="legend"><span class="sw s1"></span>Utilisateurs connectés{{if $d.Web}}<span class="sw s2"></span>Moteurs web (processus, conteneurs ou pods, prêts compris){{end}}</p>
+{{$d.Usage}}
+</section>
+<section class="panel">
+<h2>Mémoire</h2>
+<p class="legend">{{if $d.Web}}<span class="sw s2"></span>Moteurs web{{end}}<span class="sw s3"></span>lattisd</p>
+{{$d.Memory}}
+{{with $d.MemErr}}<p class="muted">Mémoire des moteurs inconnue : {{.}}.</p>{{end}}
+</section>
+<p class="muted">Relevé toutes les {{$d.Period}} sur {{$d.Window}}, gardé en mémoire par ce lattisd (depuis {{$d.Since.Local.Format "15:04"}}). Les utilisateurs comptent toutes les connexions à PostgreSQL ; moteurs et mémoire ne concernent que ce lattisd.{{if not $d.Web}} Édition sans accès web : pas de moteurs.{{end}}</p>
+{{end}}</div>
+{{end}}

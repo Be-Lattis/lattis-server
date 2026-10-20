@@ -29,6 +29,7 @@ type ProcessLauncher struct {
 
 	mu   sync.Mutex
 	used map[int]string // UID → utilisateur
+	pids map[int]bool   // moteurs en cours (mesure de la mémoire)
 }
 
 // DefaultUIDs : plage prise quand lattisd tourne en root sans
@@ -133,8 +134,10 @@ func (l *ProcessLauncher) start(ctx context.Context, s Spec, uid int) (*procInst
 		return nil, fmt.Errorf("lancement de %s : %w", l.Bin, err)
 	}
 	p := &procInstance{cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	l.track(cmd.Process.Pid, true)
 	go func() {
 		_ = cmd.Wait()
+		l.track(cmd.Process.Pid, false)
 		close(p.done)
 	}()
 

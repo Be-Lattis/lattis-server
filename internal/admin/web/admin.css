@@ -221,3 +221,18 @@ details.menu[open] > summary { border-color: var(--accent); }
 .menu-body .danger { padding-top: 6px; border-top: 1px solid var(--border); justify-content: space-between; }
 .menu-body .danger button { flex: 1; }
 .menu-body:empty { display: none; }
+
+/* Surveillance : chiffres du moment et petits graphiques (SVG du serveur). */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.stat .label { color: var(--muted); font-size: 13px; } .stat .value { font-size: 26px; font-weight: 600; line-height: 1.2; } .stat small { color: var(--muted); }
+.chart { display: block; width: 100%; max-width: 480px; height: auto; }
+.chart .grid { stroke: var(--border); stroke-width: 1; }
+.chart .axis { fill: var(--faint); font-size: 9px; font-family: inherit; }
+.chart polyline { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.chart .s1, .sw.s1 { stroke: var(--accent); background: var(--accent); }
+.chart .s2, .sw.s2 { stroke: #2f6fb3; background: #2f6fb3; }
+.chart .s3, .sw.s3 { stroke: #b7791f; background: #b7791f; }
+.legend { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.sw { display: inline-block; width: 12px; height: 3px; margin: 0 6px 3px 0; border-radius: 2px; vertical-align: middle; }
+.legend .sw:not(:first-child) { margin-left: 12px; }

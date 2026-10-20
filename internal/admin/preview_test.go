@@ -2,12 +2,17 @@ package admin
 
 import (
 	"bytes"
+	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Be-Lattis/lattis-server/internal/monitor"
 	"github.com/Be-Lattis/lattis-server/internal/store"
+	"github.com/Be-Lattis/lattis-server/internal/webapp"
 )
 
 // TestPreviewPages écrit quelques pages de l'administration, remplies de
@@ -57,6 +62,24 @@ func TestPreviewPages(t *testing.T) {
 		"users":     {"Utilisateurs", map[string]any{"Users": users, "Creators": true, "Me": "u1", "Q": "", "Invitations": []map[string]any{{"id": "i1", "email": "nouveau@acme.fr", "workbook": "Budget 2027", "roles": []any{"reader"}, "invited_by": "louis@acme.fr", "expires_at": "2026-11-02T00:00:00Z"}}}},
 		"workbooks": {"Classeurs", map[string]any{"Workbooks": workbooks}},
 	}
+	// Surveillance : une heure de relevés fictifs (réserve de 2 moteurs).
+	mon := &monitor.Monitor{Web: func(context.Context) webapp.Usage { return webapp.Usage{} }}
+	now := time.Now()
+	for i := 120; i >= 0; i-- {
+		users := 3 + int(6*math.Sin(float64(i)/20)*math.Sin(float64(i)/20)) + (120-i)/15
+		web := users / 2
+		mon.Record(monitor.Sample{At: now.Add(-time.Duration(i) * 30 * time.Second), Desktop: users - web, Web: web,
+			Engines: web, Ready: 2, EngineMem: int64(web+2) * 310 << 20, ServerMem: 48<<20 + int64(users)<<20}, "")
+	}
+	svc := &Service{Monitor: mon}
+	md, err := svc.loadMonitor(context.Background(), nil, nil, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pagesData["monitor"] = struct {
+		title string
+		data  any
+	}{"Surveillance", md}
 	for name, p := range pagesData {
 		v := base
 		v.Title, v.Page, v.Data = p.title, name, p.data

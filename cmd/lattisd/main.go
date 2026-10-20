@@ -36,6 +36,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/mail"
 	"github.com/Be-Lattis/lattis-server/internal/metrics"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
+	"github.com/Be-Lattis/lattis-server/internal/monitor"
 	"github.com/Be-Lattis/lattis-server/internal/pipeline"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
@@ -291,6 +292,13 @@ func serve(doMigrate bool) error {
 			srv.Web.Stop(sctx)
 		}()
 	}
+	// Surveillance : utilisateurs, moteurs et mémoire de la dernière heure.
+	mon := &monitor.Monitor{DB: st.DB}
+	if srv.Web != nil {
+		mon.Web = srv.Web.Usage
+	}
+	adminSvc.Monitor = mon
+	go mon.Run(ctx)
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()

@@ -164,3 +164,7 @@ const autoOpen = document.getElementById("autoopen");
 if (autoOpen && autoOpen.dataset.href) {
   window.location.href = autoOpen.dataset.href;
 }
+
+// Surveillance : la page se recharge au rythme des relevés.
+const refresh = document.querySelector("[data-refresh]");
+if (refresh) setTimeout(() => location.reload(), Number(refresh.dataset.refresh) * 1000);

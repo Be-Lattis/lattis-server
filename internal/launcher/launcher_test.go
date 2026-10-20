@@ -36,6 +36,9 @@ func (f *fakeDocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out = append(out, map[string]string{"Id": id})
 		}
 		_ = json.NewEncoder(w).Encode(out)
+	case r.Method == http.MethodGet && strings.HasSuffix(p, "/stats"):
+		_ = json.NewEncoder(w).Encode(map[string]any{"memory_stats": map[string]any{
+			"usage": 100 << 20, "stats": map[string]any{"inactive_file": 10 << 20}}})
 	case r.Method == http.MethodGet && strings.HasSuffix(p, "/json"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/containers/"), "/json")
 		spec, ok := f.containers[id]
@@ -113,6 +116,9 @@ func TestServer(t *testing.T) {
 	}
 	if resp, out := call("GET", "/engines/clattis-engine-u1", tok, ""); resp.StatusCode != http.StatusOK || out["running"] != true {
 		t.Fatalf("état : %d %v", resp.StatusCode, out)
+	}
+	if resp, out := call("GET", "/engines/stats", tok, ""); resp.StatusCode != http.StatusOK || out["memory"] != float64(90<<20) || out["engines"] != float64(1) {
+		t.Fatalf("mémoire : %d %v", resp.StatusCode, out)
 	}
 	if resp, _ := call("DELETE", "/engines/clattis-engine-u1", tok, ""); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("arrêt : %d", resp.StatusCode)

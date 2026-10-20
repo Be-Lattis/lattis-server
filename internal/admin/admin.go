@@ -32,6 +32,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
 	"github.com/Be-Lattis/lattis-server/internal/mail"
+	"github.com/Be-Lattis/lattis-server/internal/monitor"
 	"github.com/Be-Lattis/lattis-server/internal/pipeline"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
@@ -111,7 +112,15 @@ var funcs = template.FuncMap{
 		return string(b)
 	},
 	"bytes": func(v any) string {
-		f, _ := v.(float64)
+		var f float64
+		switch n := v.(type) {
+		case float64:
+			f = n
+		case int64:
+			f = float64(n)
+		case int:
+			f = float64(n)
+		}
 		units := []string{"o", "Ko", "Mo", "Go", "To"}
 		i := 0
 		for f >= 1024 && i < len(units)-1 {
@@ -175,7 +184,7 @@ func trimFloat(f float64) string {
 }
 
 func init() {
-	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data", "pipelines", "forms"} {
+	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data", "pipelines", "forms", "monitor"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+name+".html"))
 	}
 }
@@ -199,6 +208,8 @@ type Service struct {
 	Pipelines Simulator
 	// Mailer : envoi d'e-mails ; nil : non configuré (liens à copier).
 	Mailer mail.Sender
+	// Monitor : relevés de l'écran Surveillance ; nil : écran vide.
+	Monitor *monitor.Monitor
 }
 
 func (s *Service) now() time.Time {
@@ -241,6 +252,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/pipelines/{id}/upload", s.uploadPipeline)
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
+	mux.HandleFunc("GET /admin/monitor", s.page("monitor", "Surveillance", s.loadMonitor))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)
 	mux.HandleFunc("GET /w/{id}", s.workbookLink)
 }

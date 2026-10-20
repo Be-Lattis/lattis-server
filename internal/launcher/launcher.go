@@ -57,6 +57,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /engines", s.start)
 	mux.HandleFunc("POST /engines/cleanup", s.cleanup)
+	mux.HandleFunc("GET /engines/stats", s.stats)
 	mux.HandleFunc("GET /engines/{id}", s.status)
 	mux.HandleFunc("DELETE /engines/{id}", s.stop)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -156,6 +157,33 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"running": running})
+}
+
+// stats : mémoire des moteurs en cours, en octets (écran Surveillance).
+func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
+	ids, err := s.Docker.List(r.Context(), Label)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var total int64
+	running := 0
+	for _, id := range ids {
+		n, err := s.Docker.Memory(r.Context(), id)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		if n > 0 {
+			running++
+		}
+		total += n
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int64{"memory": total, "engines": int64(running)})
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {

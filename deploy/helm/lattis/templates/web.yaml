@@ -20,6 +20,10 @@ rules:
   - apiGroups: [""]
     resources: [persistentvolumeclaims]
     verbs: [create, get]
+  # Mémoire des moteurs (écran Surveillance), si metrics-server est installé.
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

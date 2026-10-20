@@ -150,6 +150,29 @@ func (d *Docker) List(ctx context.Context, label string) ([]string, error) {
 	return ids, nil
 }
 
+// Memory : mémoire d'un conteneur, cache de fichiers inactif déduit (comme
+// docker stats) ; 0 pour un conteneur arrêté.
+func (d *Docker) Memory(ctx context.Context, id string) (int64, error) {
+	var st struct {
+		MemoryStats struct {
+			Usage int64            `json:"usage"`
+			Stats map[string]int64 `json:"stats"`
+		} `json:"memory_stats"`
+	}
+	if err := d.do(ctx, http.MethodGet, "/containers/"+url.PathEscape(id)+"/stats?stream=false&one-shot=true", nil, &st); err != nil {
+		return 0, err
+	}
+	m := st.MemoryStats
+	cache := m.Stats["inactive_file"] // cgroup v2
+	if v, ok := m.Stats["total_inactive_file"]; ok {
+		cache = v // cgroup v1
+	}
+	if cache > m.Usage {
+		return m.Usage, nil
+	}
+	return m.Usage - cache, nil
+}
+
 // Count : conteneurs en cours qui portent l'étiquette.
 func (d *Docker) Count(ctx context.Context, label string) (int, error) {
 	f, _ := json.Marshal(map[string][]string{"label": {label}})

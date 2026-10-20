@@ -342,6 +342,7 @@ SELECT lattis.create_password_account('paul@acme.fr', 'Paul');  -- renvoie le je
 - `GET /healthz` (processus vivant) et `GET /readyz` (base joignable).
 - Mesures Prometheus sur `LATTIS_METRICS_ADDR` : connexions et requêtes (`lattis_connections`, `lattis_queries_running`…), sessions par client (`lattis_sessions_active`), réplicas (`lattis_replica_lag_seconds`, `lattis_replica_lag_bytes`, `lattis_replicas_available`).
 - Administration › État : version du schéma, connexions, réplicas surveillés (retard, raison d'un retrait) et points annoncés.
+- Administration › Surveillance : utilisateurs connectés face aux moteurs web (processus, conteneurs ou pods, réserve comprise) et mémoire des moteurs et de lattisd, en chiffres et en petits graphiques de la dernière heure (relevé toutes les 30 s, gardé en mémoire par chaque lattisd ; la page se rafraîchit seule). Mémoire des moteurs : `/proc` en mode `process` (Linux), statistiques Docker relevées par `lattis-launcher` en mode `docker`, metrics-server en mode `kubernetes` (le chart donne le droit de lecture de `pods.metrics.k8s.io` ; sans metrics-server, la page le signale).
 - Un réplica retiré l'est dans les 5 s (relevé périodique) et revient seul quand il a rattrapé son retard.
 
 ## 8. Mettre à jour, faire tourner la clé
