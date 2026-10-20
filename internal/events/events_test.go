@@ -129,7 +129,7 @@ func TestRelay(t *testing.T) {
 
 	// Classeur interdit : refusé avant tout flux.
 	c, cancel := stream(t, srv.URL+"?u=outsider&workbooks="+wb)
-	if e := <-c; e.kind != "status" || e.data["code"] != float64(http.StatusForbidden) {
+	if e := <-c; e.kind != "status" || e.data["code"] != http.StatusForbidden {
 		t.Fatalf("classeur interdit : %+v", e)
 	}
 	cancel()
