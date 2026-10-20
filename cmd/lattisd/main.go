@@ -33,6 +33,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/events"
 	"github.com/Be-Lattis/lattis-server/internal/forms"
 	"github.com/Be-Lattis/lattis-server/internal/httpserver"
+	"github.com/Be-Lattis/lattis-server/internal/mail"
 	"github.com/Be-Lattis/lattis-server/internal/metrics"
 	"github.com/Be-Lattis/lattis-server/internal/migrate"
 	"github.com/Be-Lattis/lattis-server/internal/pipeline"
@@ -314,6 +315,23 @@ func serve(doMigrate bool) error {
 		AllowedHosts: cfg.PipelineAllowedHosts, AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}
 	adminSvc.Pipelines = runner
 	srv.Users, srv.Pipelines = users, runner
+	// Envoi d'e-mails (facultatif) : la base ne met des messages en file
+	// que si l'envoi est configuré.
+	var mailer mail.Sender
+	if cfg.Mail.Host != "" {
+		sm, err := mail.NewSMTP(cfg.Mail)
+		if err != nil {
+			return err
+		}
+		mailer = sm
+		go (&mail.Worker{Pool: st.DB, Sender: sm, Cfg: cfg.Mail, URL: cfg.URL}).Run(ctx)
+		slog.Info("envoi d'e-mails", "host", cfg.Mail.Host, "port", cfg.Mail.Port, "tls", cfg.Mail.TLS)
+	}
+	if _, err := st.DB.Exec(ctx, `UPDATE lattis.server_config SET value = to_jsonb($1::boolean) WHERE key = 'mail_enabled'`, mailer != nil); err != nil {
+		return fmt.Errorf("réglage mail_enabled : %w", err)
+	}
+	adminSvc.Mailer = mailer
+	authSvc.MailEnabled = mailer != nil
 	srv.Forms = &forms.Handler{Store: st, Users: users, Keys: keys, Session: adminSvc.Session}
 	// Relais des changements : une écoute PostgreSQL pour tous les postes.
 	srv.Events = &events.Hub{Pool: st.DB, Users: users}

@@ -46,6 +46,8 @@ type Pipeline struct {
 	// PendingRunID : identifiant réservé à la prochaine exécution (envoi
 	// depuis l'application, qui suit son exécution par lui).
 	PendingRunID string
+	// AlertEmail : adresses prévenues d'un échec (séparées par des virgules).
+	AlertEmail string
 }
 
 // Result est le bilan d'une exécution.
@@ -304,14 +306,14 @@ func (r *Runner) next(p *Pipeline, t time.Time) *time.Time {
 const selectPipeline = `SELECT id::text, name, workbook_id::text, table_id::text, table_name, source_kind, format, mode,
 	source, coalesce(secret_ref, ''), key_columns, column_map, schedule_kind, coalesce(schedule_minutes, 0),
 	coalesce(schedule_time, ''), coalesce(pending_file, ''), coalesce(pending_trigger, ''), coalesce(webhook_url, ''),
-	user_id::text, coalesce(pending_run_id::text, '') FROM lattis.pipelines`
+	user_id::text, coalesce(pending_run_id::text, ''), coalesce(alert_email, '') FROM lattis.pipelines`
 
 func scanPipeline(row pgx.Row) (*Pipeline, error) {
 	p := &Pipeline{}
 	var src, cmap []byte
 	err := row.Scan(&p.ID, &p.Name, &p.WorkbookID, &p.TableID, &p.TableName, &p.SourceKind, &p.Format, &p.Mode,
 		&src, &p.SecretRef, &p.KeyColumns, &cmap, &p.ScheduleKind, &p.ScheduleMinutes, &p.ScheduleTime,
-		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID)
+		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID, &p.AlertEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -383,6 +385,16 @@ func (r *Runner) finish(ctx context.Context, p *Pipeline, runID string, res Resu
 		"updated", res.Updated, "deleted", res.Deleted, "rejected", res.Rejected, "err", res.Err)
 	if res.Status == "error" && p.WebhookURL != "" {
 		r.alert(p, runID, res)
+	}
+	if res.Status == "error" && p.AlertEmail != "" {
+		// Mis en file (rien si l'envoi d'e-mails n'est pas configuré).
+		for _, to := range strings.Split(p.AlertEmail, ",") {
+			b, _ := json.Marshal(map[string]any{"name": p.Name, "error": res.Err, "pipeline_id": p.ID})
+			if _, err := r.Store.DB.Exec(ctx, `SELECT lattis.mail_enqueue('pipeline_failed', $1, $2::jsonb
+				|| jsonb_build_object('server', lattis.config('display_name') #>> '{}'))`, strings.TrimSpace(to), string(b)); err != nil {
+				slog.Warn("pipeline : alerte par e-mail", "pipeline", p.ID, "err", err)
+			}
+		}
 	}
 	return err
 }

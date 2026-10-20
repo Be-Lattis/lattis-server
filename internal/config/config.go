@@ -34,6 +34,17 @@ type Endpoint struct {
 func (e Endpoint) String() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
 
 // Config est la configuration d'amorçage.
+// Mail : envoi d'e-mails (LATTIS_SMTP_*) ; Host vide : pas d'envoi.
+type Mail struct {
+	Host, User, PasswordFile, From string
+	Port                           int
+	// TLS : starttls (défaut), tls (TLS dès la connexion, port 465) ou none.
+	TLS string
+	// PerHour : e-mails par heure pour tout le serveur ; PerAddress : par
+	// destinataire et par heure (quotas du fournisseur, abus).
+	PerHour, PerAddress int
+}
+
 // K8sEngines : pods des moteurs (LATTIS_WEB_K8S_*).
 type K8sEngines struct {
 	Image, Namespace, PullSecret string
@@ -87,6 +98,8 @@ type Config struct {
 	LauncherTokenFile string
 	// Mode kubernetes : image du moteur et réglages des pods.
 	K8s K8sEngines
+	// Mail : envoi d'e-mails ; Mail.Host vide : désactivé.
+	Mail Mail
 	// TrustProxy : faire confiance à X-Forwarded-For pour la limitation de débit.
 	TrustProxy bool
 	// ExtraRedirects : URI de redirection supplémentaires acceptées pour le
@@ -259,6 +272,29 @@ func parse(get func(string) string) (*Config, error) {
 		c.WebSpare = n
 	} else {
 		errs = append(errs, fmt.Errorf("LATTIS_WEB_POOL_SPARE : entier de 0 à %d (moins que LATTIS_WEB_MAX_ENGINES)", c.WebMaxEngines-1))
+	}
+	c.Mail = Mail{Host: def("LATTIS_SMTP_HOST", ""), User: def("LATTIS_SMTP_USER", ""),
+		PasswordFile: def("LATTIS_SMTP_PASSWORD_FILE", ""), From: def("LATTIS_SMTP_FROM", ""), TLS: def("LATTIS_SMTP_TLS", "starttls")}
+	if c.Mail.Host != "" {
+		defPort := map[string]string{"starttls": "587", "tls": "465", "none": "25"}[c.Mail.TLS]
+		port, err := strconv.Atoi(def("LATTIS_SMTP_PORT", defPort))
+		switch {
+		case err != nil || port <= 0 || port > 65535:
+			errs = append(errs, errors.New("LATTIS_SMTP_PORT : port attendu"))
+		case c.Mail.TLS != "starttls" && c.Mail.TLS != "tls" && c.Mail.TLS != "none":
+			errs = append(errs, errors.New("LATTIS_SMTP_TLS : starttls, tls ou none"))
+		case !strings.Contains(c.Mail.From, "@"):
+			errs = append(errs, errors.New("LATTIS_SMTP_FROM : adresse d'expédition attendue (« Lattis <lattis@acme.fr> »)"))
+		}
+		c.Mail.Port = port
+		for k, dst := range map[string]*int{"LATTIS_MAIL_PER_HOUR": &c.Mail.PerHour, "LATTIS_MAIL_PER_ADDRESS": &c.Mail.PerAddress} {
+			d := map[string]string{"LATTIS_MAIL_PER_HOUR": "200", "LATTIS_MAIL_PER_ADDRESS": "5"}[k]
+			if n, err := strconv.Atoi(def(k, d)); err == nil && n > 0 {
+				*dst = n
+			} else {
+				errs = append(errs, fmt.Errorf("%s : entier positif attendu", k))
+			}
+		}
 	}
 	if loc, err := time.LoadLocation(def("LATTIS_TIMEZONE", "Europe/Paris")); err == nil {
 		c.Timezone = loc

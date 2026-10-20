@@ -31,6 +31,7 @@ import (
 
 	"github.com/Be-Lattis/lattis-server/internal/auth"
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/mail"
 	"github.com/Be-Lattis/lattis-server/internal/pipeline"
 	"github.com/Be-Lattis/lattis-server/internal/replicas"
 	"github.com/Be-Lattis/lattis-server/internal/store"
@@ -196,6 +197,8 @@ type Service struct {
 	Now      func() time.Time
 	// Pipelines : simulation des pipelines ; nil : bouton absent.
 	Pipelines Simulator
+	// Mailer : envoi d'e-mails ; nil : non configuré (liens à copier).
+	Mailer mail.Sender
 }
 
 func (s *Service) now() time.Time {

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lalamefine/lattis/protocol"
 	"golang.org/x/oauth2"
@@ -66,19 +67,21 @@ var SourceURL = "https://github.com/Be-Lattis/lattis-server"
 
 func init() {
 	funcs := template.FuncMap{"sourceURL": func() string { return SourceURL }}
-	for _, name := range []string{"choose", "password", "setup", "message"} {
+	for _, name := range []string{"choose", "password", "setup", "message", "forgot"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/page.html", "web/"+name+".html"))
 	}
 }
 
 // Service porte les points /oauth/*, /login/*, /callback/* et /setup.
 type Service struct {
-	Config   *config.Config
-	Store    *store.Store
-	Keys     *tokens.KeySet
-	Upstream *upstream.Registry
-	Metrics  *metrics.Metrics
-	Now      func() time.Time
+	// MailEnabled : envoi d'e-mails configuré (mot de passe oublié, confirmation).
+	MailEnabled bool
+	Config      *config.Config
+	Store       *store.Store
+	Keys        *tokens.KeySet
+	Upstream    *upstream.Registry
+	Metrics     *metrics.Metrics
+	Now         func() time.Time
 	// AdminURL : où envoyer un propriétaire qui vient de choisir son mot de
 	// passe, déjà connecté (vide : pas d'interface d'administration).
 	AdminURL string
@@ -95,6 +98,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", s.setupForm)
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("POST /setup", s.setupSubmit)
+	mux.HandleFunc("GET /password/forgot", s.forgotForm)
+	mux.HandleFunc("POST /password/forgot", s.forgotSubmit)
+	mux.HandleFunc("GET /confirm", s.confirmEmail)
 	mux.HandleFunc("GET /static/lattis.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		http.ServeFileFS(w, r, webFS, "web/lattis.css")
@@ -599,6 +605,15 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Adresse changée à cette étape : un lien de confirmation lui est envoyé.
+	if s.MailEnabled {
+		if err := s.Store.AsActor(r.Context(), "lattisd (confirmation)", func(tx pgx.Tx) error {
+			_, err := tx.Exec(r.Context(), `SELECT lattis.request_email_confirmation($1::uuid)`, uid)
+			return err
+		}); err != nil {
+			slog.Warn("demande de confirmation d'adresse", "err", err)
+		}
+	}
 	// Un propriétaire arrive directement dans l'administration, connecté.
 	if s.AdminURL != "" {
 		owner, err := s.Store.ServerOwner(r.Context(), uid)
@@ -768,6 +783,8 @@ type view struct {
 	Action, Req, CSRF, Email, Back      string
 	Token                               string
 	MinLength                           int
+	// Mail : l'envoi d'e-mails est configuré (lien « Mot de passe oublié »).
+	Mail bool
 	// Links : boutons sous un message ; Address : adresse du serveur à saisir
 	// dans l'application.
 	Links   []providerLink
@@ -778,6 +795,7 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, pag
 	if cfg, err := s.Store.Config(r.Context()); err == nil {
 		v.Server, v.Logo = cfg.DisplayName, cfg.LogoURL
 	}
+	v.Mail = s.MailEnabled
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
@@ -918,4 +936,52 @@ func (s *Service) home(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "message", view{Title: "Bienvenue",
 		Message: "Ce serveur partage des classeurs Lattis. Pour vous y connecter depuis l'application, ajoutez un « Serveur Lattis » avec l'adresse ci-dessous.",
 		Address: s.Config.Issuer(), Links: links})
+}
+
+// --- Mot de passe oublié et confirmation d'adresse (envoi d'e-mails) ---------------
+
+func (s *Service) forgotForm(w http.ResponseWriter, r *http.Request) {
+	if !s.MailEnabled {
+		s.render(w, r, http.StatusOK, "message", view{Title: "Mot de passe oublié",
+			Message: "Demandez un nouveau lien à l'administrateur du serveur."})
+		return
+	}
+	s.render(w, r, http.StatusOK, "forgot", view{Title: "Mot de passe oublié", CSRF: s.csrf(w, r)})
+}
+
+func (s *Service) forgotSubmit(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCSRF(r) {
+		s.expired(w, r)
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(r.PostFormValue("email")))
+	if s.MailEnabled && strings.Contains(email, "@") {
+		if err := s.Store.AsActor(r.Context(), "lattisd (mot de passe oublié)", func(tx pgx.Tx) error {
+			_, err := tx.Exec(r.Context(), `SELECT lattis.request_password_reset($1)`, email)
+			return err
+		}); err != nil {
+			slog.Error("mot de passe oublié", "err", err)
+		}
+	}
+	// Même réponse que l'adresse ait un compte ou non.
+	s.render(w, r, http.StatusOK, "message", view{Title: "Mot de passe oublié",
+		Message: "Si un compte à mot de passe existe pour cette adresse, un e-mail vient de partir avec un lien pour choisir un nouveau mot de passe (valable 7 jours)."})
+}
+
+func (s *Service) confirmEmail(w http.ResponseWriter, r *http.Request) {
+	var email *string
+	err := s.Store.AsActor(r.Context(), "lattisd (confirmation)", func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `SELECT lattis.confirm_email($1)`, r.URL.Query().Get("token")).Scan(&email)
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if email == nil {
+		s.render(w, r, http.StatusNotFound, "message", view{Title: "Lien expiré",
+			Error: "Ce lien de confirmation n'est plus valable."})
+		return
+	}
+	s.render(w, r, http.StatusOK, "message", view{Title: "Adresse confirmée",
+		Message: *email + " est confirmée : les invitations adressées à cette adresse vous sont ouvertes."})
 }

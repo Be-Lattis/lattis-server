@@ -83,7 +83,7 @@ func (s *Server) Handler() http.Handler {
 	limiter := newLimiter(max(s.Config.RateLimit, 1), time.Minute)
 	return securityHeaders(s.Config.PublicURL.Scheme == "https", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasPrefix(p, "/oauth/") || (strings.HasPrefix(p, "/api/") && p != "/api/events") || strings.HasPrefix(p, "/admin/do/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") {
+		if strings.HasPrefix(p, "/oauth/") || (strings.HasPrefix(p, "/api/") && p != "/api/events") || strings.HasPrefix(p, "/admin/do/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") || strings.HasPrefix(p, "/password/") {
 			if !limiter.allow(auth.ClientIP(r, s.Config.TrustProxy)) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "trop de requêtes", http.StatusTooManyRequests)

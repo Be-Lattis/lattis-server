@@ -34,6 +34,7 @@
 <label>Horaire <select name="schedule_kind"><option value="manual">À la demande</option><option value="every">Toutes les N minutes</option><option value="daily">Chaque jour à</option></select></label>
 <label data-show-if="schedule_kind=every">Minutes <input name="schedule_minutes" type="number" min="5" value="60"></label>
 <label data-show-if="schedule_kind=daily">Heure <input name="schedule_time" type="time" value="06:00"></label>
+<label>Alerte en cas d'échec par e-mail <input name="alert_email" placeholder="exploitation@acme.fr"><small>Une ou plusieurs adresses séparées par des virgules (envoi d'e-mails configuré sur le serveur).</small></label>
 <label>Alerte en cas d'échec (webhook) <input name="webhook_url" type="url" placeholder="https://hooks.slack.com/…"><small>Reçoit un POST JSON (Slack, Teams, Mattermost…).</small></label>
 <p class="actions"><button class="ok">Créer le pipeline</button></p>
 </form>
@@ -48,6 +49,7 @@
 <dt>Horaire</dt><dd>{{if eq (str $x.schedule_kind) "every"}}toutes les {{str $x.schedule_minutes}} min{{else if eq (str $x.schedule_kind) "daily"}}chaque jour à {{$x.schedule_time}}{{else}}à la demande{{end}}{{with $x.next_run_at}} · prochaine exécution {{date .}}{{end}}</dd>
 {{with $x.datasets}}<dt>Data Lake</dt><dd>{{range $i, $ds := .}}{{if $i}}, {{end}}<a href="/admin/data">{{$ds.name}}</a> <code>donnees.{{$ds.sql_name}}</code>{{end}}</dd>{{end}}
 <dt>Identité</dt><dd><code>{{$x.identity}}</code></dd>
+<dt>Alerte par e-mail</dt><dd><form method="post" action="/admin/do/pipeline_alert_email" class="row">{{template "csrf" $}}<input type="hidden" name="id" value="{{$x.id}}"><input name="alert_email" value="{{str $x.alert_email}}" placeholder="aucune" aria-label="Adresses d'alerte"><button>Enregistrer</button></form></dd>
 </dl>
 <div class="buttons">
 {{if or (eq (str $x.source_kind) "upload") (eq (str $x.source_kind) "push")}}<form method="post" action="/admin/pipelines/{{$x.id}}/upload" enctype="multipart/form-data" class="row">{{template "csrf" $}}<input type="file" name="file" required aria-label="Fichier"><label class="inline"><input type="checkbox" name="simulate"> Simuler seulement</label><button class="ok">Exécuter avec ce fichier</button></form>

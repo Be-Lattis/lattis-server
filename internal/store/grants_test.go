@@ -20,11 +20,11 @@ var publicAPI = []string{
 	"create_password_account", "create_pipeline", "create_pushed_source", "create_role", "create_table", "create_team", "create_workbook",
 	"data_catalog", "dataset_audience_history", "dataset_changed_ids", "dataset_tombstones", "disable_user", "disallow_tenant", "drop_data_folder", "drop_dataset", "drop_form",
 	"drop_pipeline", "drop_pushed_source", "drop_restriction", "drop_role", "drop_team", "drop_workbook", "enable_user", "finish_publish", "form_audience_add", "form_audience_add_by_email", "form_audience_remove", "form_begin", "form_preview_url", "form_record", "form_set_image", "form_stats", "forms_settings",
-	"grant_role", "insert_column", "invite", "is_server_owner", "link_dataset", "list_forms", "list_teams", "login_summary", "move_data_folder",
+	"grant_role", "insert_column", "invite", "is_server_owner", "link_dataset", "list_forms", "mail_password_link", "mail_status", "list_teams", "login_summary", "move_data_folder",
 	"my_capabilities", "my_pushed_sources", "my_teams", "my_workbooks", "pipeline_targets", "publish_script", "push_pipeline", "pushed_run", "record_open",
 	"remove_data_audience", "remove_provider", "remove_team_member", "rename_column", "rename_data_folder", "rename_table", "rename_team", "republish",
 	"reset_password", "revoke_invitation", "revoke_role", "row_state", "run_pipeline", "save_meta", "set_config",
-	"set_data_publisher", "set_form_state", "set_key", "set_level", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
+	"set_data_publisher", "set_form_state", "set_key", "set_level", "set_pipeline_alert_email", "set_team_parent", "set_workbook_creator", "setup_link_expiry", "since_covered", "sync_point",
 	"table_indexes", "table_ref", "tombstones_since", "trg_notify", "trg_stamp", "unlink_dataset", "update_dataset", "update_form", "update_pipeline",
 	"update_provider", "update_pushed_source", "why_not", "workbook_acl", "workbook_members",
 }

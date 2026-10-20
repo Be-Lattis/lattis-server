@@ -34,4 +34,15 @@
 {{range $pg.replicas}}<tr><td>{{.name}}</td><td>{{.address}}</td><td>{{.state}} ({{.sync_state}})</td><td>{{str .lag_seconds}} s · {{bytes .lag_bytes}}</td></tr>{{end}}
 </tbody></table>{{else}}<p class="muted">Aucun réplica connecté.</p>{{end}}
 </section>
+
+<section class="panel">
+<h2>Envoi d'e-mails</h2>
+{{with .Data.MailConfig}}<p>Serveur SMTP : <code>{{.}}</code></p>
+{{with $.Data.Mail}}<p class="muted">{{str .sent_24h}} envoyé(s) en 24 h · {{str .pending}} en attente{{if .failed_24h}} · <span class="error">{{str .failed_24h}} en échec</span>{{end}}</p>
+{{if .recent}}<details class="sub"><summary>Derniers envois</summary><div class="scroll"><table class="compact"><thead><tr><th>Type</th><th>Destinataire</th><th>État</th><th>Créé</th><th>Erreur</th></tr></thead><tbody>
+{{range .recent}}<tr><td>{{.kind}}</td><td>{{.recipient}}</td><td>{{.status}}</td><td>{{date .created_at}}</td><td>{{with .error}}<small class="error">{{.}}</small>{{end}}</td></tr>{{end}}
+</tbody></table></div></details>{{end}}{{end}}
+<form method="post" action="/admin/do/mail_test">{{template "csrf" $}}<button>Envoyer un e-mail de test</button></form>
+{{else}}<p class="muted">Non configuré : les liens (choix du mot de passe, invitations) restent à transmettre depuis l'administration. Pour l'activer : variables <code>LATTIS_SMTP_*</code> (guide d'installation).</p>{{end}}
+</section>
 {{end}}

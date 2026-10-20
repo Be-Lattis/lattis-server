@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Be-Lattis/lattis-server/internal/mail"
+	"log/slog"
 	"math"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -81,6 +84,8 @@ func (s *Service) actions() map[string]actionFunc {
 		"create_workbook":      createWorkbook,
 		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
 		"toggle_pipeline":      exec1(`SELECT lattis.update_pipeline($1::uuid, jsonb_build_object('enabled', $2::boolean))`, "Pipeline mis à jour.", false, "id", "enabled"),
+		"mail_test":            s.mailTest,
+		"pipeline_alert_email": exec1(`SELECT lattis.set_pipeline_alert_email($1::uuid, $2)`, "Alerte par e-mail enregistrée.", false, "id", "alert_email"),
 		"form_state":           exec1(`SELECT lattis.set_form_state($1::uuid, $2)`, "Formulaire mis à jour.", false, "id", "state"),
 		"forms_public":         exec1(`SELECT lattis.set_config('forms_public', to_jsonb($1::boolean))`, "Réglage enregistré.", false, "public"),
 		"drop_pipeline":        exec1(`SELECT lattis.drop_pipeline($1::uuid)`, "Pipeline supprimé.", true, "id"),
@@ -273,6 +278,38 @@ func allowTenant(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 
 func (s *Service) setupLink(token string) string { return s.Config.URL("/setup?token=" + token) }
 
+// mailLink met en file l'e-mail du lien de mot de passe (vrai si l'envoi
+// est configuré).
+func (s *Service) mailLink(ctx context.Context, tx pgx.Tx, email, token, reason string) bool {
+	if s.Mailer == nil {
+		return false
+	}
+	var ok bool
+	if err := tx.QueryRow(ctx, `SELECT lattis.mail_password_link($1, $2, $3)`, email, token, reason).Scan(&ok); err != nil {
+		slog.Warn("e-mail du lien de mot de passe", "err", err)
+		return false
+	}
+	return ok
+}
+
+// mailTest envoie tout de suite un e-mail d'essai à l'administrateur.
+func (s *Service) mailTest(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	if s.Mailer == nil {
+		return "", inputError("Aucun serveur d'envoi configuré (LATTIS_SMTP_HOST).")
+	}
+	var email, server string
+	if err := tx.QueryRow(ctx, `SELECT u.email, coalesce(lattis.config('display_name') #>> '{}', 'Serveur Lattis')
+		FROM lattis.users u WHERE u.pg_role = session_user`).Scan(&email, &server); err != nil {
+		return "", err
+	}
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := mail.Test(sctx, s.Mailer, email, server, s.Config.URL("/")); err != nil {
+		return "", inputError("Envoi impossible : " + err.Error())
+	}
+	return "E-mail d'essai envoyé à " + email + ".", nil
+}
+
 // addUser : seul ajout manuel, un compte à mot de passe et son lien
 // pré-signé. Propriétaire du serveur : par une invitation, acceptée à la
 // première connexion.
@@ -294,6 +331,9 @@ func (s *Service) addUser(ctx context.Context, tx pgx.Tx, f form) (string, error
 			return "", err
 		}
 	}
+	if s.mailLink(ctx, tx, f.s("email"), token, "new") {
+		return "Compte créé pour " + strings.ToLower(f.s("email")) + " : un e-mail avec son lien vient de partir. Le même lien, au besoin : " + s.setupLink(token), nil
+	}
 	return "Compte créé pour " + strings.ToLower(f.s("email")) + ". Lien à lui transmettre : " + s.setupLink(token), nil
 }
 
@@ -304,6 +344,10 @@ func (s *Service) resetPassword(ctx context.Context, tx pgx.Tx, f form) (string,
 	var token string
 	if err := tx.QueryRow(ctx, `SELECT lattis.reset_password($1::uuid)`, f.s("id")).Scan(&token); err != nil {
 		return "", err
+	}
+	var email string
+	if err := tx.QueryRow(ctx, `SELECT email FROM lattis.users WHERE id = $1::uuid`, f.s("id")).Scan(&email); err == nil && s.mailLink(ctx, tx, email, token, "reset") {
+		return "Mot de passe réinitialisé : un e-mail avec le lien vient de partir à " + email + ". Le même lien, au besoin : " + s.setupLink(token), nil
 	}
 	return "Mot de passe réinitialisé. Lien à transmettre : " + s.setupLink(token), nil
 }
@@ -468,8 +512,16 @@ func createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 		p["schedule_time"] = f.s("schedule_time")
 	}
 	b, _ := json.Marshal(p)
-	_, err := tx.Exec(ctx, `SELECT lattis.create_pipeline($1::jsonb)`, string(b))
-	return "Pipeline créé.", err
+	var id string
+	if err := tx.QueryRow(ctx, `SELECT lattis.create_pipeline($1::jsonb)::text`, string(b)).Scan(&id); err != nil {
+		return "", err
+	}
+	if e := strings.TrimSpace(f.s("alert_email")); e != "" {
+		if _, err := tx.Exec(ctx, `SELECT lattis.set_pipeline_alert_email($1::uuid, $2)`, id, e); err != nil {
+			return "", err
+		}
+	}
+	return "Pipeline créé.", nil
 }
 
 var columnTypes = map[string]string{"texte": "text", "text": "text", "entier": "integer", "integer": "integer",

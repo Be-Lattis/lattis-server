@@ -1,0 +1,8 @@
+{{define "body"}}
+<form method="post" action="/password/forgot">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<p>Indiquez l'adresse de votre compte : un lien pour choisir un nouveau mot de passe vous sera envoyé.</p>
+<label>Adresse e-mail<input type="email" name="email" autocomplete="username" required autofocus></label>
+<button type="submit" class="ok">Envoyer le lien</button>
+</form>
+{{end}}

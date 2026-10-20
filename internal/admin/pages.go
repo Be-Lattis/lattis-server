@@ -574,6 +574,14 @@ func (s *Service) loadStatus(ctx context.Context, tx pgx.Tx, r *http.Request, u 
 		}
 		out["MaxConnections"], out["Warnings"] = maxConn, warn
 	}
+	// Envoi d'e-mails : réglages (variables d'environnement) et journal.
+	if s.Mailer != nil {
+		if ms, err := queryJSON(ctx, tx, `SELECT lattis.mail_status()`); err == nil {
+			out["Mail"] = ms
+		}
+		c := s.Config.Mail
+		out["MailConfig"] = fmt.Sprintf("%s:%d (%s), expéditeur %s, %d par heure dont %d par adresse", c.Host, c.Port, c.TLS, c.From, c.PerHour, c.PerAddress)
+	}
 	if s.Replicas != nil {
 		out["Monitored"] = s.Replicas.States()
 		out["Announced"] = s.Replicas.Available()

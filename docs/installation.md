@@ -138,6 +138,12 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs, réserve comprise (au-delà : page « Plus de ressources disponibles », 503). |
 | `LATTIS_WEB_POOL_SPARE` | `0` | Édition web : moteurs gardés prêts d'avance, en plus de ceux utilisés (§5.1.4). |
 | `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
+| `LATTIS_SMTP_HOST` | vide | Envoi d'e-mails (facultatif, §5.2) : serveur SMTP. Vide : pas d'envoi, les liens restent à copier depuis l'administration. |
+| `LATTIS_SMTP_PORT` | `587`, `465` (tls), `25` (none) | Port du serveur SMTP. |
+| `LATTIS_SMTP_TLS` | `starttls` | `starttls`, `tls` (TLS dès la connexion) ou `none` (relais local de confiance seulement). |
+| `LATTIS_SMTP_USER`, `LATTIS_SMTP_PASSWORD_FILE` | vide | Identifiant SMTP et fichier contenant son mot de passe. |
+| `LATTIS_SMTP_FROM` | vide | Expéditeur (`Lattis <lattis@acme.fr>`), obligatoire avec `LATTIS_SMTP_HOST`. |
+| `LATTIS_MAIL_PER_HOUR`, `LATTIS_MAIL_PER_ADDRESS` | `200`, `5` | Plafond d'envoi : e-mails par heure pour tout le serveur, et par destinataire. Au-delà, les messages attendent (24 h au plus). |
 | `LATTIS_WEB_LAUNCHER` | `process` | Édition web : lancement des moteurs, `process` (processus de `lattisd`), `docker` (conteneurs par le mini lanceur `lattis-launcher`) ou `kubernetes` (pods). Voir §5.1. |
 | `LATTIS_WEB_TOKEN_URL` | vide | Modes `docker` et `kubernetes` : adresse de `/engine/token` vue des moteurs (écoute interne `LATTIS_WEB_ENGINE_LISTEN`, `:8081` par défaut, à ne pas exposer). |
 | `LATTIS_WEB_LAUNCHER_URL`, `LATTIS_WEB_LAUNCHER_TOKEN_FILE` | vide | Mode `docker` : adresse du mini lanceur et fichier du jeton partagé avec lui. |
@@ -288,6 +294,20 @@ Par défaut, un moteur démarre à la connexion de l'utilisateur. Avec `LATTIS_W
 - **Ressources** : les moteurs prêts consomment de la mémoire en permanence (en mode `docker` et `kubernetes`, chacun selon ses limites). Deux à cinq suffisent en général à absorber les connexions du matin.
 
 Le moteur ne demande les jetons de l'utilisateur qu'à sa première connexion à PostgreSQL : `lattisd` rattache le secret du moteur prêt à l'utilisateur au moment de l'attribution. Aucune version particulière de `lattis-engine` n'est requise.
+
+### 5.2 Envoi d'e-mails (facultatif)
+
+Sans serveur d'envoi, rien ne change : les liens (choix du mot de passe, réinitialisation) s'affichent dans l'administration pour être transmis à la main. Avec `LATTIS_SMTP_HOST` et `LATTIS_SMTP_FROM`, le serveur envoie lui-même :
+
+- le **lien de choix du mot de passe** d'un compte créé ou réinitialisé dans l'administration (le lien reste affiché, au besoin) ;
+- le **lien « Mot de passe oublié ? »** de la page de connexion : la personne saisit son adresse et reçoit un lien valable 7 jours ; son mot de passe actuel reste valable tant qu'elle ne l'a pas utilisé. La page répond la même chose que l'adresse ait un compte ou non ;
+- la **confirmation d'adresse** : quand une personne choisit une autre adresse que celle prévue, un lien de confirmation lui est envoyé ; les invitations adressées à cette adresse ne lui sont ouvertes qu'après confirmation ;
+- les **invitations à un classeur** (lien `/w/<id>`) ;
+- les **alertes d'échec des pipelines**, aux adresses réglées sur chaque pipeline (page Pipelines).
+
+Les messages passent par une file en base (`lattis.mail_outbox`), servie par `lattisd` sous le plafond d'envoi (`LATTIS_MAIL_PER_HOUR`, `LATTIS_MAIL_PER_ADDRESS`), avec 5 essais au plus. Le contenu d'un message (lien, titre) est effacé une fois envoyé ; il ne reste qu'un journal (type, destinataire, dates, état), visible dans la page **État** de l'administration, qui a aussi un bouton **Envoyer un e-mail de test**.
+
+Compose : ajoutez les variables au service `lattisd` et le mot de passe dans un fichier du volume des secrets (par exemple `/etc/lattis/smtp-password`). Chart Helm : `lattisd.extraEnv`, et le mot de passe dans un secret monté.
 
 ## 6. Réglages du serveur (administration web)
 
