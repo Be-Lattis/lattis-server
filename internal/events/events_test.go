@@ -122,13 +122,25 @@ func TestRelay(t *testing.T) {
 	defer stop()
 	go hub.Run(rctx)
 	who := map[string]store.Enrollment{"reader": reader, "outsider": outsider}
-	srv := httptest.NewServer(hub.Handler(func(r *http.Request) (store.User, error) {
-		return db.Store.User(r.Context(), who[r.URL.Query().Get("u")].UserID)
+	srv := httptest.NewServer(hub.Handler(func(r *http.Request) (store.User, time.Time, error) {
+		u, err := db.Store.User(r.Context(), who[r.URL.Query().Get("u")].UserID)
+		var exp time.Time
+		if r.URL.Query().Get("short") == "1" {
+			exp = time.Now().Add(300 * time.Millisecond)
+		}
+		return u, exp, err
 	}))
 	defer srv.Close()
 
+	// Jeton qui expire : le flux se ferme avec « expired » (le poste se
+	// réabonne avec un jeton neuf).
+	c, cancel := stream(t, srv.URL+"?u=reader&short=1&workbooks="+wb)
+	next(t, c, "ready")
+	next(t, c, "expired")
+	cancel()
+
 	// Classeur interdit : refusé avant tout flux.
-	c, cancel := stream(t, srv.URL+"?u=outsider&workbooks="+wb)
+	c, cancel = stream(t, srv.URL+"?u=outsider&workbooks="+wb)
 	if e := <-c; e.kind != "status" || e.data["code"] != http.StatusForbidden {
 		t.Fatalf("classeur interdit : %+v", e)
 	}

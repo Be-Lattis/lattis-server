@@ -198,12 +198,17 @@ func (h *Hub) listen(ctx context.Context, channels []string) (*listener, error) 
 		return nil, err
 	}
 	l := &listener{channels: map[string]bool{}, done: make(chan struct{})}
+	// Tous les LISTEN en un seul aller-retour (protocole simple, plusieurs
+	// instructions) : avec des milliers de classeurs suivis, un aller-retour
+	// par canal faisait durer chaque abonnement des secondes.
+	var sql strings.Builder
 	for _, c := range channels {
-		if _, err := conn.Exec(ctx, "LISTEN "+pgx.Identifier{c}.Sanitize()); err != nil {
-			conn.Close(context.Background())
-			return nil, err
-		}
+		sql.WriteString("LISTEN " + pgx.Identifier{c}.Sanitize() + ";")
 		l.channels[c] = true
+	}
+	if _, err := conn.PgConn().Exec(ctx, sql.String()).ReadAll(); err != nil {
+		conn.Close(context.Background())
+		return nil, err
 	}
 	lctx, cancel := context.WithCancel(ctx)
 	l.cancel = cancel
@@ -252,9 +257,9 @@ func (h *Hub) dispatch(ctx context.Context, conn *pgx.Conn, n *pgconn.Notificati
 			e = Event{Kind: "change", Workbook: s.channels[n.Channel], Payload: n.Payload, LSN: lsn}
 		}
 		h.send(s, e)
-		if n.Payload == "*acl" {
-			go h.recheck(s, n.Channel)
-		}
+	}
+	if n.Payload == "*acl" && len(targets) > 0 {
+		go h.recheckAll(n.Channel, targets)
 	}
 }
 
@@ -357,19 +362,58 @@ func (h *Hub) unsubscribe(s *sub) {
 	delete(h.dataSubs, s)
 }
 
-// recheck : après un changement de droits, un poste qui a perdu l'accès
-// au classeur cesse d'en recevoir les changements.
-func (h *Hub) recheck(s *sub, ch string) {
+// recheckWorkers : vérifications de droits simultanées après un « *acl ».
+const recheckWorkers = 4
+
+// recheckAll : après un changement de droits du classeur (canal ch), les
+// postes qui ont perdu l'accès cessent d'en recevoir les changements. Une
+// vérification par utilisateur (pas par poste), au plus recheckWorkers à
+// la fois : 500 postes sur un classeur ne lancent plus 500 transactions
+// d'un coup.
+func (h *Hub) recheckAll(ch string, subs []*sub) {
+	byUser := map[string][]*sub{}
+	var users []string
+	for _, s := range subs {
+		if _, ok := byUser[s.user.ID]; !ok {
+			users = append(users, s.user.ID)
+		}
+		byUser[s.user.ID] = append(byUser[s.user.ID], s)
+	}
+	work := make(chan string)
+	var wg sync.WaitGroup
+	for i := 0; i < min(recheckWorkers, len(users)); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range work {
+				h.recheck(byUser[id], ch)
+			}
+		}()
+	}
+	for _, id := range users {
+		work <- id
+	}
+	close(work)
+	wg.Wait()
+}
+
+// recheck vérifie l'accès d'un utilisateur (ses postes abonnés subs) au
+// classeur du canal ch ; perdu, ses postes reçoivent « revoked ».
+func (h *Hub) recheck(subs []*sub, ch string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	wb := s.channels[ch]
-	if _, err := h.channelOf(ctx, s.user, wb); !errors.Is(err, ErrForbidden) {
+	wb := subs[0].channels[ch]
+	if _, err := h.channelOf(ctx, subs[0].user, wb); !errors.Is(err, ErrForbidden) {
 		return
 	}
 	h.mu.Lock()
-	delete(h.subs[ch], s)
+	for _, s := range subs {
+		delete(h.subs[ch], s)
+	}
 	h.mu.Unlock()
-	h.send(s, Event{Kind: "revoked", Workbook: wb})
+	for _, s := range subs {
+		h.send(s, Event{Kind: "revoked", Workbook: wb})
+	}
 }
 
 // covered : tous les canaux de l'abonné sont écoutés.
@@ -390,10 +434,12 @@ func (h *Hub) covered(s *sub) bool {
 // --- Flux SSE ------------------------------------------------------------------------
 
 // Handler sert GET /api/events?workbooks=<id>,<id>&data=1 (jeton d'accès en
-// Bearer, le même que pour PostgreSQL).
-func (h *Hub) Handler(bearer func(*http.Request) (store.User, error)) http.HandlerFunc {
+// Bearer, le même que pour PostgreSQL). bearer rend aussi l'expiration du
+// jeton : le flux se ferme alors (événement « expired »), le poste se
+// réabonne avec un jeton neuf ; un compte désactivé entre-temps est refusé.
+func (h *Hub) Handler(bearer func(*http.Request) (store.User, time.Time, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u, err := bearer(r)
+		u, exp, err := bearer(r)
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 			http.Error(w, "jeton refusé", http.StatusUnauthorized)
@@ -435,6 +481,13 @@ func (h *Hub) Handler(bearer func(*http.Request) (store.User, error)) http.Handl
 			case <-time.After(50 * time.Millisecond):
 			}
 		}
+		if !h.covered(s) {
+			// Canaux pas écoutés (PostgreSQL refuse une connexion, écoute
+			// en échec) : pas de « ready » trompeur, le poste réessaie.
+			w.Header().Set("Retry-After", "5")
+			http.Error(w, "relais indisponible : canaux pas encore écoutés", http.StatusServiceUnavailable)
+			return
+		}
 
 		rc := http.NewResponseController(w)
 		_ = rc.SetWriteDeadline(time.Time{})
@@ -449,9 +502,19 @@ func (h *Hub) Handler(bearer func(*http.Request) (store.User, error)) http.Handl
 		_ = rc.Flush()
 		t := time.NewTicker(heartbeat)
 		defer t.Stop()
+		var expired <-chan time.Time
+		if !exp.IsZero() {
+			et := time.NewTimer(time.Until(exp))
+			defer et.Stop()
+			expired = et.C
+		}
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-expired:
+				write(w, "expired", map[string]any{})
+				_ = rc.Flush()
 				return
 			case <-t.C:
 				if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {

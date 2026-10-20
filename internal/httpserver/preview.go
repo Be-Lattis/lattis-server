@@ -30,23 +30,34 @@ type PreviewResponse struct {
 // bearer vérifie le jeton d'accès présenté par l'application (le même que
 // celui donné à PostgreSQL) et renvoie l'utilisateur, s'il est actif.
 func (s *Server) bearer(r *http.Request) (store.User, error) {
+	u, _, err := s.bearerExp(r)
+	return u, err
+}
+
+// bearerExp fait bearer et rend aussi l'expiration du jeton (flux SSE :
+// fermé à l'expiration).
+func (s *Server) bearerExp(r *http.Request) (store.User, time.Time, error) {
 	h := r.Header.Get("Authorization")
 	raw, ok := strings.CutPrefix(h, "Bearer ")
 	if !ok {
-		return store.User{}, errors.New("jeton manquant")
+		return store.User{}, time.Time{}, errors.New("jeton manquant")
 	}
 	c, err := s.Keys.Verify(strings.TrimSpace(raw), tokens.TypeAccess, s.Config.Issuer(), tokens.AudiencePostgres, time.Now())
 	if err != nil {
-		return store.User{}, err
+		return store.User{}, time.Time{}, err
 	}
 	u, err := s.Store.User(r.Context(), c.Subject)
 	if err != nil {
-		return store.User{}, err
+		return store.User{}, time.Time{}, err
 	}
 	if u.Disabled || u.PGRole != c.PGRole {
-		return store.User{}, errors.New("compte désactivé")
+		return store.User{}, time.Time{}, errors.New("compte désactivé")
 	}
-	return u, nil
+	var exp time.Time
+	if c.ExpiresAt > 0 {
+		exp = time.Unix(c.ExpiresAt, 0)
+	}
+	return u, exp, nil
 }
 
 func (s *Server) preview(w http.ResponseWriter, r *http.Request) {

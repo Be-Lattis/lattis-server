@@ -60,7 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/push/{id}", s.push)
 	mux.HandleFunc("GET /api/push/{id}", s.pushStatus)
 	if s.Events != nil {
-		mux.HandleFunc("GET /api/events", s.Events.Handler(s.bearer))
+		mux.HandleFunc("GET /api/events", s.Events.Handler(s.bearerExp))
 	}
 	if s.Forms != nil {
 		s.Forms.Bearer = s.bearer
