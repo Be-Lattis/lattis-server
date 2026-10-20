@@ -222,7 +222,7 @@ func securityHeaders(https bool, next http.HandlerFunc) http.Handler {
 		if https {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
-		if strings.HasPrefix(r.URL.Path, "/app/") {
+		if strings.HasPrefix(r.URL.Path, "/app/") || strings.HasPrefix(r.URL.Path, "/demo/") {
 			// Application web (SvelteKit) : script d'amorçage en ligne,
 			// styles de composants, WebSocket vers la même origine.
 			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'")

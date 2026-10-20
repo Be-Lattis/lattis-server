@@ -137,6 +137,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_WEB_CACHE_DIR` | `/var/lib/lattis/web` | Édition web : un répertoire par utilisateur (cache SQLite, fichiers envoyés). |
 | `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs, réserve comprise (au-delà : page « Plus de ressources disponibles », 503). |
 | `LATTIS_WEB_POOL_SPARE` | `0` | Édition web : moteurs gardés prêts d'avance, en plus de ceux utilisés (§5.1.4). |
+| `LATTIS_WEB_DEMO_MAX`, `LATTIS_WEB_DEMO_IDLE`, `LATTIS_WEB_DEMO_LIFETIME` | `5`, `10m`, `1h` | Démo publique (§5.1.5) : moteurs au plus (pris sur `LATTIS_WEB_MAX_ENGINES` ; 0 la désactive), inactivité avant arrêt, durée maximale d'une démo. Mode `docker` : `LAUNCHER_DEMO_IDLE` côté lanceur. |
 | `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
 | `LATTIS_SMTP_HOST` | vide | Envoi d'e-mails (facultatif, §5.2) : serveur SMTP. Vide : pas d'envoi, les liens restent à copier depuis l'administration. |
 | `LATTIS_SMTP_PORT` | `587`, `465` (tls), `25` (none) | Port du serveur SMTP. |
@@ -296,6 +297,14 @@ Par défaut, un moteur démarre à la connexion de l'utilisateur. Avec `LATTIS_W
 - **Ressources** : les moteurs prêts consomment de la mémoire en permanence (en mode `docker` et `kubernetes`, chacun selon ses limites). Deux à cinq suffisent en général à absorber les connexions du matin.
 
 Le moteur ne demande les jetons de l'utilisateur qu'à sa première connexion à PostgreSQL : `lattisd` rattache le secret du moteur prêt à l'utilisateur au moment de l'attribution. Aucune version particulière de `lattis-engine` n'est requise.
+
+#### 5.1.5 Démo publique (les trois modes)
+
+Réglage **Démo publique, sans connexion** (Administration › Serveur › Accès et publication), désactivé par défaut. Une fois coché, l'adresse `/demo` ouvre Lattis dans le navigateur sans compte : on essaie l'outil sans rien installer, avec les données d'exemple « small » ou « medium » (Fichier › Ouvrir › Récents). Rien n'est enregistré sur le serveur : Ctrl+S télécharge le classeur.
+
+- Chaque navigateur a son moteur, lancé avec `--public-demo` : ni serveur, ni jeton, ni secret, donc aucun accès à PostgreSQL ni aux classeurs du serveur ; scripts coupés ; aucun volume persistant (répertoire, volume anonyme ou `emptyDir` effacé à l'arrêt).
+- Plafonds : `LATTIS_WEB_DEMO_MAX` démos en tout (5, prises sur `LATTIS_WEB_MAX_ENGINES`), 2 par adresse IP ; arrêt après `LATTIS_WEB_DEMO_IDLE` sans onglet (10 min) ou `LATTIS_WEB_DEMO_LIFETIME` en tout (1 h). Au-delà, la page « La démo est complète » invite à réessayer.
+- Demande un `lattis-engine` qui connaît `--public-demo`.
 
 ### 5.2 Envoi d'e-mails (facultatif)
 

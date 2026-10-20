@@ -36,6 +36,8 @@ type Config struct {
 	VolumePrefix string
 	// Max : moteurs simultanés au plus.
 	Max int
+	// DemoIdle : inactivité avant arrêt d'un moteur de la démo publique (10m).
+	DemoIdle string
 }
 
 // Server sert l'API du lanceur.
@@ -77,9 +79,12 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		UserID string `json:"user_id"`
 		Secret string `json:"secret"`
+		// Demo : démo publique, sans serveur ni secret (--public-demo).
+		Demo bool `json:"demo"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil ||
-		!userRe.MatchString(in.UserID) || !secretRe.MatchString(in.Secret) {
+		!userRe.MatchString(in.UserID) || (!in.Demo && !secretRe.MatchString(in.Secret)) ||
+		(in.Demo && (in.Secret != "" || !strings.HasPrefix(in.UserID, "demo-"))) {
 		http.Error(w, "demande invalide", http.StatusBadRequest)
 		return
 	}
@@ -102,14 +107,22 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	// Volume de cache par utilisateur ; un moteur de la réserve de lattisd
 	// (pool-…) a un volume anonyme, supprimé avec son conteneur.
 	mount := map[string]any{"Type": "volume", "Source": c.VolumePrefix + in.UserID, "Target": "/home/nonroot"}
-	if strings.HasPrefix(in.UserID, "pool-") {
+	if strings.HasPrefix(in.UserID, "pool-") || in.Demo {
 		delete(mount, "Source")
+	}
+	cmd := []string{"--addr", "0.0.0.0:" + EnginePort, "--dir", "/home/nonroot", "--base-path", "/app",
+		"--server", c.Server, "--token-url", c.TokenURL, "--idle", c.Idle}
+	env := []string{"LATTIS_ENGINE_SECRET=" + in.Secret}
+	if in.Demo {
+		// Démo publique : ni serveur, ni jeton, ni secret.
+		cmd = []string{"--addr", "0.0.0.0:" + EnginePort, "--dir", "/home/nonroot", "--base-path", "/demo",
+			"--public-demo", "--idle", c.DemoIdle}
+		env = nil
 	}
 	spec := map[string]any{
 		"Image": c.Image,
-		"Cmd": []string{"--addr", "0.0.0.0:" + EnginePort, "--dir", "/home/nonroot", "--base-path", "/app",
-			"--server", c.Server, "--token-url", c.TokenURL, "--idle", c.Idle},
-		"Env": []string{"LATTIS_ENGINE_SECRET=" + in.Secret},
+		"Cmd":   cmd,
+		"Env":   env,
 		// Entrée standard ouverte : le moteur s'arrête quand elle se ferme.
 		"OpenStdin": true,
 		"Labels":    map[string]string{Label: "1", "lattis.user": in.UserID},

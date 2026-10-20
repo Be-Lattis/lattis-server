@@ -136,8 +136,12 @@ func (k *KubeLauncher) PodSpec(s Spec, name string) map[string]any {
 		meta["ownerReferences"] = []map[string]any{{"apiVersion": "v1", "kind": "Pod", "name": c.OwnerPod, "uid": c.OwnerUID}}
 	}
 	data := map[string]any{"name": "data", "emptyDir": map[string]any{}}
-	if c.CacheSize != "" && !isPool(s.UserID) {
+	if c.CacheSize != "" && !isPool(s.UserID) && !s.Demo {
 		data = map[string]any{"name": "data", "persistentVolumeClaim": map[string]string{"claimName": "lattis-web-" + s.UserID}}
+	}
+	env := []map[string]string{{"name": "LATTIS_ENGINE_SECRET", "value": s.Secret}, {"name": "HOME", "value": "/data"}}
+	if s.Demo {
+		env = env[1:] // démo publique : aucun secret
 	}
 	resources := map[string]any{"requests": map[string]string{"cpu": c.CPU, "memory": c.Memory},
 		"limits": map[string]string{"memory": c.Memory}}
@@ -150,11 +154,10 @@ func (k *KubeLauncher) PodSpec(s Spec, name string) map[string]any {
 			"seccompProfile": map[string]string{"type": "RuntimeDefault"}},
 		"containers": []map[string]any{{
 			"name": "engine", "image": c.Image,
-			"args": []string{"--addr", "0.0.0.0:" + engineHTTP, "--dir", "/data", "--base-path", "/app",
-				"--server", s.Server, "--token-url", s.TokenURL, "--idle", s.Idle.String()},
+			"args": EngineArgs(s, "0.0.0.0:"+engineHTTP, "/data"),
 			// Entrée standard ouverte : le moteur s'arrête quand elle se ferme.
 			"stdin":     true,
-			"env":       []map[string]string{{"name": "LATTIS_ENGINE_SECRET", "value": s.Secret}, {"name": "HOME", "value": "/data"}},
+			"env":       env,
 			"ports":     []map[string]any{{"name": "http", "containerPort": 8102}},
 			"resources": resources,
 			"securityContext": map[string]any{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
@@ -180,7 +183,7 @@ func (k *KubeLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 	if err := k.deleteAll(ctx, s.UserID); err != nil {
 		return nil, err
 	}
-	if k.Cfg.CacheSize != "" && !isPool(s.UserID) {
+	if k.Cfg.CacheSize != "" && !isPool(s.UserID) && !s.Demo {
 		pvc := map[string]any{"apiVersion": "v1", "kind": "PersistentVolumeClaim",
 			"metadata": map[string]any{"name": "lattis-web-" + s.UserID, "labels": map[string]string{labelApp: "lattis-engine", labelUser: s.UserID}},
 			"spec": map[string]any{"accessModes": []string{"ReadWriteOnce"},

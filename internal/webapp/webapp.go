@@ -66,6 +66,10 @@ type Manager struct {
 	// (Config.WebEngine, Config.WebCacheDir, Config.WebEngineUIDs).
 	Launcher Launcher
 	Now      func() time.Time
+	// DemoEnabled lit le réglage public_demo (démo publique, /demo/) ; nil :
+	// démo désactivée. ClientIP : adresse du client (plafond par adresse).
+	DemoEnabled func(context.Context) bool
+	ClientIP    func(*http.Request) string
 
 	mu      sync.Mutex
 	engines map[string]*engine // par utilisateur
@@ -75,8 +79,11 @@ type Manager struct {
 type engine struct {
 	userID string
 	secret string
-	inst   Instance
-	proxy  *httputil.ReverseProxy
+	// demo : moteur de la démo publique ; ip : adresse du client qui l'a ouvert.
+	demo  bool
+	ip    string
+	inst  Instance
+	proxy *httputil.ReverseProxy
 	// started se ferme une fois le démarrage fini (startErr dit comment).
 	started  chan struct{}
 	startErr error
@@ -114,6 +121,7 @@ func (m *Manager) Routes(mux *http.ServeMux) {
 		}
 		m.token(w, r)
 	})
+	m.demoRoutes(mux)
 }
 
 // TokenHandler sert /engine/token aux moteurs en conteneur, sur une écoute
@@ -251,8 +259,11 @@ func (m *Manager) start(l Launcher, e *engine) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	inst, err := l.Start(ctx, Spec{UserID: e.userID, Secret: e.secret, Server: m.Config.Issuer(),
-		TokenURL: m.TokenURL, Idle: m.Config.WebIdle})
+	spec := Spec{UserID: e.userID, Secret: e.secret, Server: m.Config.Issuer(), TokenURL: m.TokenURL, Idle: m.Config.WebIdle}
+	if e.demo {
+		spec = Spec{UserID: e.userID, Demo: true, Idle: m.Config.WebDemoIdle}
+	}
+	inst, err := l.Start(ctx, spec)
 	if err != nil {
 		return err
 	}

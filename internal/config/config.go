@@ -84,6 +84,10 @@ type Config struct {
 	WebEngineUIDs [2]int
 	// WebSpare : moteurs gardés prêts d'avance (réserve), 0 : aucun.
 	WebSpare int
+	// Démo publique (/demo/, réglage public_demo) : moteurs au plus (pris
+	// sur WebMaxEngines), inactivité avant arrêt, durée maximale.
+	WebDemoMax                int
+	WebDemoIdle, WebDemoLimit time.Duration
 	// WebLauncher : process (processus de lattisd), docker (conteneurs par
 	// le mini lanceur lattis-launcher) ou kubernetes (pods).
 	WebLauncher string
@@ -286,6 +290,21 @@ func parse(get func(string) string) (*Config, error) {
 		c.WebSpare = n
 	} else {
 		errs = append(errs, fmt.Errorf("LATTIS_WEB_POOL_SPARE : entier de 0 à %d (moins que LATTIS_WEB_MAX_ENGINES)", c.WebMaxEngines-1))
+	}
+	if n, err := strconv.Atoi(def("LATTIS_WEB_DEMO_MAX", "5")); err == nil && n >= 0 {
+		c.WebDemoMax = min(n, c.WebMaxEngines)
+	} else {
+		errs = append(errs, errors.New("LATTIS_WEB_DEMO_MAX : entier positif ou nul attendu (5)"))
+	}
+	if d, err := time.ParseDuration(def("LATTIS_WEB_DEMO_IDLE", "10m")); err == nil && d > 0 {
+		c.WebDemoIdle = d
+	} else {
+		errs = append(errs, errors.New("LATTIS_WEB_DEMO_IDLE : durée positive attendue (10m)"))
+	}
+	if d, err := time.ParseDuration(def("LATTIS_WEB_DEMO_LIFETIME", "1h")); err == nil && d > 0 {
+		c.WebDemoLimit = d
+	} else {
+		errs = append(errs, errors.New("LATTIS_WEB_DEMO_LIFETIME : durée positive attendue (1h)"))
 	}
 	c.Mail = Mail{Host: def("LATTIS_SMTP_HOST", ""), User: def("LATTIS_SMTP_USER", ""),
 		PasswordFile: def("LATTIS_SMTP_PASSWORD_FILE", ""), From: def("LATTIS_SMTP_FROM", ""), TLS: def("LATTIS_SMTP_TLS", "starttls")}

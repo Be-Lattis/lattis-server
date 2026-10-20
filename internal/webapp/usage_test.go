@@ -2,12 +2,14 @@ package webapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Be-Lattis/lattis-server/internal/config"
 )
@@ -62,6 +64,23 @@ func TestUsage(t *testing.T) {
 		n, err := RSS(os.Getpid())
 		if err != nil || n <= 0 {
 			t.Fatalf("RSS : %d, %v", n, err)
+		}
+	}
+}
+
+// Pod de la démo publique : options --public-demo, ni secret, ni volume
+// persistant, ni serveur.
+func TestKubeDemoPod(t *testing.T) {
+	k := &KubeLauncher{Cfg: config.K8sEngines{Image: "moteur:1", Namespace: "lattis", CPU: "250m", Memory: "1Gi", CacheSize: "1Gi"}}
+	b, _ := json.Marshal(k.PodSpec(Spec{UserID: "demo-ab", Demo: true, Idle: time.Minute}, "p"))
+	for _, want := range []string{`"--public-demo"`, `"--base-path","/demo"`, `"emptyDir"`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("pod de démo sans %s : %s", want, b)
+		}
+	}
+	for _, bad := range []string{"LATTIS_ENGINE_SECRET", "--server", "persistentVolumeClaim"} {
+		if strings.Contains(string(b), bad) {
+			t.Fatalf("pod de démo avec %s : %s", bad, b)
 		}
 	}
 }

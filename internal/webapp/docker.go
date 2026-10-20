@@ -72,7 +72,7 @@ func (l *DockerLauncher) call(ctx context.Context, method, path string, body, ou
 
 func (l *DockerLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 	var e LauncherEngine
-	if _, err := l.call(ctx, http.MethodPost, "/engines", map[string]string{"user_id": s.UserID, "secret": s.Secret}, &e); err != nil {
+	if _, err := l.call(ctx, http.MethodPost, "/engines", map[string]any{"user_id": s.UserID, "secret": s.Secret, "demo": s.Demo}, &e); err != nil {
 		return nil, err
 	}
 	if e.ID == "" || e.Addr == "" {

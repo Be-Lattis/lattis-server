@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -412,9 +413,32 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 	}
 }
 
+// demoSetting lit le réglage public_demo (démo publique), relu au plus
+// toutes les 10 s.
+func demoSetting(st *store.Store) func(context.Context) bool {
+	var mu sync.Mutex
+	var on bool
+	var at time.Time
+	return func(ctx context.Context) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if time.Since(at) < 10*time.Second {
+			return on
+		}
+		var v bool
+		if err := st.DB.QueryRow(ctx, `SELECT coalesce((value #>> '{}')::boolean, false) FROM lattis.server_config WHERE key = 'public_demo'`).Scan(&v); err != nil {
+			slog.Warn("réglage public_demo", "err", err)
+			return on
+		}
+		on, at = v, time.Now()
+		return on
+	}
+}
+
 // webManager : moteurs de l'édition web, lancés selon LATTIS_WEB_LAUNCHER.
 func webManager(cfg *config.Config, st *store.Store, keys *tokens.KeySet, session func(*http.Request) (store.User, error)) (*webapp.Manager, error) {
-	m := &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: session, TokenURL: cfg.WebTokenURL}
+	m := &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: session, TokenURL: cfg.WebTokenURL,
+		ClientIP: func(r *http.Request) string { return auth.ClientIP(r, cfg.TrustProxy) }, DemoEnabled: demoSetting(st)}
 	switch cfg.WebLauncher {
 	case "docker":
 		tok, err := os.ReadFile(cfg.LauncherTokenFile)

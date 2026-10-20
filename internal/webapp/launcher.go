@@ -19,6 +19,18 @@ type Spec struct {
 	Server   string
 	TokenURL string
 	Idle     time.Duration
+	// Demo : moteur de la démo publique (--public-demo) : ni serveur, ni
+	// jeton, ni secret ; rien n'est gardé après son arrêt.
+	Demo bool
+}
+
+// EngineArgs : options de lattis-engine pour s, écoute addr et répertoire dir.
+func EngineArgs(s Spec, addr, dir string) []string {
+	if s.Demo {
+		return []string{"--addr", addr, "--dir", dir, "--base-path", DemoBase, "--public-demo", "--idle", s.Idle.String()}
+	}
+	return []string{"--addr", addr, "--dir", dir, "--base-path", "/app",
+		"--server", s.Server, "--token-url", s.TokenURL, "--idle", s.Idle.String()}
 }
 
 // Instance : un moteur lancé.

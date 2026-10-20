@@ -61,8 +61,8 @@ func (l *ProcessLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 	go func() {
 		<-inst.done
 		l.release(uid, s.UserID)
-		if isPool(s.UserID) {
-			// Répertoire d'un moteur de la réserve : éphémère.
+		if isPool(s.UserID) || s.Demo {
+			// Répertoire d'un moteur de la réserve ou de la démo : éphémère.
 			_ = os.RemoveAll(filepath.Join(l.CacheDir, s.UserID))
 		}
 	}()
@@ -112,13 +112,14 @@ func (l *ProcessLauncher) start(ctx context.Context, s Spec, uid int) (*procInst
 			return nil, fmt.Errorf("cache du moteur : %w", err)
 		}
 	}
-	cmd := exec.Command(l.Bin,
-		"--addr", "127.0.0.1:0", "--dir", dir, "--base-path", "/app",
-		"--server", s.Server, "--token-url", s.TokenURL, "--idle", s.Idle.String())
+	cmd := exec.Command(l.Bin, EngineArgs(s, "127.0.0.1:0", dir)...)
 	// Environnement minimal : rien des secrets de lattisd.
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "XDG_CONFIG_HOME=" + filepath.Join(dir, ".config"),
 		"XDG_CACHE_HOME=" + filepath.Join(dir, ".cache"), "XDG_DATA_HOME=" + filepath.Join(dir, ".local", "share"),
 		"LATTIS_ENGINE_SECRET=" + s.Secret}
+	if s.Demo {
+		cmd.Env = cmd.Env[:len(cmd.Env)-1] // démo publique : aucun secret
+	}
 	cmd.Dir = dir
 	isolate(cmd, uid)
 	stdin, err := cmd.StdinPipe()

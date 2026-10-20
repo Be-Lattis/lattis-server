@@ -126,6 +126,23 @@ func TestServer(t *testing.T) {
 	if resp, _ := call("GET", "/engines/clattis-engine-u1", tok, ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("après arrêt : %d", resp.StatusCode)
 	}
+	// Démo publique : ni serveur, ni jeton, ni secret ; un secret ou un
+	// identifiant hors démo est refusé.
+	if resp, _ := call("POST", "/engines", tok, `{"user_id":"demo-ab12","demo":true,"secret":"`+secret+`"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("démo avec secret : %d", resp.StatusCode)
+	}
+	if resp, _ := call("POST", "/engines", tok, `{"user_id":"u9","demo":true}`); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("démo hors préfixe : %d", resp.StatusCode)
+	}
+	if resp, _ := call("POST", "/engines", tok, `{"user_id":"demo-ab12","demo":true}`); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("démo : %d", resp.StatusCode)
+	}
+	b, _ = json.Marshal(fd.created)
+	if !strings.Contains(string(b), `"--public-demo"`) || strings.Contains(string(b), "--server") || strings.Contains(string(b), "LATTIS_ENGINE_SECRET") ||
+		strings.Contains(string(b), `"Source":"lattis-web-demo`) {
+		t.Fatalf("conteneur de démo : %s", b)
+	}
+	call("DELETE", "/engines/clattis-engine-demo-ab12", tok, "")
 	call("POST", "/engines", tok, `{"user_id":"u3","secret":"`+secret+`"}`)
 	if resp, _ := call("POST", "/engines/cleanup", tok, ""); resp.StatusCode != http.StatusNoContent || len(fd.containers) != 0 {
 		t.Fatalf("nettoyage : %d, %d conteneurs", resp.StatusCode, len(fd.containers))

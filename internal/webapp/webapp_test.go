@@ -30,6 +30,10 @@ func TestMain(m *testing.M) {
 			fakeEngine()
 			return
 		}
+		if a == "--public-demo" {
+			fakeDemoEngine()
+			return
+		}
 	}
 	os.Exit(m.Run())
 }
@@ -68,6 +72,30 @@ func fakeEngine() {
 	})
 	go func() { _ = http.Serve(ln, mux) }()
 	_, _ = io.Copy(io.Discard, os.Stdin) // stdin fermé : arrêt
+}
+
+// fakeDemoEngine : faux moteur de démo ; renvoie ses options et son
+// environnement (aucun secret, aucun serveur).
+func fakeDemoEngine() {
+	fs := flag.NewFlagSet("engine", flag.ExitOnError)
+	addr := fs.String("addr", "", "")
+	base := fs.String("base-path", "", "")
+	fs.String("dir", "", "")
+	fs.String("idle", "", "")
+	fs.Bool("public-demo", false, "")
+	_ = fs.Parse(os.Args[1:])
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		os.Exit(2)
+	}
+	fmt.Println("LISTENING " + ln.Addr().String())
+	mux := http.NewServeMux()
+	mux.HandleFunc(*base+"/", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"path": r.URL.Path, "args": strings.Join(os.Args[1:], " "),
+			"secret": os.Getenv("LATTIS_ENGINE_SECRET"), "cookie": r.Header.Get("Cookie")})
+	})
+	go func() { _ = http.Serve(ln, mux) }()
+	_, _ = io.Copy(io.Discard, os.Stdin)
 }
 
 type users map[string]store.User
@@ -222,5 +250,86 @@ func TestManagerPool(t *testing.T) {
 	}
 	if code, body := get("c"); code != http.StatusServiceUnavailable || !strings.Contains(body, "Plus de ressources disponibles") {
 		t.Fatalf("au plafond : %d %s", code, body)
+	}
+}
+
+// Démo publique : désactivée par défaut ; un moteur par navigateur, sans
+// serveur ni secret ; plafond par adresse ; arrêt à la durée maximale.
+func TestDemo(t *testing.T) {
+	on := false
+	m := &webapp.Manager{Users: users{}, DemoEnabled: func(context.Context) bool { return on },
+		Session: func(*http.Request) (store.User, error) { return store.User{}, errors.New("pas de session") }}
+	mux := http.NewServeMux()
+	m.Routes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	pub, _ := url.Parse(srv.URL)
+	m.Config = &config.Config{PublicURL: pub, WebEngine: os.Args[0], WebCacheDir: t.TempDir(), WebMaxEngines: 10, WebIdle: time.Minute,
+		WebDemoMax: 3, WebDemoIdle: time.Minute, WebDemoLimit: 3 * time.Second}
+	m.TokenURL = srv.URL + "/engine/token"
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		m.Stop(ctx)
+	}()
+	get := func(method, cookie string) (*http.Response, map[string]any) {
+		req, _ := http.NewRequest(method, srv.URL+"/demo/", nil)
+		if cookie != "" {
+			req.Header.Set("Cookie", "lattis_demo="+cookie)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp, out
+	}
+	if resp, _ := get("GET", ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("démo désactivée : %d", resp.StatusCode)
+	}
+	on = true
+	resp, out := get("GET", "")
+	var id string
+	for _, c := range resp.Cookies() {
+		if c.Name == "lattis_demo" {
+			id = c.Value
+		}
+	}
+	if resp.StatusCode != http.StatusOK || id == "" {
+		t.Fatalf("démo : %d %v", resp.StatusCode, out)
+	}
+	args, _ := out["args"].(string)
+	if !strings.Contains(args, "--public-demo") || !strings.Contains(args, "--base-path /demo") || strings.Contains(args, "--server") ||
+		strings.Contains(args, "--token-url") || out["secret"] != "" || out["cookie"] != "" {
+		t.Fatalf("moteur de démo : %v", out)
+	}
+	// Même navigateur : même moteur.
+	if resp, _ := get("GET", id); resp.StatusCode != http.StatusOK || m.Count() != 1 {
+		t.Fatalf("même navigateur : %d, %d moteurs", resp.StatusCode, m.Count())
+	}
+	// Sans cookie, seule l'ouverture d'une page démarre une démo.
+	if resp, _ := get("POST", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("POST sans démo : %d", resp.StatusCode)
+	}
+	// Deux démos au plus par adresse.
+	if resp, _ := get("GET", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("seconde démo : %d", resp.StatusCode)
+	}
+	if resp, _ := get("GET", ""); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("troisième démo de la même adresse : %d", resp.StatusCode)
+	}
+	// Le jeton d'un moteur de démo n'existe pas.
+	if resp, _ := http.Get(srv.URL + "/engine/token"); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("jeton sans secret : %d", resp.StatusCode)
+	}
+	// Durée maximale : les moteurs s'arrêtent.
+	deadline := time.Now().Add(10 * time.Second)
+	for m.Count() > 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if m.Count() != 0 {
+		t.Fatalf("moteurs après la durée maximale : %d", m.Count())
 	}
 }
