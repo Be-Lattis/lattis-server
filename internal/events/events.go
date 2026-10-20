@@ -304,11 +304,14 @@ var ErrForbidden = errors.New("classeur inconnu ou interdit")
 func (h *Hub) channelOf(ctx context.Context, u store.User, workbook string) (string, error) {
 	var ch string
 	err := h.Users.As(ctx, u, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT lattis.my_capabilities($1::uuid)`, workbook); err != nil {
-			return err
-		}
-		return tx.QueryRow(ctx, `SELECT 'wb_' || slug FROM lattis.workbooks WHERE id = $1::uuid`, workbook).Scan(&ch)
+		_, err := tx.Exec(ctx, `SELECT lattis.my_capabilities($1::uuid)`, workbook)
+		return err
 	})
+	if err == nil {
+		// Canal du classeur : lu par la connexion de service (la table des
+		// classeurs n'est pas lisible par les utilisateurs).
+		err = h.Pool.QueryRow(ctx, `SELECT 'wb_' || slug FROM lattis.workbooks WHERE id = $1::uuid`, workbook).Scan(&ch)
+	}
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && (pe.Code == "42501" || pe.Code == "P0002" || pe.Code == "22P02") || errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrForbidden
