@@ -1,4 +1,5 @@
 {{define "body"}}{{$pg := .Data.PG}}
+{{range .Data.Warnings}}<p class="error alert" role="alert">{{.}}</p>{{end}}
 <section class="panel">
 <h2>Serveur Lattis</h2>
 <dl>
@@ -8,6 +9,8 @@
 <dt>Point d'écriture</dt><dd><code>{{.Data.Endpoints.String}}</code></dd>
 <dt>Points de lecture configurés</dt><dd>{{range .Data.RO}}<code>{{.String}}</code> {{else}}aucun{{end}}</dd>
 {{if .Data.Monitored}}<dt>Annoncés aux postes</dt><dd>{{range .Data.Announced}}<code>{{.String}}</code> {{else}}aucun : les postes lisent sur le point d'écriture{{end}}</dd>{{end}}
+{{with .Data.Schema}}<dt>Schéma</dt><dd>version {{.Current}}{{if .Pending}} · <span class="tag warn">{{len .Pending}} migration(s) en attente</span>{{else if .Newer}} · <span class="tag off">plus récent que ce lattisd ({{.Latest}})</span>{{else}} · à jour{{end}}{{if .Modified}} · <span class="tag warn">{{len .Modified}} migration(s) modifiée(s) depuis leur application</span>{{end}}</dd>{{end}}
+{{with .Data.MaxConnections}}<dt>Connexions PostgreSQL</dt><dd>{{.}} au plus</dd>{{end}}
 <dt>Utilisateurs</dt><dd>{{str $pg.users}}</dd>
 <dt>Classeurs</dt><dd>{{str $pg.workbooks}}</dd>
 </dl>

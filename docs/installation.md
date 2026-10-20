@@ -51,7 +51,7 @@ Partir de `deploy/compose/docker-compose.yml` et changer :
 
 3. **Points annoncés aux postes** : `LATTIS_PG_PUBLIC_RW=pg.acme.fr:5432` et `LATTIS_PG_SSLMODE=verify-full`.
 4. **Ports** : publier 5432 (et ceux des réplicas) vers les postes ; **ne pas** publier 9464 (mesures) hors du réseau interne.
-5. **Connexions** : chaque poste garde une connexion ouverte sur le PostgreSQL parent (synchronisation), sous son propre rôle, donc sans pooler. L'image règle `max_connections` à 400 à la création de la base (`LATTIS_PG_MAX_CONNECTIONS` pour une autre valeur), ce qui tient de l'ordre de 300 postes simultanés en comptant `lattisd` et les moteurs web. Base créée avant cette version : `ALTER SYSTEM SET max_connections = 400; ALTER SYSTEM SET hot_standby_feedback = on;` sur le parent puis redémarrage, et les réplicas ensuite (leur `max_connections` doit être au moins celui du parent). Au-delà de quelques centaines de postes, ajouter des réplicas ne suffit pas : voir le jalon 8 de la spécification (§21).
+5. **Connexions** : chaque poste garde une connexion ouverte sur le PostgreSQL parent (synchronisation), sous son propre rôle, donc sans pooler. L'image règle `max_connections` à 400 à la création de la base (`LATTIS_PG_MAX_CONNECTIONS` pour une autre valeur), ce qui tient de l'ordre de 300 postes simultanés en comptant `lattisd` et les moteurs web. Ces réglages sont réécrits à chaque démarrage (`$PGDATA/lattis.conf`) : une base existante les prend au redémarrage avec la nouvelle image, sans commande à la main (voir [mise-a-jour.md](mise-a-jour.md)). Au-delà de quelques centaines de postes, ajouter des réplicas ne suffit pas : voir le jalon 8 de la spécification (§21).
 6. **Sauvegardes** : `pg_basebackup` et archivage des WAL, ou `pg_dump` quotidien de la base `lattis` (rôles compris : `pg_dumpall --roles-only`).
 
 Le certificat est copié dans les données de PostgreSQL à l'initialisation : pour le renouveler, remplacer `server.crt` et `server.key` dans le dossier de données (`/var/lib/postgresql/18/docker`) puis `SELECT pg_reload_conf();`.
@@ -325,6 +325,8 @@ SELECT lattis.create_password_account('paul@acme.fr', 'Paul');  -- renvoie le je
 - Un réplica retiré l'est dans les 5 s (relevé périodique) et revient seul quand il a rattrapé son retard.
 
 ## 8. Mettre à jour, faire tourner la clé
+
+Mises à jour : voir [mise-a-jour.md](mise-a-jour.md) (migrations automatiques, essai à blanc, sauvegarde, retour en arrière).
 
 - **Mise à jour** : nouvelle image `lattisd`, démarrée avec `--migrate` ; les migrations sont versionnées et appliquées une fois. Mettre à jour l'image `be-lattis/server` quand le module `lattis_oauth` change (noté dans les versions).
 - **Rotation de la clé de signature** :

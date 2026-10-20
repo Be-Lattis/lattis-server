@@ -61,6 +61,15 @@ jobs:
           docker compose up -d --no-build
           for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
           curl -sf http://localhost:8080/readyz
+          # Réglages PostgreSQL gérés : appliqués au démarrage, et suivis au redémarrage.
+          test "$(docker compose exec -T postgres gosu postgres psql -tAc 'show max_connections')" = 400
+          test "$(docker compose exec -T postgres gosu postgres psql -tAc 'show hot_standby_feedback')" = on
+          LATTIS_PG_MAX_CONNECTIONS=300 docker compose up -d --no-build postgres
+          for i in $(seq 30); do docker compose exec -T postgres gosu postgres pg_isready -q && break; sleep 2; done
+          test "$(docker compose exec -T postgres gosu postgres psql -tAc 'show max_connections')" = 300
+          docker compose up -d --no-build postgres lattisd
+          for i in $(seq 60); do curl -sf http://localhost:8080/readyz && break; sleep 2; done
+          docker compose run --rm --no-deps lattisd migrate --status | grep "À jour"
           # Application web désactivée (édition admin) : /app/ refusée.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/app/)" = 404
       - name: Parcours d'un poste

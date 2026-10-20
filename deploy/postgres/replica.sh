@@ -36,4 +36,5 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
 		sleep 5
 	done
 fi
+/usr/local/bin/lattis-conf
 exec docker-entrypoint.sh postgres

@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Be-Lattis/lattis-server/internal/migrate"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 )
 
@@ -555,6 +556,24 @@ func (s *Service) loadStatus(ctx context.Context, tx pgx.Tx, r *http.Request, u 
 		return nil, err
 	}
 	out := map[string]any{"PG": st, "Endpoints": s.Config.PGPublicRW, "RO": s.Config.PGPublicRO}
+	// Schéma et réglages : ce qu'une montée de version doit avoir appliqué.
+	if s.Store != nil {
+		if ms, err := migrate.Check(ctx, s.Store.DB); err == nil {
+			out["Schema"] = ms
+		}
+	}
+	var maxConn int
+	var feedback string
+	if err := tx.QueryRow(ctx, `SELECT current_setting('max_connections')::int, current_setting('hot_standby_feedback')`).Scan(&maxConn, &feedback); err == nil {
+		var warn []string
+		if maxConn < 200 {
+			warn = append(warn, fmt.Sprintf("max_connections vaut %d : chaque poste garde une connexion ouverte, 200 au moins sont conseillées (image be-lattis/server : réglage appliqué au démarrage)", maxConn))
+		}
+		if feedback != "on" && len(s.Config.PGPublicRO) > 0 {
+			warn = append(warn, "hot_standby_feedback est coupé alors que des réplicas sont annoncés : des lectures longues sur un réplica peuvent être annulées")
+		}
+		out["MaxConnections"], out["Warnings"] = maxConn, warn
+	}
 	if s.Replicas != nil {
 		out["Monitored"] = s.Replicas.States()
 		out["Announced"] = s.Replicas.Available()

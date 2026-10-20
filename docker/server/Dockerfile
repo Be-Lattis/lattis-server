@@ -17,6 +17,11 @@ COPY --from=build /out/usr/lib/postgresql/ /usr/lib/postgresql/
 COPY schema/bootstrap.sql /usr/share/lattis/bootstrap.sql
 COPY deploy/postgres/initdb/10-lattis.sh /docker-entrypoint-initdb.d/10-lattis.sh
 COPY deploy/postgres/replica.sh /usr/local/bin/lattis-replica
-RUN sed -i 's/\r$//' /docker-entrypoint-initdb.d/10-lattis.sh /usr/local/bin/lattis-replica \
- && chmod +x /docker-entrypoint-initdb.d/10-lattis.sh /usr/local/bin/lattis-replica
+COPY deploy/postgres/lattis-conf.sh /usr/local/bin/lattis-conf
+COPY deploy/postgres/entrypoint.sh /usr/local/bin/lattis-entrypoint
+RUN for f in /docker-entrypoint-initdb.d/10-lattis.sh /usr/local/bin/lattis-replica /usr/local/bin/lattis-conf /usr/local/bin/lattis-entrypoint; do \
+      sed -i 's/\r$//' "$f" && chmod +x "$f"; done
 ENV POSTGRES_DB=lattis
+# Réglages gérés (lattis.conf) appliqués à chaque démarrage.
+ENTRYPOINT ["lattis-entrypoint"]
+CMD ["postgres"]

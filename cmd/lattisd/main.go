@@ -2,6 +2,8 @@
 //
 //	lattisd [--migrate]        démarre le service (et applique les migrations)
 //	lattisd migrate            applique les migrations puis s'arrête
+//	lattisd migrate --status   état des migrations (rien n'est changé)
+//	lattisd migrate --dry-run  essaie les migrations en attente puis annule
 //	lattisd keygen FICHIER     crée une clé de signature Ed25519
 //	lattisd public-keys        écrit les clés publiques (PEM) pour lattis_oauth
 //	lattisd init-dev DIR [HÔTE…] prépare les secrets d'un essai local
@@ -73,7 +75,7 @@ func run(args []string) error {
 			}
 			return publicKeys(args[1:])
 		case "migrate":
-			return migrateOnly()
+			return migrateOnly(args[1:])
 		case "version":
 			fmt.Println(httpserver.Version)
 			return nil
@@ -120,7 +122,14 @@ func publicKeys(args []string) error {
 	return err
 }
 
-func migrateOnly() error {
+// migrateOnly : lattisd migrate [--status | --dry-run].
+func migrateOnly(args []string) error {
+	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	status := fs.Bool("status", false, "afficher l'état des migrations sans rien changer")
+	dry := fs.Bool("dry-run", false, "essayer les migrations en attente puis tout annuler")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	url := os.Getenv("LATTIS_PG_RW_URL")
 	if url == "" {
 		return errors.New("LATTIS_PG_RW_URL manquant")
@@ -131,6 +140,67 @@ func migrateOnly() error {
 		return err
 	}
 	defer st.Close()
+	migrate.Version = httpserver.Version
+	s, err := migrate.Check(ctx, st.DB)
+	if err != nil {
+		return err
+	}
+	switch {
+	case *status:
+		fmt.Printf("lattisd %s : base en version %d, migrations embarquées jusqu'à %d\n", httpserver.Version, s.Current, s.Latest)
+		if s.Newer() {
+			fmt.Println("La base est plus récente que ce lattisd : installez un lattisd au moins aussi récent.")
+		}
+		for _, m := range s.Pending {
+			fmt.Println("à appliquer :", m)
+		}
+		for _, m := range s.Modified {
+			fmt.Println("modifiée depuis son application (non rejouée) :", m)
+		}
+		if len(s.Pending) == 0 && !s.Newer() {
+			fmt.Println("À jour.")
+		}
+		return nil
+	case *dry:
+		n, err := migrate.DryRun(ctx, st.DB)
+		if err != nil {
+			return fmt.Errorf("essai à blanc : %w", err)
+		}
+		fmt.Printf("Essai à blanc réussi : %d migration(s) passeraient ; rien n'a été changé.\n", n)
+		return nil
+	}
+	n, err := migrate.Up(ctx, st.DB)
+	if err != nil {
+		return err
+	}
+	slog.Info("migrations appliquées", "count", n, "version", migrate.Latest())
+	return nil
+}
+
+// checkSchema : au démarrage, migrations appliquées si --migrate, sinon
+// refus de servir une base en retard ; toujours refus d'une base plus
+// récente que ce lattisd.
+func checkSchema(ctx context.Context, st *store.Store, doMigrate bool) error {
+	migrate.Version = httpserver.Version
+	s, err := migrate.Check(ctx, st.DB)
+	if err != nil {
+		return fmt.Errorf("état des migrations : %w", err)
+	}
+	if s.Newer() {
+		return fmt.Errorf("base en version %d, plus récente que ce lattisd (migrations jusqu'à %d) : installez un lattisd au moins aussi récent que celui qui a migré la base", s.Current, s.Latest)
+	}
+	for _, m := range s.Modified {
+		slog.Warn("migration modifiée depuis son application (non rejouée)", "migration", m)
+	}
+	if len(s.Pending) == 0 {
+		slog.Info("schéma à jour", "version", s.Current)
+		return nil
+	}
+	if !doMigrate {
+		return fmt.Errorf("%d migration(s) en attente (base en version %d, lattisd en %d) : démarrez avec --migrate, ou lancez « lattisd migrate » (« lattisd migrate --dry-run » pour essayer d'abord)",
+			len(s.Pending), s.Current, s.Latest)
+	}
+	slog.Info("montée de version du schéma", "from", s.Current, "to", s.Latest, "pending", len(s.Pending))
 	n, err := migrate.Up(ctx, st.DB)
 	if err != nil {
 		return err
@@ -156,12 +226,8 @@ func serve(doMigrate bool) error {
 		return err
 	}
 	defer st.Close()
-	if doMigrate {
-		n, err := migrate.Up(ctx, st.DB)
-		if err != nil {
-			return err
-		}
-		slog.Info("migrations appliquées", "count", n, "version", migrate.Latest())
+	if err := checkSchema(ctx, st, doMigrate); err != nil {
+		return err
 	}
 	if cfg.BootstrapOwner != "" {
 		if token, err := st.Bootstrap(ctx, cfg.BootstrapOwner); err != nil {
