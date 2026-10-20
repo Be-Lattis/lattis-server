@@ -358,8 +358,10 @@ func (m *Manager) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	// Identité : compte affiché par l'interface web de la session.
 	_ = json.NewEncoder(w).Encode(map[string]any{"access_token": access, "token_type": "Bearer",
-		"pg_role": u.PGRole, "expires_in": int(tokenTTL.Seconds())})
+		"pg_role": u.PGRole, "expires_in": int(tokenTTL.Seconds()),
+		"user_id": u.ID, "email": u.Email, "display_name": u.DisplayName})
 }
 
 func randomSecret() string {

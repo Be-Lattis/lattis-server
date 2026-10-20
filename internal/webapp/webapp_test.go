@@ -63,6 +63,7 @@ func fakeEngine() {
 		_ = json.NewDecoder(resp.Body).Decode(&tok)
 		w.Header().Set("Content-Security-Policy", "default-src *")
 		_ = json.NewEncoder(w).Encode(map[string]any{"path": r.URL.Path, "pg_role": tok["pg_role"],
+			"email": tok["email"], "user_id": tok["user_id"], "display_name": tok["display_name"],
 			"cookie": r.Header.Get("Cookie"), "env_pg": os.Getenv("LATTIS_PG_RW_URL")})
 	})
 	go func() { _ = http.Serve(ln, mux) }()
@@ -82,7 +83,7 @@ func TestManager(t *testing.T) {
 	t.Setenv("LATTIS_PG_RW_URL", "postgres://secret") // ne doit pas parvenir au moteur
 	pem, _ := tokens.GenerateKeyPEM()
 	keys, _ := tokens.ParseKeys(pem)
-	us := users{"a": {ID: "a", PGRole: "anne@acme.fr", Email: "anne@acme.fr"}, "b": {ID: "b", PGRole: "bob@acme.fr"}}
+	us := users{"a": {ID: "a", PGRole: "anne@acme.fr", Email: "anne@acme.fr", DisplayName: "Anne"}, "b": {ID: "b", PGRole: "bob@acme.fr"}}
 	m := &webapp.Manager{Users: us, Keys: keys,
 		Session: func(r *http.Request) (store.User, error) {
 			if u, ok := us[r.Header.Get("X-Test-User")]; ok {
@@ -130,6 +131,10 @@ func TestManager(t *testing.T) {
 	}
 	var got map[string]any
 	_ = json.Unmarshal([]byte(body), &got)
+	// Identité de la session (compte affiché par l'interface web).
+	if got["email"] != "anne@acme.fr" || got["user_id"] != "a" || got["display_name"] != "Anne" {
+		t.Fatalf("identité remise au moteur : %v", got)
+	}
 	if got["pg_role"] != "anne@acme.fr" || got["path"] != "/app/index.html" || got["cookie"] != "" || got["env_pg"] != "" {
 		t.Fatalf("réponse du moteur : %v", got)
 	}
