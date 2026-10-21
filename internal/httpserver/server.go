@@ -116,6 +116,9 @@ func (s *Server) Handler() http.Handler {
 type Discovery struct {
 	protocol.Discovery
 	Postgres DiscoveryPostgres `json:"postgres"`
+	// Mail : le serveur envoie les e-mails (invitations) ; sinon les liens
+	// d'inscription sont à transmettre.
+	Mail bool `json:"mail"`
 }
 
 // DiscoveryPostgres décrit les points de connexion PostgreSQL.
@@ -150,6 +153,7 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 		},
 		Postgres: DiscoveryPostgres{Database: s.Config.PGDatabase, SSLMode: s.Config.PGSSLMode,
 			RW: s.Config.PGPublicRW, RO: s.readEndpoints()},
+		Mail: s.Config.Mail.Host != "",
 	}
 	for _, p := range providers {
 		d.Providers = append(d.Providers, protocol.Provider{ID: p.ID, Label: p.Label, Kind: p.Kind, Icon: p.Kind})

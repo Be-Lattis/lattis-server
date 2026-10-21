@@ -5,7 +5,7 @@
 <section class="panel">
 <h2>Inviter à ce classeur</h2>
 <form method="post" action="/admin/do/invite_workbook" class="row">{{template "csrf" $}}<input type="hidden" name="workbook_id" value="{{$wb.id}}">
-<input type="email" name="email" required placeholder="adresse@exemple.fr" aria-label="Adresse à inviter">
+<input type="text" inputmode="email" data-people name="email" required placeholder="Nom ou adresse" aria-label="Personne à inviter">
 {{range $d.Roles}}{{if .Role.builtin}}<label class="inline"><input type="checkbox" name="roles" value="{{.Role.builtin}}"> {{builtinName .Role.builtin}}</label>{{end}}{{end}}
 <button class="ok">Inviter</button></form>
 {{if $d.ACL.invitations}}<table class="compact"><tbody>{{range $d.ACL.invitations}}<tr><td>{{.email}}</td><td>{{range .roles}}{{builtinName .}} {{end}}</td><td>{{date .expires_at}}</td>
@@ -24,7 +24,7 @@
 {{end}}{{range $r.teams}}<tr><td>Équipe {{.name}}</td><td><form method="post" action="/admin/do/revoke_role">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="hidden" name="user_id" value="{{.team_id}}"><button>Retirer</button></form></td></tr>
 {{end}}{{if and (not $r.members) (not $r.teams)}}<tr><td class="muted">Aucun membre.</td></tr>{{end}}
 </tbody></table>
-<form method="post" action="/admin/do/grant_role" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant" aria-label="Adresse de la personne à ajouter au rôle"><button>Ajouter</button></form>
+<form method="post" action="/admin/do/grant_role" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><input type="text" inputmode="email" data-people name="email" required placeholder="Nom ou adresse (inconnue : invitée)" aria-label="Adresse de la personne à ajouter au rôle"><button>Ajouter</button></form>
 {{if $d.Teams}}<form method="post" action="/admin/do/grant_team" class="row">{{template "csrf" $}}<input type="hidden" name="role_id" value="{{$r.id}}"><select name="team_id" aria-label="Équipe">{{range $d.Teams}}<option value="{{.id}}">{{.path}}</option>{{end}}</select><button>Ajouter l'équipe</button></form>{{end}}
 {{if .Nodes}}
 <details class="sub"><summary>Niveaux et filtres du rôle</summary>
@@ -71,7 +71,7 @@
 <section class="panel">
 <h2>Voir en tant que…</h2>
 <form method="get" action="/admin/workbooks/{{$wb.id}}" class="row">
-<input type="email" name="preview_user" aria-label="Adresse de la personne" required value="{{str $d.PreviewUser}}" placeholder="adresse de l'utilisateur">
+<input type="text" inputmode="email" data-people name="preview_user" aria-label="Adresse de la personne" required value="{{str $d.PreviewUser}}" placeholder="adresse de l'utilisateur">
 <select name="preview_table" aria-label="Tableau">{{$pt := str $d.PreviewTable}}{{range $d.Tables}}<option value="{{.table_id}}"{{if eq (str .table_id) $pt}} selected{{end}}>{{.name}}</option>{{end}}</select>
 <button>Afficher</button></form>
 {{if $d.PreviewError}}<p class="error">{{$d.PreviewError}}</p>{{end}}

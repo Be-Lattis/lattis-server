@@ -259,6 +259,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
 	mux.HandleFunc("GET /admin/monitor", s.page("monitor", "Surveillance", s.loadMonitor))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)
+	mux.HandleFunc("GET /admin/api/people", s.searchPeople)
 	mux.HandleFunc("POST /admin/server/logo", s.uploadLogo)
 	mux.HandleFunc("GET /w/{id}", s.workbookLink)
 }
@@ -694,7 +695,7 @@ func randomString() string {
 
 // setupLinkRe : lien du message à copier (choix du mot de passe, URI de
 // redirection d'un fournisseur ajouté).
-var setupLinkRe = regexp.MustCompile(`https?://\S+/(setup\?token=[A-Za-z0-9_-]+|callback/[0-9a-f-]{36})`)
+var setupLinkRe = regexp.MustCompile(`https?://\S+/(setup\?token=[A-Za-z0-9_-]+|callback/[0-9a-f-]{36}|w/[0-9a-f-]{36})|https?://[^\s/]+/$`)
 
 // splitSetupLink sépare d'un message le lien de choix du mot de passe.
 func splitSetupLink(msg string) (string, string) {
@@ -743,4 +744,24 @@ func (s *Service) sameSite(r *http.Request) bool {
 	}
 	u, err := url.Parse(origin)
 	return err == nil && u.Scheme == s.Config.PublicURL.Scheme && strings.EqualFold(u.Host, s.Config.PublicURL.Host)
+}
+
+// searchPeople : comptes du serveur par nom ou adresse (champs qui visent
+// une personne), sous l'identité de l'administrateur connecté.
+func (s *Service) searchPeople(w http.ResponseWriter, r *http.Request) {
+	u, err := s.session(r)
+	if err != nil {
+		http.Error(w, "session expirée", http.StatusUnauthorized)
+		return
+	}
+	var out json.RawMessage
+	if err := s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `SELECT lattis.search_people($1, 10)`, r.URL.Query().Get("q")).Scan(&out)
+	}); err != nil {
+		http.Error(w, "recherche indisponible", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(out)
 }

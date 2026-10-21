@@ -15,14 +15,14 @@
 {{range $t.members}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}</td><td><form method="post" action="/admin/do/remove_team_member">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
 {{else}}<tr><td class="muted">Aucun membre direct.</td></tr>{{end}}
 </tbody></table>
-<form method="post" action="/admin/do/add_team_member" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant" aria-label="Adresse du membre à ajouter"><button>Ajouter</button></form>
+<form method="post" action="/admin/do/add_team_member" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="text" inputmode="email" data-people name="email" required placeholder="Nom ou adresse (inconnue : invitée)" aria-label="Adresse du membre à ajouter"><button>Ajouter</button></form>
 <h3>Gestionnaires</h3>
 <p class="muted">Ils gèrent cette équipe et ses sous-équipes depuis l'administration : membres, sous-équipes, gestionnaires, et les rôles de créateur de classeurs et de publieur au Data Lake de leurs membres.</p>
 <table class="compact"><tbody>
 {{range $t.managers}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}{{if .me}} <span class="tag">vous</span>{{end}}</td><td>{{if or .me $t.movable}}<form method="post" action="/admin/do/team_manager_off">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form>{{end}}</td></tr>
 {{else}}<tr><td class="muted">Aucun gestionnaire.</td></tr>{{end}}
 </tbody></table>
-<form method="post" action="/admin/do/team_manager_on" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Nommer un gestionnaire (utilisateur existant)" aria-label="Adresse du gestionnaire à nommer"><button>Nommer</button></form>
+<form method="post" action="/admin/do/team_manager_on" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="text" inputmode="email" data-people name="email" required placeholder="Nom ou adresse d’un utilisateur" aria-label="Adresse du gestionnaire à nommer"><button>Nommer</button></form>
 {{if $t.movable}}<form method="post" action="/admin/do/drop_team" class="row danger">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">{{template "confirm"}}<button>Supprimer l'équipe</button></form>{{end}}
 {{range .Node.Children}}{{template "teamnode" (node $p . $all)}}{{end}}
 </details>

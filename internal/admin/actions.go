@@ -93,16 +93,16 @@ func (s *Service) actions() map[string]actionFunc {
 		"set_team_parent":      exec1(`SELECT lattis.set_team_parent($1::uuid, $2::uuid)`, "Équipe déplacée.", false, "id", "parent_id"),
 		"rename_team":          exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
 		"drop_team":            exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
-		"add_team_member":      addTeamMember,
+		"add_team_member":      s.addTeamMember,
 		"team_manager_on":      addTeamManager,
 		"team_manager_off":     exec1(`SELECT lattis.set_team_manager($1::uuid, $2::uuid, false)`, "Gestionnaire retiré de l'équipe.", false, "team_id", "user_id"),
 		"remove_team_member":   exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
 		"grant_team":           exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
-		"invite_workbook":      inviteWorkbook,
+		"invite_workbook":      s.inviteWorkbook,
 		"create_role":          createRole,
 		"drop_role":            exec1(`SELECT lattis.drop_role($1::uuid)`, "Rôle supprimé.", true, "id"),
 		"set_level":            setLevel,
-		"grant_role":           grantRole,
+		"grant_role":           s.grantRole,
 		"revoke_role":          exec1(`SELECT lattis.revoke_role($1::uuid, $2::uuid)`, "Membre retiré.", false, "role_id", "user_id"),
 		"add_restriction":      addRestriction,
 		"drop_restriction":     exec1(`SELECT lattis.drop_restriction($1::uuid)`, "Restriction supprimée.", false, "id"),
@@ -464,13 +464,40 @@ func (s *Service) disableUser(ctx context.Context, tx pgx.Tx, f form) (string, e
 
 // --- Droits d'un classeur -------------------------------------------------------------------
 
-func inviteWorkbook(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+func (s *Service) inviteWorkbook(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	roles := f.list("roles")
 	if len(roles) == 0 {
 		return "", inputError("Choisissez au moins un rôle.")
 	}
-	_, err := tx.Exec(ctx, `SELECT lattis.invite($1, $2::uuid, $3::text[])`, f.s("email"), f.s("workbook_id"), roles)
-	return "Invitation enregistrée pour " + strings.ToLower(f.s("email")) + ".", err
+	return s.invitePerson(ctx, tx, strings.ToLower(f.s("email")), f.s("workbook_id"), roles)
+}
+
+// inviteResult : réponse de lattis.invite_person et lattis.invite_to_team.
+type inviteResult struct {
+	Status   string `json:"status"`
+	Mailed   bool   `json:"mailed"`
+	LinkPath string `json:"link_path"`
+}
+
+// inviteMessage : ce qu'il advient de l'invitation, avec le lien à
+// transmettre quand le serveur n'envoie pas d'e-mail.
+func (s *Service) inviteMessage(email, what string, res inviteResult) string {
+	switch {
+	case res.Status == "granted":
+		return email + " a maintenant accès " + what + "."
+	case res.Mailed:
+		return "Invitation envoyée par e-mail à " + email + " : ses droits s'appliqueront à sa première connexion."
+	}
+	return "Invitation enregistrée pour " + email + ", sans e-mail (envoi non configuré sur ce serveur). Transmettez-lui ce lien, à ouvrir avec cette adresse : " +
+		s.Config.URL(res.LinkPath)
+}
+
+func (s *Service) invitePerson(ctx context.Context, tx pgx.Tx, email, workbookID string, roles []string) (string, error) {
+	var res inviteResult
+	if err := tx.QueryRow(ctx, `SELECT lattis.invite_person($1, $2::uuid, $3::text[])`, email, workbookID, roles).Scan(&res); err != nil {
+		return "", err
+	}
+	return s.inviteMessage(email, "au classeur", res), nil
 }
 
 func createRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
@@ -507,8 +534,17 @@ func userByEmail(ctx context.Context, tx pgx.Tx, email string) (string, error) {
 	return found.ID, nil
 }
 
-func grantRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+// grantRole : rôle donné à une personne du serveur ; sans compte pour
+// l'adresse, elle est invitée avec ce rôle, préenregistré.
+func (s *Service) grantRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	email := strings.ToLower(f.s("email"))
+	if !hasAccount(ctx, tx, email) {
+		var wb, role string
+		if err := tx.QueryRow(ctx, `SELECT workbook_id::text, coalesce(builtin, name) FROM lattis.roles WHERE id = $1::uuid`, f.s("role_id")).Scan(&wb, &role); err != nil {
+			return "", err
+		}
+		return s.invitePerson(ctx, tx, email, wb, []string{role})
+	}
 	uid, err := userByEmail(ctx, tx, email)
 	if err != nil {
 		return "", err
@@ -517,8 +553,27 @@ func grantRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	return email + " ajouté au rôle.", err
 }
 
-func addTeamMember(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+// hasAccount : un compte actif existe pour l'adresse (sinon : invitation).
+func hasAccount(ctx context.Context, tx pgx.Tx, email string) bool {
+	var found *struct {
+		ID string `json:"id"`
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.find_user($1)`, email).Scan(&found); err != nil {
+		return true // l'erreur ressortira à l'action
+	}
+	return found != nil
+}
+
+// addTeamMember : membre ajouté ; sans compte, invitation à l'équipe.
+func (s *Service) addTeamMember(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	email := strings.ToLower(f.s("email"))
+	if !hasAccount(ctx, tx, email) {
+		var res inviteResult
+		if err := tx.QueryRow(ctx, `SELECT lattis.invite_to_team($1, $2::uuid)`, email, f.s("team_id")).Scan(&res); err != nil {
+			return "", err
+		}
+		return s.inviteMessage(email, "à l'équipe", res), nil
+	}
 	uid, err := userByEmail(ctx, tx, email)
 	if err != nil {
 		return "", err

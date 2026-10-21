@@ -320,6 +320,17 @@ func (w *Worker) render(q queued) (Message, error) {
 			w.URL("/confirm?token="+str("token")) + "\n\n" +
 			"Les invitations adressées à cette adresse vous seront alors ouvertes. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message."
 	case "invitation":
+		if team := str("team"); team != "" {
+			by := str("by")
+			if by == "" {
+				by = "Un membre"
+			}
+			m.Subject = server + " : invitation dans l'équipe « " + team + " »"
+			m.Body = "Bonjour,\n\n" + by + " vous invite dans l'équipe « " + team + " » sur " + server + ".\n\n" +
+				"Pour vous connecter : " + w.URL("/") + "\n\n" +
+				"Connectez-vous avec cette adresse e-mail : vous y retrouverez les droits de l'équipe."
+			break
+		}
 		m.Subject = server + " : invitation au classeur « " + str("title") + " »"
 		by := str("by")
 		if by == "" {

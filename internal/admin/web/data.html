@@ -5,7 +5,7 @@
 <form method="post" action="/admin/do/add_data_audience" class="row">{{template "csrf" .Page}}
 {{if .Dataset}}<input type="hidden" name="dataset_id" value="{{.Dataset}}">{{else}}<input type="hidden" name="folder_id" value="{{.Folder}}">{{end}}
 <select name="kind" aria-label="Personne ou équipe"><option value="user">Personne</option><option value="team">Équipe</option></select>
-<input type="email" name="email" placeholder="adresse@exemple.fr" aria-label="Adresse" data-show-if="kind=user">
+<input type="text" inputmode="email" data-people name="email" placeholder="adresse@exemple.fr" aria-label="Adresse" data-show-if="kind=user">
 <select name="team_id" aria-label="Équipe" data-show-if="kind=team">{{range .Teams}}<option value="{{.id}}">{{.path}}</option>{{end}}</select>
 <input name="predicate" placeholder="Filtre facultatif : &quot;Région&quot; = 'Nord'" aria-label="Filtre">
 <button>Ajouter</button></form>

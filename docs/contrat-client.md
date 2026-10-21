@@ -226,3 +226,20 @@ Au lieu d'un `LISTEN` par poste sur le parent, le poste suit ses classeurs par u
 - **Lire sur un réplica** : avant de lire les deltas sur `ro`, attendre que le réplica ait rejoué la position reçue : `SELECT pg_last_wal_replay_lsn() >= '<lsn>'::pg_lsn` (quelques dizaines de millisecondes d'ordinaire ; au-delà de quelques secondes, lire sur `rw`).
 - **Reconnexion** : à la coupure du flux, rouvrir (avec un délai croissant), puis resynchroniser depuis le dernier `since` comme après `reset`.
 - **Plusieurs lattisd** : chacun relaie tous les changements, le flux peut donc s'ouvrir sur n'importe lequel ; le répartiteur de charge doit seulement garder la connexion ouverte (pas de délai d'inactivité inférieur à 30 s, pas de mise en tampon des réponses).
+
+## 12. Personnes et invitations (« Gérer l'accès »)
+
+Fonctions SQL appelées sur la connexion du poste, sous l'identité de l'utilisateur (migration 0046).
+
+- **Recherche** : `lattis.search_people(q text, limit integer DEFAULT 10)` → `[{"id", "display_name", "email"}]`.
+  - Ouverte à tout utilisateur Lattis, 2 caractères au moins.
+  - Recherche dans l'adresse ou le nom, sans tenir compte de la casse. Au plus 20 résultats, triés par nom puis adresse.
+  - Seulement les comptes actifs déjà connectés une fois : ni désactivés, ni techniques, ni en attente d'invitation.
+- **Inviter à un classeur** : `lattis.invite_person(email text, workbook_id uuid, roles text[])` → `{"invitation_id", "status", "mailed", "link_path"}`.
+  - `roles` : rôles fournis (`owner`, `designer`, `editor`, `participant`, `reader`) ou noms des rôles personnalisés. Réservée aux propriétaires du classeur.
+  - `status: "granted"` : la personne a déjà un compte, ses rôles s'appliquent tout de suite.
+  - `status: "invited"` : invitation en attente, droits préenregistrés. Si `mailed` vaut vrai, l'e-mail est parti. Sinon, montrer le lien à transmettre : adresse du serveur + `link_path` (`/w/<classeur>`), à ouvrir avec cette adresse e-mail.
+  - La découverte (`/.well-known/lattis.json`) dit d'avance si le serveur envoie des e-mails : champ `mail`.
+- **Inviter dans une équipe** : `lattis.invite_to_team(email text, team_id uuid)`, même réponse (`link_path : "/"`), réservée aux gestionnaires de l'équipe.
+- **À l'inscription**, les droits préenregistrés s'appliquent d'eux-mêmes : à la première connexion avec l'adresse vérifiée, ou avec le lien reçu. Une invitation expire après `invitation_ttl` (14 jours par défaut).
+- **En attente** : `lattis.workbook_invitations(workbook_id uuid)` → `[{"id", "email", "roles", "invited_by", "created_at", "expires_at"}]` (propriétaires du classeur) ; `lattis.team_invitations(team_id uuid)` (gestionnaires de l'équipe). Annulation : `lattis.revoke_invitation(id uuid)`.

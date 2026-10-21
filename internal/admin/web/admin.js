@@ -168,3 +168,35 @@ if (autoOpen && autoOpen.dataset.href) {
 // Surveillance : la page se recharge au rythme des relevés.
 const refresh = document.querySelector("[data-refresh]");
 if (refresh) setTimeout(() => location.reload(), Number(refresh.dataset.refresh) * 1000);
+
+// Champs qui visent une personne (data-people) : suggestions des comptes du
+// serveur par nom ou adresse. Une adresse inconnue reste valable : l'action
+// invite alors la personne à rejoindre le serveur.
+let peopleSeq = 0;
+for (const input of document.querySelectorAll("input[data-people]")) {
+  const list = document.createElement("datalist");
+  list.id = "people-" + (++peopleSeq);
+  input.after(list);
+  input.setAttribute("list", list.id);
+  input.setAttribute("autocomplete", "off");
+  let timer, last = "";
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2 || q === last) return;
+    timer = setTimeout(async () => {
+      last = q;
+      try {
+        const res = await fetch("/admin/api/people?q=" + encodeURIComponent(q), { credentials: "same-origin" });
+        if (!res.ok) return;
+        const people = await res.json();
+        list.replaceChildren(...people.map((p) => {
+          const o = document.createElement("option");
+          o.value = p.email;
+          o.label = p.display_name ? p.display_name + " · " + p.email : p.email;
+          return o;
+        }));
+      } catch { /* hors ligne : saisie libre */ }
+    }, 200);
+  });
+}

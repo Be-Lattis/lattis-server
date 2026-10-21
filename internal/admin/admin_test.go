@@ -244,6 +244,11 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatalf("auteur : %q %v", actor, err)
 	}
 
+	// Champs qui visent une personne : recherche par nom ou adresse.
+	if _, body := b.get("/admin/api/people?q=" + url.QueryEscape(strings.Split(ownerEmail, "@")[0])); !strings.Contains(body, ownerEmail) {
+		t.Fatalf("recherche de personnes : %s", body)
+	}
+
 	// Fournisseur Google : secret saisi en valeur ; l'enregistrer de nouveau
 	// (formulaire sans émetteur) garde l'émetteur et le secret.
 	if _, body := b.post("/admin/do/add_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "kind": {"google"},

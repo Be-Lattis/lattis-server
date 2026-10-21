@@ -5,7 +5,7 @@
 <form method="post" action="/admin/do/create_workbook" class="grid">{{template "csrf" $}}
 <label>Titre <input name="title" required placeholder="Suivi des commandes"></label>
 <label>Mode <select name="mode"><option value="collaborative">Collaboratif (chacun modifie selon ses droits)</option><option value="frozen">Figé (lecture seule, republié par son auteur)</option></select></label>
-<label>Propriétaire <input type="email" name="owner" placeholder="Vous, si vide"><small>Reçoit le rôle Propriétaire (invitation si la personne n'a pas encore de compte).</small></label>
+<label>Propriétaire <input type="text" inputmode="email" data-people name="owner" placeholder="Vous, si vide"><small>Reçoit le rôle Propriétaire (invitation si la personne n'a pas encore de compte).</small></label>
 <label>Premier tableau <input name="table" placeholder="Facultatif : Commandes"></label>
 <label class="wide" data-show-if="table!=">Colonnes du tableau <textarea name="columns" rows="4" placeholder="Client : texte&#10;Montant : décimal&#10;Date : date&#10;Livrée : booléen"></textarea><small>Une par ligne, « Nom : type ». Types : texte, entier, décimal, date, date et heure, booléen.</small></label>
 <p class="actions"><button class="ok">Créer le classeur</button></p>
