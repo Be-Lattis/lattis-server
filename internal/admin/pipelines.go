@@ -134,16 +134,29 @@ func pipelineSource(x map[string]any) string {
 		}
 		return s
 	case "file":
+		if x["direction"] == "out" {
+			return "fichier " + format + " dans le dossier des exports"
+		}
 		p := str("pattern")
 		if p == "" {
 			p = "*"
 		}
 		return fmt.Sprintf("dossier de dépôt (%s, %s)", p, format)
 	case "http":
+		if x["direction"] == "out" {
+			m := str("method")
+			if m == "" {
+				m = "POST"
+			}
+			return m + " " + str("url") + " (" + format + ")"
+		}
 		return str("url") + " (" + format + ")"
 	case "sftp":
 		return fmt.Sprintf("sftp://%s@%s%s (%s)", str("user"), str("host"), str("path"), format)
 	case "sql":
+		if x["direction"] == "out" {
+			return "PostgreSQL externe, table " + str("table")
+		}
 		return "PostgreSQL externe : " + str("query")
 	}
 	return fmt.Sprint(x["source_kind"])
@@ -193,4 +206,43 @@ func (s *Service) loadForms(ctx context.Context, tx pgx.Tx, r *http.Request, u s
 		return nil, err
 	}
 	return map[string]any{"Forms": forms, "Public": public}, nil
+}
+
+// Exporter : fichiers des pipelines OUT (pipeline.Runner).
+type Exporter interface {
+	LatestExport(id string) string
+}
+
+// downloadExport sert le dernier fichier exporté d'un pipeline OUT.
+func (s *Service) downloadExport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !uuidRe.MatchString(id) {
+		http.NotFound(w, r)
+		return
+	}
+	u, err := s.session(r)
+	if err != nil {
+		http.Redirect(w, r, "/admin/login", http.StatusFound)
+		return
+	}
+	var owner bool
+	if err := s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `SELECT lattis.is_server_owner()`).Scan(&owner)
+	}); err != nil || !owner {
+		http.Error(w, "réservé aux propriétaires du serveur", http.StatusForbidden)
+		return
+	}
+	ex, ok := s.Pipelines.(Exporter)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	path := ex.LatestExport(id)
+	if path == "" {
+		s.message(w, r, http.StatusNotFound, "Aucun export", "Ce pipeline n'a pas encore produit de fichier : exécutez-le d'abord.")
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(path)+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
 }

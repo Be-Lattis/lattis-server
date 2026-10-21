@@ -254,6 +254,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/pipelines", s.page("pipelines", "Pipelines d'ingestion", s.loadPipelines))
 	mux.HandleFunc("GET /admin/forms", s.page("forms", "Formulaires", s.loadForms))
 	mux.HandleFunc("POST /admin/pipelines/{id}/upload", s.uploadPipeline)
+	mux.HandleFunc("GET /admin/pipelines/{id}/export", s.downloadExport)
 	mux.HandleFunc("GET /admin/audit", s.page("audit", "Journal", loadAudit))
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
 	mux.HandleFunc("GET /admin/monitor", s.page("monitor", "Surveillance", s.loadMonitor))

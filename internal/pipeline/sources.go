@@ -44,6 +44,10 @@ type Source struct {
 	Sheet     string            `json:"sheet"`
 	Delimiter string            `json:"delimiter"`
 	JSONPath  string            `json:"json_path"`
+	// Export : méthode HTTP (POST par défaut, PUT) et table PostgreSQL de
+	// destination (schéma.table).
+	Method string `json:"method"`
+	Table  string `json:"table"`
 	// AutoColumns : colonnes du tableau créées d'après la source (cible
 	// « Créer automatiquement » du Data Lake).
 	AutoColumns bool `json:"auto_columns"`
@@ -195,23 +199,8 @@ func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline, dst io.Writer) erro
 	if err != nil {
 		return err
 	}
-	for k, v := range p.Source.Headers {
-		req.Header.Set(k, v)
-	}
-	if p.SecretRef != "" {
-		secret, err := r.secret(p.SecretRef)
-		if err != nil {
-			return err
-		}
-		switch p.Source.Auth {
-		case "header":
-			req.Header.Set(p.Source.Header, secret)
-		case "basic":
-			user, pass, _ := strings.Cut(secret, ":")
-			req.SetBasicAuth(user, pass)
-		default:
-			req.Header.Set("Authorization", "Bearer "+secret)
-		}
+	if err := r.authorize(req, p); err != nil {
+		return err
 	}
 	resp, err := r.client().Do(req)
 	if err != nil {
@@ -224,26 +213,67 @@ func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline, dst io.Writer) erro
 	return copyLimited(dst, resp.Body, "réponse")
 }
 
-func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline, dst io.Writer) error {
-	s := p.Source
-	if s.Host == "" || s.User == "" || s.Path == "" {
-		return errors.New("SFTP : hôte, utilisateur et chemin attendus")
-	}
-	if !strings.HasPrefix(s.HostKey, "SHA256:") {
-		return errors.New("SFTP : empreinte de la clé du serveur (SHA256:…) obligatoire")
+// authorize pose les en-têtes et le secret d'une requête HTTP (source ou
+// destination).
+func (r *Runner) authorize(req *http.Request, p *Pipeline) error {
+	for k, v := range p.Source.Headers {
+		req.Header.Set(k, v)
 	}
 	if p.SecretRef == "" {
-		return errors.New("SFTP : secret (mot de passe ou clé privée) manquant")
+		return nil
 	}
 	secret, err := r.secret(p.SecretRef)
 	if err != nil {
 		return err
 	}
+	switch p.Source.Auth {
+	case "header":
+		req.Header.Set(p.Source.Header, secret)
+	case "basic":
+		user, pass, _ := strings.Cut(secret, ":")
+		req.SetBasicAuth(user, pass)
+	default:
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+	return nil
+}
+
+func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline, dst io.Writer) error {
+	sc, done, err := r.sftpClient(ctx, p)
+	if err != nil {
+		return err
+	}
+	defer done()
+	f, err := sc.Open(p.Source.Path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return copyLimited(dst, f, "fichier")
+}
+
+// sftpClient ouvre une session SFTP (clé du serveur vérifiée par son
+// empreinte) ; done la referme.
+func (r *Runner) sftpClient(ctx context.Context, p *Pipeline) (*sftp.Client, func(), error) {
+	s := p.Source
+	if s.Host == "" || s.User == "" || s.Path == "" {
+		return nil, nil, errors.New("SFTP : hôte, utilisateur et chemin attendus")
+	}
+	if !strings.HasPrefix(s.HostKey, "SHA256:") {
+		return nil, nil, errors.New("SFTP : empreinte de la clé du serveur (SHA256:…) obligatoire")
+	}
+	if p.SecretRef == "" {
+		return nil, nil, errors.New("SFTP : secret (mot de passe ou clé privée) manquant")
+	}
+	secret, err := r.secret(p.SecretRef)
+	if err != nil {
+		return nil, nil, err
+	}
 	var auth ssh.AuthMethod
 	if strings.Contains(secret, "PRIVATE KEY") {
 		signer, err := ssh.ParsePrivateKey([]byte(secret))
 		if err != nil {
-			return fmt.Errorf("SFTP : clé privée illisible : %w", err)
+			return nil, nil, fmt.Errorf("SFTP : clé privée illisible : %w", err)
 		}
 		auth = ssh.PublicKeys(signer)
 	} else {
@@ -262,26 +292,20 @@ func (r *Runner) fetchSFTP(ctx context.Context, p *Pipeline, dst io.Writer) erro
 		}}
 	conn, err := r.dialer(s.Host).DialContext(ctx, "tcp", net.JoinHostPort(s.Host, strconv.Itoa(port)))
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	c, chans, reqs, err := ssh.NewClientConn(conn, s.Host, cfg)
 	if err != nil {
 		conn.Close()
-		return err
+		return nil, nil, err
 	}
 	client := ssh.NewClient(c, chans, reqs)
-	defer client.Close()
 	sc, err := sftp.NewClient(client)
 	if err != nil {
-		return err
+		client.Close()
+		return nil, nil, err
 	}
-	defer sc.Close()
-	f, err := sc.Open(s.Path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return copyLimited(dst, f, "fichier")
+	return sc, func() { sc.Close(); client.Close() }, nil
 }
 
 // querySQL lit une base PostgreSQL externe, en lecture seule, ligne à ligne.

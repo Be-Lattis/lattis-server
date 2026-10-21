@@ -247,3 +247,6 @@ textarea.secret { -webkit-text-security: disc; text-security: disc; font-family:
 
 /* URI de redirection d'un fournisseur, à déclarer chez lui. */
 .callback { margin: 4px 0 16px; padding: 12px 14px; box-shadow: none; } .callback p { margin: 0 0 6px; }
+
+/* Groupe de champs affiché selon un autre champ, sans casser la grille. */
+.group { display: contents; }

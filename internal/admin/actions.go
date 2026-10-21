@@ -559,13 +559,14 @@ func addDataAudience(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 
 // createPipeline : formulaire de /admin/pipelines → lattis.create_pipeline.
 func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
-	auto := f.s("target") == "auto"
+	out := f.s("direction") == "out"
+	auto := !out && f.s("target") == "auto"
 	wb, tbl, _ := strings.Cut(f.s("target"), "|")
 	if !auto && (wb == "" || tbl == "") {
 		return "", inputError("Choisissez le tableau cible.")
 	}
 	src := map[string]any{}
-	for _, k := range []string{"url", "auth", "header", "host", "user", "path", "host_key", "pattern", "query", "sheet", "json_path"} {
+	for _, k := range []string{"url", "auth", "header", "host", "user", "path", "host_key", "pattern", "query", "sheet", "json_path", "method", "table"} {
 		if v := f.s(k); v != "" {
 			src[k] = v
 		}
@@ -593,6 +594,16 @@ func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string
 		return "", inputError("Donnez un nom au pipeline.")
 	}
 	role := f.s("role")
+	if out {
+		// Export : l'identité technique lit seulement.
+		role = "reader"
+		if f.s("source_kind") == "upload" {
+			return "", inputError("Un export part vers un dossier, une adresse HTTP, un serveur SFTP ou une base PostgreSQL.")
+		}
+		if f.s("mode") == "upsert" {
+			return "", inputError("Export : mode « Ajouter à la suite » ou « Remplacer le contenu ».")
+		}
+	}
 	if auto {
 		// Donnée neuve du Data Lake, colonnes créées d'après la source :
 		// l'identité technique en est conceptrice (ajout de colonnes).
@@ -645,6 +656,11 @@ func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string
 	var id string
 	if err := tx.QueryRow(ctx, `SELECT lattis.create_pipeline($1::jsonb)::text`, string(b)).Scan(&id); err != nil {
 		return "", err
+	}
+	if out {
+		if _, err := tx.Exec(ctx, `SELECT lattis.set_pipeline_direction($1::uuid, 'out')`, id); err != nil {
+			return "", err
+		}
 	}
 	if e := strings.TrimSpace(f.s("alert_email")); e != "" {
 		if _, err := tx.Exec(ctx, `SELECT lattis.set_pipeline_alert_email($1::uuid, $2)`, id, e); err != nil {

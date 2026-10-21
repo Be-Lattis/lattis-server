@@ -338,7 +338,7 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 - **Classeurs**, **Data Lake**, **Pipelines**, **Formulaires** : ce dont ils ont déjà les droits (propriétaire du classeur ; concepteur pour les formulaires ; données qu'ils gèrent).
 - Serveur, Connexion, État, Surveillance et Journal leur restent fermés. Chaque fonction `lattis.*` vérifie le périmètre ; la console refuse en plus les actions hors de sa liste.
 
-### 15.1 Pipelines d'ingestion (`/admin/pipelines`)
+### 15.1 Pipelines d'ingestion et d'export (`/admin/pipelines`)
 
 Un pipeline (`lattis.pipelines`, migration 0020) lit une source et écrit dans un tableau d'un classeur collaboratif publié ; une donnée du Data Lake Lattis tirée de ce tableau suit.
 
@@ -346,6 +346,8 @@ Un pipeline (`lattis.pipelines`, migration 0020) lit une source et écrit dans u
 - **Écriture** : correspondance des colonnes (même nom par défaut), conversion selon le type du tableau (nombres à la française, dates JJ/MM/AAAA, numéros de série Excel, oui/non) ; lignes invalides rejetées et échantillonnées. Modes : ajout, mise à jour par clé (`MERGE`, sans réécrire une ligne inchangée, doublons de clé : la dernière l'emporte), remplacement (par clé : lignes absentes supprimées ; sans clé : tout réécrit). Une seule transaction.
 - **Identité** : un utilisateur technique « Pipeline : <nom> » par pipeline, membre d'un rôle du classeur (Éditeur par défaut) ; `lattisd` écrit avec un jeton signé pour lui. RLS, déclencheurs (pierres tombales, `NOTIFY`) et `lattis_updated_by` s'appliquent. Supprimer le pipeline retire ses rôles et désactive le compte.
 - **Exécution** : à la demande, toutes les N minutes ou chaque jour à heure fixe ; relevé toutes les 15 s, réservation `FOR UPDATE SKIP LOCKED` (plusieurs lattisd possibles). Journal `lattis.pipeline_runs` (lues, ajoutées, modifiées, supprimées, rejetées, erreur), mesure `lattis_pipeline_runs_total{status}`, webhook POST JSON en cas d'échec.
+- **Cible « Créer automatiquement en fonction des données »** (choix par défaut, migration 0042) : une donnée neuve du Data Lake (nom, dossier, description), dans un classeur technique dont l'identité du pipeline est conceptrice. À chaque exécution, les colonnes de la source absentes du tableau sont ajoutées, avec un type deviné sur les 500 premières lignes (entier, décimal, date, date et heure, booléen, sinon texte ; un code à zéro initial reste du texte). Les colonnes clés éventuelles sont créées d'emblée, en texte. Toutes les données du Data Lake sont aussi proposées comme cible.
+- **Pipelines OUT** (export, migration 0044) : le tableau ou la donnée choisie est lu par l'identité technique (Lecteur) et déversé vers un fichier téléchargeable depuis /admin (`LATTIS_PIPELINE_DIR/<pipeline>/exports`, les 20 derniers gardés), une adresse HTTP(S) (POST ou PUT, mêmes authentifications), un serveur SFTP (`{date}` dans le chemin) ou une table PostgreSQL externe (ajout, ou remplacement après vidage, dans une transaction). Formats : CSV (`;` par défaut), JSON (nombres et booléens typés), XLSX. Mêmes horaires, simulation, journal et alertes que l'ingestion.
 
 ## 16. Configuration de `lattisd`
 

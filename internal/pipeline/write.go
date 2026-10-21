@@ -428,9 +428,9 @@ func convert(raw *string, pgType string) (any, error) {
 		return n, nil
 	case pgType == "boolean":
 		switch strings.ToLower(s) {
-		case "true", "vrai", "oui", "yes", "1", "x", "o", "y":
+		case "true", "vrai", "oui", "yes", "1", "x", "o", "y", "t":
 			return true, nil
-		case "false", "faux", "non", "no", "0", "n":
+		case "false", "faux", "non", "no", "0", "n", "f":
 			return false, nil
 		}
 		return nil, errors.New("booléen attendu (oui/non, vrai/faux, 1/0)")
@@ -451,7 +451,8 @@ func convert(raw *string, pgType string) (any, error) {
 }
 
 var dateLayouts = []string{"2006-01-02", "02/01/2006", "2/1/2006", "02-01-2006", "02.01.2006", "2006/01/02"}
-var timeLayouts = []string{time.RFC3339Nano, "2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02 15:04",
+var timeLayouts = []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999-07", "2006-01-02 15:04:05.999999999-07:00",
+	"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02 15:04",
 	"02/01/2006 15:04:05", "02/01/2006 15:04"}
 
 // parseTime : formats ISO et français, ou numéro de série Excel.

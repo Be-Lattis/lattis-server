@@ -1,10 +1,12 @@
 {{define "body"}}{{$d := .Data}}
-<p class="lead">Un pipeline lit une source (fichier envoyé ou déposé, adresse HTTP, serveur SFTP, base PostgreSQL) et écrit dans une donnée du Data Lake (créée d'après les données, ou existante) ou dans un tableau d'un classeur collaboratif publié, sous une identité technique « Pipeline : … ». Les secrets se saisissent en valeur : ils sont gardés chiffrés sur le serveur.</p>
+<p class="lead">Un pipeline <strong>IN</strong> lit une source (fichier envoyé ou déposé, adresse HTTP, serveur SFTP, base PostgreSQL) et écrit dans une donnée du Data Lake (créée d'après les données, ou existante) ou dans un tableau d'un classeur. Un pipeline <strong>OUT</strong> déverse une donnée ou un tableau vers l'extérieur, avec les mêmes protocoles. Chacun agit sous une identité technique « Pipeline : … ». Les secrets se saisissent en valeur : ils sont gardés chiffrés sur le serveur.</p>
 
 <details class="panel"{{if not $d.Pipelines}} open{{end}}>
-<summary><h2>Nouveau pipeline</h2><span class="muted">Source, tableau cible, mode d'écriture et horaire.</span></summary>
+<summary><h2>Nouveau pipeline</h2><span class="muted">Sens, source ou destination, mode d'écriture et horaire.</span></summary>
 <form method="post" action="/admin/do/create_pipeline" class="grid">{{template "csrf" $}}
 <label>Nom <input name="name" required placeholder="Tarifs fournisseur"></label>
+<label>Sens <select name="direction"><option value="in">IN : ingestion vers Lattis</option><option value="out">OUT : export vers l'extérieur</option></select></label>
+<div class="group" data-show-if="direction=in">
 <label>Cible <select name="target" required>
 <option value="auto" selected>Créer automatiquement en fonction des données (Data Lake)</option>
 <optgroup label="Data Lake">{{range $d.Targets}}{{if .datalake}}<option value="{{.workbook_id}}|{{.table_id}}">{{.dataset}}</option>{{end}}{{end}}</optgroup>
@@ -14,31 +16,51 @@
 <label data-show-if="target=auto">Dossier du Data Lake <select name="auto_folder"><option value="">— Premier niveau —</option>{{range $d.Folders}}<option value="{{.id}}">{{.path}}</option>{{end}}</select></label>
 <label data-show-if="target=auto" class="wide">Description <input name="auto_description" placeholder="Facultatif : ce que contient la donnée, d'où elle vient"></label>
 <label data-show-if="target!=auto">Rôle de l'identité technique <select name="role"><option value="editor">Éditeur</option><option value="participant">Participant</option></select><small>Le niveau d'un rôle personnalisé se règle ensuite sur la page du classeur.</small></label>
-<label>Source <select name="source_kind">
-<option value="upload">Fichier envoyé depuis cette page</option>
-<option value="file">Dossier de dépôt sur le serveur</option>
+</div>
+<div class="group" data-show-if="direction=out">
+<label>Donnée exportée <select name="target" required>
+<optgroup label="Data Lake">{{range $d.Targets}}{{if .datalake}}<option value="{{.workbook_id}}|{{.table_id}}">{{.dataset}}</option>{{end}}{{end}}</optgroup>
+<optgroup label="Tableaux des classeurs">{{range $d.Targets}}{{if not .datalake}}<option value="{{.workbook_id}}|{{.table_id}}">{{.workbook}} › {{.table}}</option>{{end}}{{end}}</optgroup>
+</select><small>Lue par l'identité technique, avec le rôle Lecteur.</small></label>
+</div>
+<label>Source ou destination <select name="source_kind">
+<option value="upload" data-show-if="direction=in">Fichier envoyé depuis cette page</option>
+<option value="file">Dossier sur le serveur</option>
 <option value="http">Adresse HTTP(S)</option>
 <option value="sftp">Serveur SFTP</option>
 <option value="sql">Base PostgreSQL externe</option></select></label>
 <label data-show-if="source_kind=upload,file,http,sftp">Format <select name="format"><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="json">JSON (tableau d'objets)</option></select></label>
+<div class="group" data-show-if="direction=in">
 <label data-show-if="source_kind=file">Motif des fichiers <input name="pattern" placeholder="*.csv"><small>Dossier : <code>{{$d.Dir}}/&lt;pipeline&gt;/inbox</code>. Chaque fichier est traité puis rangé dans done/ ou failed/.</small></label>
-<label data-show-if="source_kind=http">Adresse <input name="url" placeholder="https://api.exemple.fr/export.csv"></label>
+</div>
+<div class="group" data-show-if="direction=out">
+<p class="muted wide" data-show-if="source_kind=file">Fichier écrit dans <code>{{$d.Dir}}/&lt;pipeline&gt;/exports</code> (les 20 derniers gardés), téléchargeable depuis cette page.</p>
+<label data-show-if="source_kind=http">Méthode <select name="method"><option value="POST">POST</option><option value="PUT">PUT</option></select></label>
+</div>
+<label data-show-if="source_kind=http">Adresse <input name="url" placeholder="https://api.exemple.fr/donnees"></label>
 <label data-show-if="source_kind=http">Authentification <select name="auth"><option value="bearer">Jeton (Authorization: Bearer)</option><option value="basic">Identifiant:mot de passe</option><option value="header">En-tête personnalisé</option></select></label>
 <label data-show-if="auth=header">Nom de l'en-tête <input name="header" placeholder="X-Api-Key"></label>
 <label data-show-if="source_kind=sftp">Hôte <input name="host" placeholder="sftp.exemple.fr"></label>
 <label data-show-if="source_kind=sftp">Port <input name="port" type="number" min="1" placeholder="22"></label>
 <label data-show-if="source_kind=sftp">Utilisateur <input name="user"></label>
-<label data-show-if="source_kind=sftp">Chemin du fichier <input name="path" placeholder="/export/tarifs.csv"></label>
+<label data-show-if="source_kind=sftp">Chemin du fichier <input name="path" placeholder="/export/tarifs.csv"><small>Export : <code>{date}</code> est remplacé par la date et l'heure.</small></label>
 <label data-show-if="source_kind=sftp">Empreinte de la clé du serveur <input name="host_key" placeholder="SHA256:…"><small><code>ssh-keyscan hôte | ssh-keygen -lf -</code></small></label>
+<div class="group" data-show-if="direction=in">
 <label data-show-if="source_kind=sql">Requête (lecture seule) <input name="query" placeholder="SELECT code, libelle, prix FROM articles"></label>
 <label data-show-if="format=xlsx">Feuille <input name="sheet" placeholder="Première feuille"></label>
-<label data-show-if="format=csv">Séparateur <select name="delimiter"><option value="">Détecté</option><option value=";">;</option><option value=",">,</option><option value="&#9;">Tabulation</option></select></label>
 <label data-show-if="format=json">Chemin du tableau <input name="json_path" placeholder="data.items"></label>
+</div>
+<div class="group" data-show-if="direction=out">
+<label data-show-if="source_kind=sql">Table de destination <input name="table" placeholder="public.ventes"><small>Ses colonnes portent les noms de celles exportées.</small></label>
+</div>
+<label data-show-if="format=csv">Séparateur <select name="delimiter"><option value="">Détecté (IN) ou ; (OUT)</option><option value=";">;</option><option value=",">,</option><option value="&#9;">Tabulation</option></select></label>
 <label data-show-if="source_kind=http,sftp,sql">Secret <textarea name="secret_value" class="secret" rows="1" autocomplete="off" spellcheck="false" placeholder="Mot de passe, clé privée ou chaîne postgres://…"></textarea><small>Gardé chiffré sur le serveur, jamais réaffiché. SFTP : mot de passe ou clé privée ; SQL : chaîne postgres://…</small></label>
 {{if $.Owner}}<details class="sub" data-show-if="source_kind=http,sftp,sql"><summary>Fichier du dossier des secrets (avancé)</summary><input name="secret_ref" placeholder="nom-du-fichier" aria-label="Fichier du secret"><small>Nom d'un fichier de LATTIS_PIPELINE_SECRETS_DIR, à la place d'une valeur.</small></details>{{end}}
-<label>Mode d'écriture <select name="mode"><option value="upsert">Mettre à jour par clé (ajoute les nouvelles lignes)</option><option value="append">Ajouter à la suite</option><option value="replace">Remplacer le contenu</option></select></label>
+<label>Mode d'écriture <select name="mode"><option value="upsert" data-show-if="direction=in">Mettre à jour par clé (ajoute les nouvelles lignes)</option><option value="append">Ajouter à la suite</option><option value="replace">Remplacer le contenu</option></select><small data-show-if="direction=out">Export : remplacer vide d'abord la table de destination (SQL) ; un fichier est toujours écrit en entier.</small></label>
+<div class="group" data-show-if="direction=in">
 <label data-show-if="mode=upsert,replace">Colonnes clés <input name="key_columns" placeholder="Code article"><small>Séparées par des virgules. En remplacement, sans clé, tout est effacé puis réécrit.</small></label>
 <label class="wide">Correspondance des colonnes <textarea name="column_map" rows="3" placeholder="Prix = PRIX_HT&#10;Libellé = DESIGNATION"></textarea><small>« Colonne du tableau = colonne de la source », une par ligne. Sans correspondance, les colonnes de même nom sont reliées.</small></label>
+</div>
 <label>Horaire <select name="schedule_kind"><option value="manual">À la demande</option><option value="every">Toutes les N minutes</option><option value="daily">Chaque jour à</option></select></label>
 <label data-show-if="schedule_kind=every">Minutes <input name="schedule_minutes" type="number" min="5" value="60"></label>
 <label data-show-if="schedule_kind=daily">Heure <input name="schedule_time" type="time" value="06:00"></label>
@@ -50,10 +72,10 @@
 
 {{range $d.Pipelines}}{{$x := .}}
 <section class="panel">
-<h2>{{$x.name}} {{with $x.runs}}{{with index . 0}}{{if eq (str .status) "ok"}}<span class="tag">réussi</span>{{else if eq (str .status) "warning"}}<span class="tag warn">lignes rejetées</span>{{else if eq (str .status) "error"}}<span class="tag off">échec</span>{{else}}<span class="tag">en cours</span>{{end}}{{end}}{{end}}{{if not $x.enabled}} <span class="tag off">suspendu</span>{{end}}</h2>
+<h2>{{$x.name}} <span class="tag">{{if eq (str $x.direction) "out"}}OUT{{else}}IN{{end}}</span> {{with $x.runs}}{{with index . 0}}{{if eq (str .status) "ok"}}<span class="tag">réussi</span>{{else if eq (str .status) "warning"}}<span class="tag warn">lignes rejetées</span>{{else if eq (str .status) "error"}}<span class="tag off">échec</span>{{else}}<span class="tag">en cours</span>{{end}}{{end}}{{end}}{{if not $x.enabled}} <span class="tag off">suspendu</span>{{end}}</h2>
 <dl>
-<dt>Cible</dt><dd>{{if eq (str $x.workbook_kind) "source"}}<span class="tag">source poussée</span> {{end}}<a href="/admin/workbooks/{{$x.workbook_id}}">{{$x.workbook}}</a> › {{$x.table_name}} · {{pipelineMode $x.mode}}{{if $x.key_columns}} sur {{range $i, $k := $x.key_columns}}{{if $i}}, {{end}}« {{$k}} »{{end}}{{end}}</dd>
-<dt>Source</dt><dd>{{pipelineSource $x}}</dd>
+<dt>{{if eq (str $x.direction) "out"}}Donnée exportée{{else}}Cible{{end}}</dt><dd>{{if eq (str $x.workbook_kind) "source"}}<span class="tag">source poussée</span> {{end}}<a href="/admin/workbooks/{{$x.workbook_id}}">{{$x.workbook}}</a> › {{$x.table_name}} · {{pipelineMode $x.mode}}{{if $x.key_columns}} sur {{range $i, $k := $x.key_columns}}{{if $i}}, {{end}}« {{$k}} »{{end}}{{end}}</dd>
+<dt>{{if eq (str $x.direction) "out"}}Destination{{else}}Source{{end}}</dt><dd>{{pipelineSource $x}}{{if and (eq (str $x.direction) "out") (eq (str $x.source_kind) "file")}} · <a href="/admin/pipelines/{{$x.id}}/export">Télécharger le dernier export</a>{{end}}</dd>
 <dt>Horaire</dt><dd>{{if eq (str $x.schedule_kind) "every"}}toutes les {{str $x.schedule_minutes}} min{{else if eq (str $x.schedule_kind) "daily"}}chaque jour à {{$x.schedule_time}}{{else}}à la demande{{end}}{{with $x.next_run_at}} · prochaine exécution {{date .}}{{end}}</dd>
 {{with $x.datasets}}<dt>Data Lake</dt><dd>{{range $i, $ds := .}}{{if $i}}, {{end}}<a href="/admin/data">{{$ds.name}}</a> <code>donnees.{{$ds.sql_name}}</code>{{end}}</dd>{{end}}
 <dt>Identité</dt><dd><code>{{$x.identity}}</code></dd>

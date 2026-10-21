@@ -49,6 +49,8 @@ type Pipeline struct {
 	PendingRunID string
 	// AlertEmail : adresses prévenues d'un échec (séparées par des virgules).
 	AlertEmail string
+	// Direction : in (ingestion) ou out (export du tableau vers SourceKind).
+	Direction string
 }
 
 // Result est le bilan d'une exécution.
@@ -315,14 +317,14 @@ func (r *Runner) next(p *Pipeline, t time.Time) *time.Time {
 const selectPipeline = `SELECT id::text, name, workbook_id::text, table_id::text, table_name, source_kind, format, mode,
 	source, coalesce(secret_ref, ''), key_columns, column_map, schedule_kind, coalesce(schedule_minutes, 0),
 	coalesce(schedule_time, ''), coalesce(pending_file, ''), coalesce(pending_trigger, ''), coalesce(webhook_url, ''),
-	user_id::text, coalesce(pending_run_id::text, ''), coalesce(alert_email, '') FROM lattis.pipelines`
+	user_id::text, coalesce(pending_run_id::text, ''), coalesce(alert_email, ''), direction FROM lattis.pipelines`
 
 func scanPipeline(row pgx.Row) (*Pipeline, error) {
 	p := &Pipeline{}
 	var src, cmap []byte
 	err := row.Scan(&p.ID, &p.Name, &p.WorkbookID, &p.TableID, &p.TableName, &p.SourceKind, &p.Format, &p.Mode,
 		&src, &p.SecretRef, &p.KeyColumns, &cmap, &p.ScheduleKind, &p.ScheduleMinutes, &p.ScheduleTime,
-		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID, &p.AlertEmail)
+		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID, &p.AlertEmail, &p.Direction)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +337,15 @@ func scanPipeline(row pgx.Row) (*Pipeline, error) {
 func (r *Runner) Execute(ctx context.Context, p *Pipeline) Result {
 	ctx, cancel := context.WithTimeout(ctx, MaxRun)
 	defer cancel()
+	if p.Direction == "out" {
+		res, err := r.export(ctx, p, false)
+		if err != nil {
+			res.Status, res.Err = "error", err.Error()
+			return res
+		}
+		res.Status = "ok"
+		return res
+	}
 	src, file, err := r.openSource(ctx, p)
 	if errors.Is(err, errNothing) {
 		return Result{Status: "ok", Err: "aucun fichier à traiter"}
@@ -443,6 +454,15 @@ func (r *Runner) Simulate(ctx context.Context, id, file string) (Result, error) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, MaxRun)
 	defer cancel()
+	if p.Direction == "out" {
+		res, err := r.export(ctx, p, true)
+		if err != nil {
+			res.Status, res.Err = "error", err.Error()
+			return res, nil
+		}
+		res.Status = "ok"
+		return res, nil
+	}
 	src, _, err := r.openSource(ctx, p)
 	if err != nil {
 		return Result{Status: "error", Err: err.Error()}, nil
