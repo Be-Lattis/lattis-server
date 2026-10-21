@@ -138,7 +138,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_WEB_MAX_ENGINES` | `50` | Édition web : nombre maximal de moteurs, réserve comprise (au-delà : page « Plus de ressources disponibles », 503). |
 | `LATTIS_WEB_POOL_SPARE` | `0` | Édition web : moteurs gardés prêts d'avance, en plus de ceux utilisés (§5.1.4). |
 | `LATTIS_WEB_DEMO_MAX`, `LATTIS_WEB_DEMO_IDLE`, `LATTIS_WEB_DEMO_LIFETIME` | `5`, `10m`, `1h` | Démo publique (§5.1.5) : moteurs au plus (pris sur `LATTIS_WEB_MAX_ENGINES` ; 0 la désactive), inactivité avant arrêt, durée maximale d'une démo. Mode `docker` : `LAUNCHER_DEMO_IDLE` côté lanceur. |
-| `LATTIS_WEB_IDLE` | `30m` | Édition web : inactivité avant l'arrêt d'un moteur. |
+| `LATTIS_WEB_IDLE` | `5m` | Édition web : temps sans onglet ouvert avant l'arrêt d'un moteur (sa mémoire est rendue ; la personne qui revient retrouve son classeur après quelques secondes de démarrage). |
 | `LATTIS_SMTP_HOST` | vide | Envoi d'e-mails (facultatif, §5.2) : serveur SMTP. Vide : pas d'envoi, les liens restent à copier depuis l'administration. |
 | `LATTIS_SMTP_PORT` | `587`, `465` (tls), `25` (none) | Port du serveur SMTP. |
 | `LATTIS_SMTP_TLS` | `starttls` | `starttls`, `tls` (TLS dès la connexion) ou `none` (relais local de confiance seulement). |

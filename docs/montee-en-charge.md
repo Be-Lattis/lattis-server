@@ -27,7 +27,7 @@ Chaque personne connectée dans le navigateur a **son moteur** : un processus, u
 | Démarrage | quelques secondes (pod : image à tirer, volume à monter) | attente à la connexion | réserve de moteurs prêts (`LATTIS_WEB_POOL_SPARE`) |
 | Disque | cache par personne (volume) | stockage | `web.cache.size` |
 
-Un moteur s'arrête après `LATTIS_WEB_IDLE` (30 min) sans onglet ouvert : la mémoire est rendue. Avec plusieurs `lattisd`, chaque `lattisd` porte ses moteurs ; une personne reste sur le même grâce à l'affinité par cookie.
+Un moteur s'arrête après `LATTIS_WEB_IDLE` (5 min) sans onglet ouvert : la mémoire est rendue. Avec plusieurs `lattisd`, chaque `lattisd` porte ses moteurs ; une personne reste sur le même grâce à l'affinité par cookie.
 
 Le goulet de l'application web est donc **la mémoire** : 100 personnes dans le navigateur, c'est de l'ordre de 100 moteurs, soit plusieurs dizaines de Go de mémoire.
 

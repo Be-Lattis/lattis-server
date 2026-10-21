@@ -318,7 +318,7 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 - Canal : WebSocket authentifié (cookie de session), appels JSON-RPC vers les mêmes méthodes que les services Wails, et événements poussés.
 - **Comportement identique au bureau**, avec équivalents navigateur : ouvrir et enregistrer = envoi et téléchargement de fichiers ; presse-papiers du navigateur ; secrets des connexions externes chiffrés côté serveur (clé de `lattisd`) au lieu du trousseau ; raccourcis clavier interceptés par la page quand le navigateur le permet.
 - **Scripting désactivé par défaut** (Lua, boutons, pages web, serveur MCP). L'administrateur l'active (`server_config.web_scripting = true`) ; même activé, chaque script tourne dans la session de son utilisateur, sans accès au disque du serveur, avec délai, mémoire et réseau limités (liste d'hôtes autorisés).
-- Limites par session (mémoire, disque, durée d'inactivité avant fermeture du moteur : 30 min par défaut), nombre maximal de moteurs simultanés.
+- Limites par session (mémoire, disque, durée sans onglet avant fermeture du moteur : 5 min par défaut), nombre maximal de moteurs simultanés.
 - Mise à l'échelle horizontale : plusieurs `lattisd` derrière un répartiteur avec affinité de session (le moteur vit dans une instance) ; reprise sur une autre instance par rechargement du cache depuis PostgreSQL.
 
 ## 15. Interface d'administration

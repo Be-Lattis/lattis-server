@@ -266,10 +266,10 @@ func parse(get func(string) string) (*Config, error) {
 	} else {
 		errs = append(errs, errors.New("LATTIS_SHUTDOWN_GRACE : durée positive attendue (15s)"))
 	}
-	if d, err := time.ParseDuration(def("LATTIS_WEB_IDLE", "30m")); err == nil && d > 0 {
+	if d, err := time.ParseDuration(def("LATTIS_WEB_IDLE", "5m")); err == nil && d > 0 {
 		c.WebIdle = d
 	} else {
-		errs = append(errs, errors.New("LATTIS_WEB_IDLE : durée positive attendue (30m)"))
+		errs = append(errs, errors.New("LATTIS_WEB_IDLE : durée positive attendue (5m)"))
 	}
 	if v := def("LATTIS_WEB_ENGINE_UIDS", ""); v != "" {
 		lo, hi, _ := strings.Cut(v, "-")

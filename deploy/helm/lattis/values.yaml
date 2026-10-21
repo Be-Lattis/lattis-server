@@ -128,7 +128,7 @@ web:
   # d'avance (0 : démarrage à la connexion).
   maxEngines: 50
   spare: 0
-  idle: 30m
+  idle: 5m
   # Requêtes de chaque pod ; memory est aussi sa limite.
   resources:
     cpu: 250m
