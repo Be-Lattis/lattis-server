@@ -75,7 +75,10 @@ const (
 	ResultTenant   = "denied_tenant"
 	ResultInvite   = "not_invited"
 	ResultDisabled = "disabled"
-	ResultError    = "error"
+	// ResultEmailTaken : adresse déjà prise par un compte d'un autre
+	// fournisseur, que celui-ci ne peut pas relier.
+	ResultEmailTaken = "email_taken"
+	ResultError      = "error"
 )
 
 var (

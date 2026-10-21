@@ -422,6 +422,13 @@ func (s *Service) complete(w http.ResponseWriter, r *http.Request, p store.Provi
 	}
 	switch e.Status {
 	case "ok":
+	case "email_taken":
+		s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultEmailTaken).Inc()
+		s.render(w, r, http.StatusConflict, "message", view{Title: "Compte existant",
+			Error: "Un compte existe déjà pour " + id.Email + " : connectez-vous avec « " + e.Provider + " ». " +
+				"Seuls Google et Microsoft peuvent se relier d'eux-mêmes à un compte existant, quand ils garantissent l'adresse.",
+			Links: s.restartLinks()})
+		return
 	case "disabled":
 		s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultDisabled).Inc()
 		s.render(w, r, http.StatusForbidden, "message", view{Title: "Compte désactivé",

@@ -297,7 +297,9 @@ type Enrollment struct {
 	PGRole      string `json:"pg_role"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
-	Mode        string `json:"mode"` // existing, invitation, open
+	Mode        string `json:"mode"` // existing, invitation, open, linked
+	// Provider : statut email_taken, moyen de connexion du compte existant.
+	Provider string `json:"provider"`
 }
 
 // Enroll applique le mode d'accès et crée ou active le compte.
