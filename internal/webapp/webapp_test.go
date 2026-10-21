@@ -254,18 +254,22 @@ func TestManagerPool(t *testing.T) {
 }
 
 // Démo publique : désactivée par défaut ; un moteur par navigateur, sans
-// serveur ni secret ; plafond par adresse ; arrêt à la durée maximale.
+// serveur ni secret ; sans limite réglée, pas d'autre plafond que celui de
+// l'installation ; limite de l'administration nommée ; arrêt à la durée
+// maximale.
 func TestDemo(t *testing.T) {
 	on := false
+	demoMax := 0
 	m := &webapp.Manager{Users: users{}, DemoEnabled: func(context.Context) bool { return on },
+		Limits:  func(context.Context) webapp.Limits { return webapp.Limits{DemoSessions: demoMax} },
 		Session: func(*http.Request) (store.User, error) { return store.User{}, errors.New("pas de session") }}
 	mux := http.NewServeMux()
 	m.Routes(mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	pub, _ := url.Parse(srv.URL)
-	m.Config = &config.Config{PublicURL: pub, WebEngine: os.Args[0], WebCacheDir: t.TempDir(), WebMaxEngines: 10, WebIdle: time.Minute,
-		WebDemoMax: 3, WebDemoIdle: time.Minute, WebDemoLimit: 3 * time.Second}
+	m.Config = &config.Config{PublicURL: pub, WebEngine: os.Args[0], WebCacheDir: t.TempDir(), WebMaxEngines: 4, WebIdle: time.Minute,
+		WebDemoIdle: time.Minute, WebDemoLimit: 3 * time.Second}
 	m.TokenURL = srv.URL + "/engine/token"
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -313,12 +317,32 @@ func TestDemo(t *testing.T) {
 	if resp, _ := get("POST", ""); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("POST sans démo : %d", resp.StatusCode)
 	}
-	// Deux démos au plus par adresse.
-	if resp, _ := get("GET", ""); resp.StatusCode != http.StatusOK {
-		t.Fatalf("seconde démo : %d", resp.StatusCode)
+	// Sans limite réglée : autant de démos que le plafond de l'installation
+	// (4), même depuis une seule adresse.
+	for i := 2; i <= 4; i++ {
+		if resp, _ := get("GET", ""); resp.StatusCode != http.StatusOK {
+			t.Fatalf("démo %d : %d", i, resp.StatusCode)
+		}
 	}
-	if resp, _ := get("GET", ""); resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("troisième démo de la même adresse : %d", resp.StatusCode)
+	page := func() string {
+		resp, err := http.Get(srv.URL + "/demo/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("au-delà : %d %s", resp.StatusCode, b)
+		}
+		return string(b)
+	}
+	if b := page(); !strings.Contains(b, "au plus 4 moteurs") || !strings.Contains(b, "LATTIS_WEB_MAX_ENGINES") {
+		t.Fatalf("plafond de l'installation non nommé : %s", b)
+	}
+	// Limite de l'administration : nommée.
+	demoMax = 2
+	if b := page(); !strings.Contains(b, "La démo est complète") || !strings.Contains(b, "au plus 2 sessions de démonstration") {
+		t.Fatalf("limite de démo non nommée : %s", b)
 	}
 	// Le jeton d'un moteur de démo n'existe pas.
 	if resp, _ := http.Get(srv.URL + "/engine/token"); resp.StatusCode != http.StatusUnauthorized {

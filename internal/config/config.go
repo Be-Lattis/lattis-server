@@ -84,8 +84,8 @@ type Config struct {
 	WebEngineUIDs [2]int
 	// WebSpare : moteurs gardés prêts d'avance (réserve), 0 : aucun.
 	WebSpare int
-	// Démo publique (/demo/, réglage public_demo) : moteurs au plus (pris
-	// sur WebMaxEngines), inactivité avant arrêt, durée maximale.
+	// Démo publique (/demo/, réglage public_demo) : moteurs au plus (0 :
+	// seulement WebMaxEngines), inactivité avant arrêt, durée maximale.
 	WebDemoMax                int
 	WebDemoIdle, WebDemoLimit time.Duration
 	// WebLauncher : process (processus de lattisd), docker (conteneurs par
@@ -291,15 +291,15 @@ func parse(get func(string) string) (*Config, error) {
 	} else {
 		errs = append(errs, fmt.Errorf("LATTIS_WEB_POOL_SPARE : entier de 0 à %d (moins que LATTIS_WEB_MAX_ENGINES)", c.WebMaxEngines-1))
 	}
-	if n, err := strconv.Atoi(def("LATTIS_WEB_DEMO_MAX", "5")); err == nil && n >= 0 {
-		c.WebDemoMax = min(n, c.WebMaxEngines)
+	if n, err := strconv.Atoi(def("LATTIS_WEB_DEMO_MAX", "0")); err == nil && n >= 0 {
+		c.WebDemoMax = n
 	} else {
-		errs = append(errs, errors.New("LATTIS_WEB_DEMO_MAX : entier positif ou nul attendu (5)"))
+		errs = append(errs, errors.New("LATTIS_WEB_DEMO_MAX : entier positif ou nul attendu (0 : sans plafond propre)"))
 	}
-	if d, err := time.ParseDuration(def("LATTIS_WEB_DEMO_IDLE", "10m")); err == nil && d > 0 {
+	if d, err := time.ParseDuration(def("LATTIS_WEB_DEMO_IDLE", "5m")); err == nil && d > 0 {
 		c.WebDemoIdle = d
 	} else {
-		errs = append(errs, errors.New("LATTIS_WEB_DEMO_IDLE : durée positive attendue (10m)"))
+		errs = append(errs, errors.New("LATTIS_WEB_DEMO_IDLE : durée positive attendue (5m)"))
 	}
 	if d, err := time.ParseDuration(def("LATTIS_WEB_DEMO_LIFETIME", "1h")); err == nil && d > 0 {
 		c.WebDemoLimit = d

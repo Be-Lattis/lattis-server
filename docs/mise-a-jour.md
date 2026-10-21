@@ -71,7 +71,7 @@ Avec le chart par défaut, `helm upgrade` ne coupe pas le service :
 
 Ce qui s'interrompt encore :
 
-- **Application web** : les moteurs appartiennent au `lattisd` qui les a lancés. Quand ce pod est remplacé, les personnes qu'il servait doivent recharger la page (leur cache est gardé). Avec plusieurs `lattisd`, une personne doit retrouver le pod qui porte son moteur : le chart pose une affinité par cookie pour ingress-nginx (`lattisd.ingress.stickyWeb`) ; avec un autre contrôleur, donnez l'équivalent dans `lattisd.ingress.annotations`.
+- **Application web** : les moteurs appartiennent au `lattisd` qui les a lancés. Quand ce pod est remplacé, les personnes qu'il servait doivent recharger la page (leur cache est gardé). Avec plusieurs `lattisd`, une personne doit retrouver le pod qui porte son moteur : le chart pose une affinité par cookie pour ingress-nginx et Traefik (`lattisd.ingress.stickyWeb`) ; avec un autre contrôleur, donnez l'équivalent dans `lattisd.ingress.annotations`.
 - **Une migration incompatible** : les anciens pods sortent du service dès qu'elle est appliquée, jusqu'à ce que les nouveaux soient prêts (courte coupure). Les notes de version le signalent.
 - **PostgreSQL** : changer l'image du parent le redémarre, pour tout le monde.
 

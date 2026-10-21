@@ -110,6 +110,8 @@ var settingGroups = []settingGroup{
 			Help: "Édition web : une session par personne, sous le plafond fixé à l'installation (LATTIS_WEB_MAX_ENGINES)."},
 		{Key: "web_max_memory_mb", Label: "Mémoire totale de l'application web", Kind: "limit", Unit: "Mo",
 			Help: "Édition web : au-delà de cette mémoire occupée par les moteurs, plus de nouvelle session (écran Surveillance)."},
+		{Key: "web_demo_max_sessions", Label: "Sessions de démonstration", Kind: "limit", Unit: "sessions",
+			Help: "Démo publique (/demo) : sessions sans compte en même temps, sous le plafond de l'installation (LATTIS_WEB_MAX_ENGINES)."},
 		{Key: "web_engine_memory_mb", Label: "Mémoire par session web", Kind: "limit", Unit: "Mo",
 			Help: "Édition web : mémoire allouée au moteur de chaque personne, pour les sessions ouvertes ensuite. Kubernetes et Docker : limite stricte ; mode processus : limite souple (GOMEMLIMIT)."},
 	}},

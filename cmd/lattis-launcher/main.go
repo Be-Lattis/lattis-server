@@ -12,7 +12,7 @@
 //	LAUNCHER_SERVER         émetteur, LATTIS_PUBLIC_URL de lattisd (obligatoire)
 //	LAUNCHER_TOKEN_URL      /engine/token vu des moteurs (obligatoire)
 //	LAUNCHER_IDLE           inactivité avant arrêt d'un moteur (5m)
-//	LAUNCHER_DEMO_IDLE      inactivité avant arrêt d'un moteur de la démo publique (10m)
+//	LAUNCHER_DEMO_IDLE      inactivité avant arrêt d'un moteur de la démo publique (5m)
 //	LAUNCHER_MEMORY         mémoire par moteur (1g)
 //	LAUNCHER_CPUS           processeurs par moteur (1)
 //	LAUNCHER_PIDS           processus par moteur (256)
@@ -59,7 +59,7 @@ func run() error {
 		return v
 	}
 	cfg := launcher.Config{Image: need("LAUNCHER_IMAGE"), Network: need("LAUNCHER_NETWORK"),
-		Server: need("LAUNCHER_SERVER"), TokenURL: need("LAUNCHER_TOKEN_URL"), Idle: def("LAUNCHER_IDLE", "5m"), DemoIdle: def("LAUNCHER_DEMO_IDLE", "10m"),
+		Server: need("LAUNCHER_SERVER"), TokenURL: need("LAUNCHER_TOKEN_URL"), Idle: def("LAUNCHER_IDLE", "5m"), DemoIdle: def("LAUNCHER_DEMO_IDLE", "5m"),
 		VolumePrefix: def("LAUNCHER_VOLUME_PREFIX", "lattis-web-")}
 	if f := need("LAUNCHER_TOKEN_FILE"); f != "" {
 		b, err := os.ReadFile(f)

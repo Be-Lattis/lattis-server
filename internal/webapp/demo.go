@@ -17,17 +17,18 @@ import (
 // navigateur sans compte. Chaque navigateur a son moteur (cookie
 // lattis_demo), lancé avec --public-demo : ni serveur, ni jeton, ni secret,
 // aucun accès à PostgreSQL ; le classeur n'est jamais enregistré sur le
-// serveur (Ctrl+S le télécharge). Plafonds : LATTIS_WEB_DEMO_MAX moteurs
-// (pris sur LATTIS_WEB_MAX_ENGINES), demoPerClient par adresse, arrêt après
-// LATTIS_WEB_DEMO_IDLE sans onglet ou LATTIS_WEB_DEMO_LIFETIME en tout.
+// serveur (Ctrl+S le télécharge). Plafonds : celui de l'installation
+// (LATTIS_WEB_MAX_ENGINES), la limite « Sessions de démonstration » de
+// l'administration ou LATTIS_WEB_DEMO_MAX s'ils sont posés (sinon aucun) ;
+// pas de plafond par adresse (plusieurs personnes peuvent partager une
+// adresse derrière un proxy) ; arrêt après LATTIS_WEB_DEMO_IDLE sans onglet ou LATTIS_WEB_DEMO_LIFETIME en tout.
 
 // DemoBase : préfixe des adresses de la démo publique.
 const DemoBase = "/demo"
 
 const (
-	demoCookie    = "lattis_demo"
-	demoPrefix    = "demo-"
-	demoPerClient = 2
+	demoCookie = "lattis_demo"
+	demoPrefix = "demo-"
 )
 
 var demoIDRe = regexp.MustCompile(`^[0-9a-f]{24}$`)
@@ -43,7 +44,7 @@ func (m *Manager) demoRoutes(mux *http.ServeMux) {
 
 // demoEnabled lit le réglage (nil : désactivée).
 func (m *Manager) demoEnabled(ctx context.Context) bool {
-	if m.DemoEnabled == nil || m.Config.WebDemoMax == 0 {
+	if m.DemoEnabled == nil {
 		return false
 	}
 	return m.DemoEnabled(ctx)
@@ -72,25 +73,13 @@ func (m *Manager) demo(w http.ResponseWriter, r *http.Request) {
 		_, _ = rand.Read(b)
 		id = hex.EncodeToString(b)
 		http.SetCookie(w, &http.Cookie{Name: demoCookie, Value: id, Path: DemoBase + "/", HttpOnly: true,
-			Secure: m.Config.PublicURL != nil && m.Config.PublicURL.Scheme == "https", SameSite: http.SameSiteStrictMode,
+			Secure: m.Config.PublicURL != nil && m.Config.PublicURL.Scheme == "https", SameSite: http.SameSiteLaxMode,
 			MaxAge: int(m.Config.WebDemoLimit.Seconds())})
 	}
 	e, err := m.demoEngine(r.Context(), demoPrefix+id, m.clientIP(r))
 	var le *LimitError
 	if errors.As(err, &le) {
 		limitResponse(w, r, le)
-		return
-	}
-	if errors.Is(err, ErrBusy) {
-		w.Header().Set("Retry-After", "60")
-		if r.Method != http.MethodGet || isWebSocket(r) {
-			http.Error(w, "plus de ressources disponibles", http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(demoBusyPage))
 		return
 	}
 	if err != nil {
@@ -128,21 +117,30 @@ func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, erro
 	if m.engines == nil {
 		m.engines, m.secrets = map[string]*engine{}, map[string]string{}
 	}
-	demos, fromIP := 0, 0
-	for k, e := range m.engines {
-		if isDemo(k) {
-			demos++
-			if e.ip == ip {
-				fromIP++
-			}
-		}
-	}
-	if len(m.engines) >= m.Config.WebMaxEngines || demos >= m.Config.WebDemoMax || fromIP >= demoPerClient {
-		m.mu.Unlock()
-		return nil, ErrBusy
-	}
 	m.mu.Unlock()
 	lim := m.limits(ctx)
+	m.mu.Lock()
+	demos := 0
+	for k := range m.engines {
+		if isDemo(k) {
+			demos++
+		}
+	}
+	demoMax := m.Config.WebDemoMax
+	if lim.DemoSessions > 0 && (demoMax == 0 || lim.DemoSessions < demoMax) {
+		demoMax = lim.DemoSessions
+	}
+	switch {
+	case demoMax > 0 && demos >= demoMax:
+		m.mu.Unlock()
+		slog.Warn("démo publique refusée : sessions de démonstration au maximum", "max", demoMax, "ip", ip)
+		return nil, &LimitError{Kind: LimitDemo, Max: int64(demoMax)}
+	case len(m.engines) >= m.Config.WebMaxEngines:
+		m.mu.Unlock()
+		slog.Warn("démo publique refusée : plafond de l'installation", "max", m.Config.WebMaxEngines, "ip", ip)
+		return nil, &LimitError{Kind: LimitInstall, Max: int64(m.Config.WebMaxEngines)}
+	}
+	m.mu.Unlock()
 	if err := m.checkMemory(ctx, lim); err != nil {
 		return nil, err
 	}
@@ -190,11 +188,3 @@ func waitStarted(ctx context.Context, e *engine) (*engine, error) {
 		return nil, ctx.Err()
 	}
 }
-
-const demoBusyPage = `<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Démo Lattis</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem;line-height:1.5">
-<h1>La démo est complète</h1>
-<p>Toutes les places de démonstration sont prises pour le moment. Réessayez dans quelques minutes.</p>
-</body></html>`

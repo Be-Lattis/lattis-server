@@ -42,4 +42,6 @@ Administration › Serveur › **Limites** (vide ou 0 : sans limite). Une limite
 | Mémoire totale de l'application web | Au-delà de cette mémoire occupée par les moteurs (mesurée comme sur l'écran Surveillance, toutes les 15 s), plus de nouvelle session web. Sans mesure possible (Kubernetes sans metrics-server), la limite est sans effet et le journal le signale. |
 | Mémoire par session web | Mémoire allouée à chaque moteur ouvert ensuite. Kubernetes : limite du pod ; Docker : limite du conteneur, jamais au-delà de `LAUNCHER_MEMORY` ; mode processus : limite souple (`GOMEMLIMIT`), le moteur se cale dessous sans être arrêté. |
 
-Pour la démo publique, ses propres plafonds s'appliquent en plus (`LATTIS_WEB_DEMO_MAX`, 2 par adresse).
+| Sessions de démonstration | Démo publique (`/demo`) : au-delà, « La démo est complète ». |
+
+Sans limite réglée, seul le plafond de l'installation (`LATTIS_WEB_MAX_ENGINES`, chart : `web.maxEngines`) s'applique, aux sessions comme aux démos ; il a sa propre page.

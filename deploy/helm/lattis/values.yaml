@@ -60,9 +60,10 @@ lattisd:
     className: ""
     annotations: {}
     # Édition web avec plusieurs lattisd : une personne doit retrouver le
-    # lattisd qui porte son moteur. Avec ingress-nginx, le chart pose une
-    # affinité par cookie ; pour un autre contrôleur, mettre false et donner
-    # l'équivalent dans annotations.
+    # lattisd qui porte son moteur. Le chart pose une affinité par cookie
+    # pour ingress-nginx (annotations de l'Ingress) et Traefik (k3s,
+    # annotations du Service) ; pour un autre contrôleur, mettre false et
+    # donner l'équivalent dans annotations.
     stickyWeb: true
     host: ""
     tls: []            # [{secretName: lattis-tls, hosts: [lattis.example.com]}]

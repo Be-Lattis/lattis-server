@@ -5,6 +5,14 @@ metadata:
   name: {{ $fn }}-lattisd
   labels: {{- include "lattis.labels" . | nindent 4 }}
     app.kubernetes.io/component: lattisd
+  {{- if and .Values.web.enabled .Values.lattisd.ingress.stickyWeb (gt (int .Values.lattisd.replicaCount) 1) }}
+  # Édition web avec plusieurs lattisd, derrière Traefik (k3s) : affinité par
+  # cookie, posée sur le Service (ingress-nginx : annotations de l'Ingress).
+  annotations:
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: lattis_route
+    traefik.ingress.kubernetes.io/service.sticky.cookie.httponly: "true"
+  {{- end }}
 spec:
   type: {{ .Values.lattisd.service.type }}
   {{- if and .Values.web.enabled (gt (int .Values.lattisd.replicaCount) 1) }}

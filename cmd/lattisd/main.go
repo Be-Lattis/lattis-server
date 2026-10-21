@@ -434,17 +434,18 @@ func webSettings(st *store.Store) func(context.Context) webSet {
 			return cur
 		}
 		var v webSet
-		var sessions, mem, engine int64
+		var sessions, mem, engine, demos int64
 		if err := st.DB.QueryRow(ctx, `SELECT
 				coalesce((SELECT (value #>> '{}')::boolean FROM lattis.server_config WHERE key = 'public_demo'), false),
 				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_max_sessions'), 0),
 				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_max_memory_mb'), 0),
-				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_engine_memory_mb'), 0)`).
-			Scan(&v.demo, &sessions, &mem, &engine); err != nil {
+				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_engine_memory_mb'), 0),
+				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_demo_max_sessions'), 0)`).
+			Scan(&v.demo, &sessions, &mem, &engine, &demos); err != nil {
 			slog.Warn("réglages de l'édition web", "err", err)
 			return cur
 		}
-		v.limits = webapp.Limits{Sessions: int(sessions), Memory: mem << 20, EngineMemory: engine << 20}
+		v.limits = webapp.Limits{Sessions: int(sessions), DemoSessions: int(demos), Memory: mem << 20, EngineMemory: engine << 20}
 		cur, at = v, time.Now()
 		return cur
 	}

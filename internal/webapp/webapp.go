@@ -238,7 +238,8 @@ func (m *Manager) engine(ctx context.Context, u store.User) (*engine, error) {
 	}
 	if len(m.engines) >= m.Config.WebMaxEngines {
 		m.mu.Unlock()
-		return nil, ErrBusy
+		slog.Warn("session web refusée : plafond de l'installation", "max", m.Config.WebMaxEngines, "user", u.ID)
+		return nil, &LimitError{Kind: LimitInstall, Max: int64(m.Config.WebMaxEngines)}
 	}
 	lim := m.limits(ctx)
 	if lim.Sessions > 0 && m.sessionsLocked() >= lim.Sessions {
