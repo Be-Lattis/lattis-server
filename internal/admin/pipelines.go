@@ -225,11 +225,12 @@ func (s *Service) downloadExport(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/login", http.StatusFound)
 		return
 	}
-	var owner bool
+	// Propriétaires du serveur, ou gestionnaire d'équipe dans son périmètre.
+	var allowed bool
 	if err := s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(), `SELECT lattis.is_server_owner()`).Scan(&owner)
-	}); err != nil || !owner {
-		http.Error(w, "réservé aux propriétaires du serveur", http.StatusForbidden)
+		return tx.QueryRow(r.Context(), `SELECT lattis.can_manage_pipeline($1::uuid)`, id).Scan(&allowed)
+	}); err != nil || !allowed {
+		http.Error(w, "export réservé aux administrateurs de ce pipeline", http.StatusForbidden)
 		return
 	}
 	ex, ok := s.Pipelines.(Exporter)
