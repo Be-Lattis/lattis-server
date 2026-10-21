@@ -186,6 +186,8 @@ func loadServer(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (
 type providerRow struct {
 	store.Provider
 	Tenants []map[string]any
+	// Callback : URI de redirection à déclarer chez le fournisseur.
+	Callback string
 }
 
 var providerKinds = [][2]string{
@@ -193,7 +195,7 @@ var providerKinds = [][2]string{
 	{"keycloak", "Keycloak"}, {"oidc", "OIDC générique"},
 }
 
-func loadProviders(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
+func (s *Service) loadProviders(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
 	rows, err := tx.Query(ctx, `SELECT id::text, kind, label, coalesce(issuer, ''), coalesce(client_id, ''),
 		coalesce(client_secret_ref, ''), scopes, coalesce(claim_name, ''), coalesce(claim_value, ''), enabled, position
 		FROM lattis.identity_providers ORDER BY position, label`)
@@ -207,6 +209,7 @@ func loadProviders(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User
 			&p.ClaimName, &p.ClaimValue, &p.Enabled, &p.Position); err != nil {
 			return nil, err
 		}
+		p.Callback = s.Config.URL("/callback/" + p.ID)
 		list = append(list, p)
 	}
 	if err := rows.Err(); err != nil {

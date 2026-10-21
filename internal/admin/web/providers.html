@@ -2,6 +2,7 @@
 {{range .Data.Providers}}
 <section class="panel">
 <h2>{{.Label}} <span class="tag">{{.Kind}}</span>{{if not .Enabled}} <span class="tag off">désactivé</span>{{end}}</h2>
+{{if ne .Kind "password"}}<p class="muted">URI de redirection à déclarer chez le fournisseur : <code>{{.Callback}}</code></p>{{end}}
 <form method="post" action="/admin/do/update_provider" class="grid editform">
 {{template "csrf" $}}
 <input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="kind" value="{{.Kind}}">

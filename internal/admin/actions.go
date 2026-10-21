@@ -288,7 +288,9 @@ func (s *Service) updateProvider(ctx context.Context, tx pgx.Tx, f form) (string
 	}
 	changes := map[string]any{"label": f.s("label"), "enabled": f.checked("enabled"), "position": pos}
 	if f.s("kind") != "password" {
-		changes["issuer"] = f.n("issuer")
+		if _, ok := f.r.PostForm["issuer"]; ok {
+			changes["issuer"] = f.n("issuer")
+		}
 		changes["client_id"] = f.n("client_id")
 		var old string
 		if err := tx.QueryRow(ctx, `SELECT coalesce(client_secret_ref, '') FROM lattis.identity_providers WHERE id = $1::uuid`, f.s("id")).Scan(&old); err != nil {
@@ -301,8 +303,10 @@ func (s *Service) updateProvider(ctx context.Context, tx pgx.Tx, f form) (string
 		if changed {
 			changes["client_secret_ref"] = ref
 		}
-		changes["claim_name"] = f.n("claim_name")
-		changes["claim_value"] = f.n("claim_value")
+		if _, ok := f.r.PostForm["claim_name"]; ok {
+			changes["claim_name"] = f.n("claim_name")
+			changes["claim_value"] = f.n("claim_value")
+		}
 		if sc := scopes(f.s("scopes")); sc != nil {
 			changes["scopes"] = sc
 		}

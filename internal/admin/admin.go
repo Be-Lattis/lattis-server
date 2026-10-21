@@ -247,7 +247,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 		_, _ = w.Write(b)
 	})
 	mux.HandleFunc("GET /admin/server", s.page("server", "Serveur", loadServer))
-	mux.HandleFunc("GET /admin/providers", s.page("providers", "Connexion", loadProviders))
+	mux.HandleFunc("GET /admin/providers", s.page("providers", "Connexion", s.loadProviders))
 	mux.HandleFunc("GET /admin/users", s.page("users", "Utilisateurs", loadUsers))
 	mux.HandleFunc("GET /admin/teams", s.page("teams", "Équipes", loadTeams))
 	mux.HandleFunc("GET /admin/workbooks", s.page("workbooks", "Classeurs", loadWorkbooks))

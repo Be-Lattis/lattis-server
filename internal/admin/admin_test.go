@@ -25,12 +25,14 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/upstream"
 	"github.com/Be-Lattis/lattis-server/internal/userdb"
+	"github.com/Be-Lattis/lattis-server/internal/vault"
 )
 
 type env struct {
-	t   *testing.T
-	db  *testpg.DB
-	srv *httptest.Server
+	t     *testing.T
+	db    *testpg.DB
+	srv   *httptest.Server
+	vault *vault.Vault
 }
 
 func setup(t *testing.T) *env {
@@ -52,9 +54,10 @@ func setup(t *testing.T) *env {
 	a := &auth.Service{Config: cfg, Store: db.Store, Keys: keys, Metrics: metrics.New("test", db.Store.DB),
 		Upstream: &upstream.Registry{CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }},
 		AdminURL: "/admin/"}
-	ad := &admin.Service{Config: cfg, Store: db.Store, Keys: keys, Users: userdb.SessionAuth{Pool: db.Super}, Version: "test"}
+	ad := &admin.Service{Config: cfg, Store: db.Store, Keys: keys, Users: userdb.SessionAuth{Pool: db.Super}, Version: "test",
+		Vault: &vault.Vault{Pool: db.Store.DB, Keys: keys}}
 	h = (&httpserver.Server{Config: cfg, Store: db.Store, Keys: keys, Auth: a, Admin: ad}).Handler()
-	return &env{t: t, db: db, srv: srv}
+	return &env{t: t, db: db, srv: srv, vault: ad.Vault}
 }
 
 // browser est un navigateur avec ses propres cookies.
@@ -232,6 +235,48 @@ func TestAdminConsole(t *testing.T) {
 	var actor string
 	if err := e.db.Super.QueryRow(ctx, `SELECT actor FROM lattis.audit WHERE action = 'set_config' AND target = 'display_name'`).Scan(&actor); err != nil || actor != ownerEmail {
 		t.Fatalf("auteur : %q %v", actor, err)
+	}
+
+	// Fournisseur Google : secret saisi en valeur ; l'enregistrer de nouveau
+	// (formulaire sans émetteur) garde l'émetteur et le secret.
+	if _, body := b.post("/admin/do/add_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "kind": {"google"},
+		"label": {"Google"}, "client_id": {"cid"}, "secret_value": {"gs3cret"}, "scopes": {"openid email"}}); !strings.Contains(body, "Fournisseur ajouté") {
+		t.Fatalf("ajout du fournisseur : %s", body)
+	}
+	var gid, issuer, ref string
+	readProvider := func() {
+		t.Helper()
+		if err := e.db.Super.QueryRow(ctx, `SELECT id::text, coalesce(issuer, ''), coalesce(client_secret_ref, '') FROM lattis.identity_providers WHERE kind = 'google'`).Scan(&gid, &issuer, &ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	readProvider()
+	if issuer != "https://accounts.google.com" || !vault.IsRef(ref) {
+		t.Fatalf("fournisseur ajouté : %q %q", issuer, ref)
+	}
+	if v, err := e.vault.Get(ctx, ref); err != nil || v != "gs3cret" {
+		t.Fatalf("secret saisi : %q %v", v, err)
+	}
+	if _, body := b.get("/admin/providers"); !strings.Contains(body, "/callback/"+gid) || strings.Contains(body, "gs3cret") {
+		t.Fatal("page des fournisseurs : adresse de rappel absente ou secret affiché")
+	}
+	first := ref
+	if _, body := b.post("/admin/do/update_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "id": {gid}, "kind": {"google"},
+		"label": {"Google"}, "position": {"1"}, "client_id": {"cid"}, "scopes": {"openid email"}, "enabled": {"on"}}); !strings.Contains(body, "enregistr") {
+		t.Fatalf("mise à jour : %s", body)
+	}
+	readProvider()
+	if issuer != "https://accounts.google.com" || ref != first {
+		t.Fatalf("mise à jour sans secret : émetteur %q, secret %q", issuer, ref)
+	}
+	b.post("/admin/do/update_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "id": {gid}, "kind": {"google"},
+		"label": {"Google"}, "position": {"1"}, "client_id": {"cid"}, "secret_value": {"nouveau"}, "enabled": {"on"}})
+	readProvider()
+	if v, err := e.vault.Get(ctx, ref); ref == first || err != nil || v != "nouveau" {
+		t.Fatalf("secret remplacé : %q %q %v", ref, v, err)
+	}
+	if _, body := b.post("/admin/do/remove_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "id": {gid}, "confirm": {"on"}}); !strings.Contains(body, "supprimé") {
+		t.Fatalf("suppression du fournisseur : %s", body)
 	}
 
 	// Compte à mot de passe créé depuis la console, puis connexion refusée à

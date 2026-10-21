@@ -64,6 +64,12 @@ func (r *Registry) Get(ctx context.Context, p store.Provider) (*Client, error) {
 	}
 	dctx := ctx
 	issuer := p.Issuer
+	if issuer == "" && (p.Kind == "google" || p.Kind == "google_workspace") {
+		issuer = "https://accounts.google.com"
+	}
+	if issuer == "" {
+		return nil, fmt.Errorf("%s : émetteur (issuer) manquant", p.Label)
+	}
 	multiTenant := p.Kind == "microsoft" &&
 		(strings.Contains(issuer, "/common/") || strings.Contains(issuer, "/organizations/"))
 	if multiTenant {
