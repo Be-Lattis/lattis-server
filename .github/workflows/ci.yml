@@ -75,6 +75,11 @@ jobs:
           docker compose run --rm --no-deps lattisd migrate --status | grep "À jour"
           # Application web désactivée (édition admin) : /app/ refusée.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/app/)" = 404
+          # Routes posées après la construction du serveur : présentes au
+          # démarrage réel (relais des changements, formulaires).
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/events)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/form-static/form.css)" = 200
+          if curl -s http://localhost:8080/f/inconnu | grep -q '^404 page not found'; then exit 1; fi
       - name: Parcours d'un poste
         run: |
           TOKEN=$(docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env logs lattisd | grep -o 'token=[0-9a-f]*' | head -1 | cut -d= -f2)

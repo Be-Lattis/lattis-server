@@ -325,8 +325,6 @@ func serve(doMigrate bool) error {
 		}
 	}()
 
-	public := &http.Server{Addr: cfg.ListenAddr, Handler: srv.Handler(),
-		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(m.Registry, promhttp.HandlerOpts{}))
 	internal := &http.Server{Addr: cfg.MetricsAddr, Handler: metricsMux, ReadHeaderTimeout: 10 * time.Second}
@@ -358,6 +356,10 @@ func serve(doMigrate bool) error {
 	srv.Events = &events.Hub{Pool: st.DB, Users: users}
 	go srv.Events.Run(ctx)
 	go runner.Run(ctx)
+	// Routeur construit une fois srv complet : Handler n'enregistre que les
+	// services déjà posés (formulaires, relais des changements…).
+	public := &http.Server{Addr: cfg.ListenAddr, Handler: srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	errc := make(chan error, 2)
 	go func() {
 		slog.Info("lattisd à l'écoute", "addr", cfg.ListenAddr, "issuer", cfg.Issuer(), "edition", cfg.Edition)
