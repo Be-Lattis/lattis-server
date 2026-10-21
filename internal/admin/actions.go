@@ -205,6 +205,16 @@ func (s *Service) saveSettings(ctx context.Context, tx pgx.Tx, f form) (string, 
 				n = math.Round(n * st.Scale)
 			}
 			v = n
+		case "limit":
+			txt := strings.NewReplacer(" ", "", ",", ".").Replace(f.s(st.Key))
+			n := 0.0
+			if txt != "" {
+				var err error
+				if n, err = strconv.ParseFloat(txt, 64); err != nil || n < 0 || n != math.Trunc(n) {
+					return "", inputError(st.Label + " : nombre entier attendu (vide ou 0 : sans limite).")
+				}
+			}
+			v = n
 		case "url":
 			v = f.n(st.Key)
 		default:

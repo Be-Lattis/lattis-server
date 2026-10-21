@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net"
@@ -430,6 +431,13 @@ func (s *Service) complete(w http.ResponseWriter, r *http.Request, p store.Provi
 		s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultInvite).Inc()
 		s.render(w, r, http.StatusForbidden, "message", view{Title: "Accès sur invitation",
 			Error: "Ce serveur est sur invitation et aucune invitation n'existe pour " + id.Email + "."})
+		return
+	}
+	if max, n, err := s.Store.ConnectedUsersFull(r.Context(), e.PGRole); err != nil {
+		slog.Warn("limite d'utilisateurs connectés", "err", err)
+	} else if max > 0 {
+		s.render(w, r, http.StatusServiceUnavailable, "message", view{Title: "Serveur complet",
+			Error: fmt.Sprintf("Ce serveur accepte au plus %d utilisateurs connectés en même temps, et %d le sont déjà. Réessayez plus tard : une place se libère quand quelqu'un ferme Lattis. L'administrateur règle cette limite dans Administration › Serveur › Limites.", max, n)})
 		return
 	}
 	s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultOK).Inc()

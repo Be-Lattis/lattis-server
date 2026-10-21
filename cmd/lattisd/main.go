@@ -415,32 +415,48 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 	}
 }
 
-// demoSetting lit le réglage public_demo (démo publique), relu au plus
-// toutes les 10 s.
-func demoSetting(st *store.Store) func(context.Context) bool {
+// webSet : réglages de l'administration lus par l'édition web.
+type webSet struct {
+	demo   bool
+	limits webapp.Limits
+}
+
+// webSettings lit la démo publique et les limites de l'édition web, relues
+// au plus toutes les 10 s.
+func webSettings(st *store.Store) func(context.Context) webSet {
 	var mu sync.Mutex
-	var on bool
+	var cur webSet
 	var at time.Time
-	return func(ctx context.Context) bool {
+	return func(ctx context.Context) webSet {
 		mu.Lock()
 		defer mu.Unlock()
 		if time.Since(at) < 10*time.Second {
-			return on
+			return cur
 		}
-		var v bool
-		if err := st.DB.QueryRow(ctx, `SELECT coalesce((value #>> '{}')::boolean, false) FROM lattis.server_config WHERE key = 'public_demo'`).Scan(&v); err != nil {
-			slog.Warn("réglage public_demo", "err", err)
-			return on
+		var v webSet
+		var sessions, mem, engine int64
+		if err := st.DB.QueryRow(ctx, `SELECT
+				coalesce((SELECT (value #>> '{}')::boolean FROM lattis.server_config WHERE key = 'public_demo'), false),
+				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_max_sessions'), 0),
+				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_max_memory_mb'), 0),
+				coalesce((SELECT (value #>> '{}')::numeric::bigint FROM lattis.server_config WHERE key = 'web_engine_memory_mb'), 0)`).
+			Scan(&v.demo, &sessions, &mem, &engine); err != nil {
+			slog.Warn("réglages de l'édition web", "err", err)
+			return cur
 		}
-		on, at = v, time.Now()
-		return on
+		v.limits = webapp.Limits{Sessions: int(sessions), Memory: mem << 20, EngineMemory: engine << 20}
+		cur, at = v, time.Now()
+		return cur
 	}
 }
 
 // webManager : moteurs de l'édition web, lancés selon LATTIS_WEB_LAUNCHER.
 func webManager(cfg *config.Config, st *store.Store, keys *tokens.KeySet, session func(*http.Request) (store.User, error)) (*webapp.Manager, error) {
 	m := &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: session, TokenURL: cfg.WebTokenURL,
-		ClientIP: func(r *http.Request) string { return auth.ClientIP(r, cfg.TrustProxy) }, DemoEnabled: demoSetting(st)}
+		ClientIP: func(r *http.Request) string { return auth.ClientIP(r, cfg.TrustProxy) }}
+	ws := webSettings(st)
+	m.DemoEnabled = func(ctx context.Context) bool { return ws(ctx).demo }
+	m.Limits = func(ctx context.Context) webapp.Limits { return ws(ctx).limits }
 	switch cfg.WebLauncher {
 	case "docker":
 		tok, err := os.ReadFile(cfg.LauncherTokenFile)

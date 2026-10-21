@@ -81,6 +81,9 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		Secret string `json:"secret"`
 		// Demo : démo publique, sans serveur ni secret (--public-demo).
 		Demo bool `json:"demo"`
+		// Memory : mémoire demandée par lattisd (octets), jamais au-delà de
+		// LAUNCHER_MEMORY.
+		Memory int64 `json:"memory"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil ||
 		!userRe.MatchString(in.UserID) || (!in.Demo && !secretRe.MatchString(in.Secret)) ||
@@ -104,6 +107,9 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := s.Config
+	if in.Memory > 0 && (c.Memory == 0 || in.Memory < c.Memory) {
+		c.Memory = max(in.Memory, 64<<20)
+	}
 	// Volume de cache par utilisateur ; un moteur de la réserve de lattisd
 	// (pool-…) a un volume anonyme, supprimé avec son conteneur.
 	mount := map[string]any{"Type": "volume", "Source": c.VolumePrefix + in.UserID, "Target": "/home/nonroot"}

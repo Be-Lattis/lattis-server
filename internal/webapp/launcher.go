@@ -22,6 +22,9 @@ type Spec struct {
 	// Demo : moteur de la démo publique (--public-demo) : ni serveur, ni
 	// jeton, ni secret ; rien n'est gardé après son arrêt.
 	Demo bool
+	// Memory : mémoire allouée au moteur en octets (réglage
+	// web_engine_memory_mb) ; 0 : celle du lanceur.
+	Memory int64
 }
 
 // EngineArgs : options de lattis-engine pour s, écoute addr et répertoire dir.

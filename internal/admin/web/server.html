@@ -5,6 +5,7 @@
 {{else if eq .Kind "bool"}}<div class="control check"><label class="inline"><input type="checkbox" name="{{.Key}}"{{if eq (str .Value) "true"}} checked{{end}}> Activé</label>{{template "pen" .Label}}</div>
 {{else if eq .Kind "duration"}}<div class="unit"><div class="control"><input type="text" inputmode="decimal" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" required>{{template "pen" .Label}}</div><span>{{.Unit}}</span></div>
 {{else if eq .Kind "number"}}<div class="control"><input type="number" min="1" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" required>{{template "pen" .Label}}</div>
+{{else if eq .Kind "limit"}}<div class="unit"><div class="control"><input type="number" min="0" step="1" name="{{.Key}}" value="{{if ne (str .Value) "0"}}{{str .Value}}{{end}}" placeholder="sans limite" aria-label="{{.Label}}">{{template "pen" .Label}}</div><span>{{.Unit}}</span></div>
 {{else if eq .Kind "url"}}<div class="control"><input type="url" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" placeholder="https://…">{{template "pen" .Label}}</div>
 {{else}}<div class="control"><input type="text" name="{{.Key}}" value="{{str .Value}}" aria-label="{{.Label}}" required>{{template "pen" .Label}}</div>{{end}}
 {{if .Help}}<small>{{.Help}}</small>{{end}}

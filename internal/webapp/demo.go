@@ -76,6 +76,11 @@ func (m *Manager) demo(w http.ResponseWriter, r *http.Request) {
 			MaxAge: int(m.Config.WebDemoLimit.Seconds())})
 	}
 	e, err := m.demoEngine(r.Context(), demoPrefix+id, m.clientIP(r))
+	var le *LimitError
+	if errors.As(err, &le) {
+		limitResponse(w, r, le)
+		return
+	}
 	if errors.Is(err, ErrBusy) {
 		w.Header().Set("Retry-After", "60")
 		if r.Method != http.MethodGet || isWebSocket(r) {
@@ -136,7 +141,17 @@ func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, erro
 		m.mu.Unlock()
 		return nil, ErrBusy
 	}
-	e := &engine{userID: key, demo: true, ip: ip, started: make(chan struct{})}
+	m.mu.Unlock()
+	lim := m.limits(ctx)
+	if err := m.checkMemory(ctx, lim); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	if e, ok := m.engines[key]; ok {
+		m.mu.Unlock()
+		return waitStarted(ctx, e)
+	}
+	e := &engine{userID: key, demo: true, ip: ip, memory: lim.EngineMemory, started: make(chan struct{})}
 	m.engines[key] = e
 	m.mu.Unlock()
 	go func() {

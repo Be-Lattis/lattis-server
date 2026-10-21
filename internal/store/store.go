@@ -218,6 +218,28 @@ type User struct {
 	Disabled    bool
 }
 
+// ConnectedUsersFull : la limite max_connected_users, si elle empêche
+// pgRole de se connecter (0 sinon), et le nombre d'utilisateurs connectés.
+// Une personne déjà connectée, ou propriétaire du serveur, entre toujours.
+func (s *Store) ConnectedUsersFull(ctx context.Context, pgRole string) (int, int, error) {
+	var max, n int
+	var exempt bool
+	err := s.DB.QueryRow(ctx, `
+		WITH c AS (
+			SELECT DISTINCT usename FROM pg_stat_activity
+			WHERE backend_type = 'client backend' AND datname = current_database()
+			  AND (application_name LIKE 'Lattis/%' OR application_name LIKE 'lattisd/web%'))
+		SELECT coalesce((SELECT (value #>> '{}')::numeric::int FROM lattis.server_config WHERE key = 'max_connected_users'), 0),
+		       (SELECT count(*) FROM c)::int,
+		       EXISTS (SELECT 1 FROM c WHERE usename = $1)
+		       OR EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname = $1 AND pg_has_role(r.oid, 'lattis_server_owners', 'MEMBER'))`,
+		pgRole).Scan(&max, &n, &exempt)
+	if err != nil || max <= 0 || exempt || n < max {
+		return 0, n, err
+	}
+	return max, n, nil
+}
+
 // User lit un utilisateur.
 func (s *Store) User(ctx context.Context, id string) (User, error) {
 	var u User

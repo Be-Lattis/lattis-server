@@ -140,6 +140,10 @@ func (l *ProcessLauncher) start(ctx context.Context, s Spec, uid int) (*procInst
 	if s.Demo {
 		cmd.Env = cmd.Env[:len(cmd.Env)-1] // démo publique : aucun secret
 	}
+	if s.Memory > 0 {
+		// Limite souple : le ramasse-miettes du moteur se cale dessous.
+		cmd.Env = append(cmd.Env, fmt.Sprintf("GOMEMLIMIT=%dB", s.Memory))
+	}
 	cmd.Dir = dir
 	isolate(cmd, uid)
 	stdin, err := cmd.StdinPipe()

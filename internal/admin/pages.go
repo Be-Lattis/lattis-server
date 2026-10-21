@@ -61,7 +61,7 @@ func queryJSON(ctx context.Context, tx pgx.Tx, q string, args ...any) (any, erro
 
 // setting décrit un champ de l'écran « Serveur ».
 type setting struct {
-	Key, Label, Help, Kind string // Kind : text, url, number, duration, bool, select
+	Key, Label, Help, Kind string // Kind : text, url, number, limit (0 : sans limite), duration, bool, select
 	Options                [][2]string
 	// Unit, Scale : durée affichée dans cette unité, enregistrée en secondes.
 	Unit  string
@@ -102,6 +102,16 @@ var settingGroups = []settingGroup{
 		{Key: "invitation_ttl", Label: "Validité des invitations", Kind: "duration", Unit: "jours", Scale: day},
 		{Key: "public_demo", Label: "Démo publique, sans connexion", Kind: "bool",
 			Help: "Édition web : l'adresse /demo ouvre Lattis dans le navigateur sans compte, sur un classeur jamais enregistré sur le serveur (Ctrl+S le télécharge), avec des données d'exemple. Aucun accès aux classeurs du serveur."},
+	}},
+	{Title: "Limites", Help: "Protègent le serveur quand il est très sollicité. Vide ou 0 : sans limite. Une limite atteinte affiche une page qui la nomme ; les propriétaires du serveur entrent toujours.", Settings: []setting{
+		{Key: "max_connected_users", Label: "Utilisateurs connectés en même temps", Kind: "limit", Unit: "personnes",
+			Help: "Bureau et navigateur. Au-delà, une nouvelle connexion est refusée ; les personnes déjà connectées continuent."},
+		{Key: "web_max_sessions", Label: "Sessions de l'application web", Kind: "limit", Unit: "sessions",
+			Help: "Édition web : une session par personne, sous le plafond fixé à l'installation (LATTIS_WEB_MAX_ENGINES)."},
+		{Key: "web_max_memory_mb", Label: "Mémoire totale de l'application web", Kind: "limit", Unit: "Mo",
+			Help: "Édition web : au-delà de cette mémoire occupée par les moteurs, plus de nouvelle session (écran Surveillance)."},
+		{Key: "web_engine_memory_mb", Label: "Mémoire par session web", Kind: "limit", Unit: "Mo",
+			Help: "Édition web : mémoire allouée au moteur de chaque personne, pour les sessions ouvertes ensuite. Kubernetes et Docker : limite stricte ; mode processus : limite souple (GOMEMLIMIT)."},
 	}},
 	{Title: "Connexion et sécurité", Help: "Durée des sessions et protection des comptes à mot de passe.", Settings: []setting{
 		{Key: "refresh_token_ttl", Label: "Durée d'une session de l'application", Kind: "duration", Unit: "jours", Scale: day,

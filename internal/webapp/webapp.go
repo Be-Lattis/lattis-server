@@ -70,6 +70,12 @@ type Manager struct {
 	// démo désactivée. ClientIP : adresse du client (plafond par adresse).
 	DemoEnabled func(context.Context) bool
 	ClientIP    func(*http.Request) string
+	// Limits lit les limites de l'administration ; nil : aucune.
+	Limits func(context.Context) Limits
+
+	memMu   sync.Mutex
+	memAt   time.Time
+	memLast int64
 
 	mu      sync.Mutex
 	engines map[string]*engine // par utilisateur
@@ -80,10 +86,12 @@ type engine struct {
 	userID string
 	secret string
 	// demo : moteur de la démo publique ; ip : adresse du client qui l'a ouvert.
-	demo  bool
-	ip    string
-	inst  Instance
-	proxy *httputil.ReverseProxy
+	demo bool
+	ip   string
+	// memory : mémoire allouée (réglage web_engine_memory_mb), 0 : défaut.
+	memory int64
+	inst   Instance
+	proxy  *httputil.ReverseProxy
 	// started se ferme une fois le démarrage fini (startErr dit comment).
 	started  chan struct{}
 	startErr error
@@ -168,6 +176,11 @@ func (m *Manager) app(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, err := m.engine(r.Context(), u)
+	var le *LimitError
+	if errors.As(err, &le) {
+		limitResponse(w, r, le)
+		return
+	}
 	if errors.Is(err, ErrBusy) {
 		w.Header().Set("Retry-After", "60")
 		if r.Method != http.MethodGet || isWebSocket(r) {
@@ -227,8 +240,22 @@ func (m *Manager) engine(ctx context.Context, u store.User) (*engine, error) {
 		m.mu.Unlock()
 		return nil, ErrBusy
 	}
+	lim := m.limits(ctx)
+	if lim.Sessions > 0 && m.sessionsLocked() >= lim.Sessions {
+		m.mu.Unlock()
+		return nil, &LimitError{Kind: LimitSessions, Max: int64(lim.Sessions)}
+	}
+	m.mu.Unlock()
+	if err := m.checkMemory(ctx, lim); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	if e, ok := m.engines[u.ID]; ok { // démarré entre-temps
+		m.mu.Unlock()
+		return waitStarted(ctx, e)
+	}
 	// Réservé pendant le démarrage : une seconde requête attend le même.
-	e := &engine{userID: u.ID, secret: randomSecret(), started: make(chan struct{})}
+	e := &engine{userID: u.ID, secret: randomSecret(), memory: lim.EngineMemory, started: make(chan struct{})}
 	m.engines[u.ID] = e
 	m.secrets[e.secret] = u.ID
 	m.mu.Unlock()
@@ -259,9 +286,9 @@ func (m *Manager) start(l Launcher, e *engine) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	spec := Spec{UserID: e.userID, Secret: e.secret, Server: m.Config.Issuer(), TokenURL: m.TokenURL, Idle: m.Config.WebIdle}
+	spec := Spec{UserID: e.userID, Secret: e.secret, Server: m.Config.Issuer(), TokenURL: m.TokenURL, Idle: m.Config.WebIdle, Memory: e.memory}
 	if e.demo {
-		spec = Spec{UserID: e.userID, Demo: true, Idle: m.Config.WebDemoIdle}
+		spec = Spec{UserID: e.userID, Demo: true, Idle: m.Config.WebDemoIdle, Memory: e.memory}
 	}
 	inst, err := l.Start(ctx, spec)
 	if err != nil {

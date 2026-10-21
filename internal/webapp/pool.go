@@ -37,12 +37,16 @@ type Pool struct {
 	stopped  bool
 	refillCh chan struct{}
 	once     sync.Once
+	// memory : mémoire par moteur des prochains moteurs prêts (dernière
+	// demandée) ; un moteur prêt d'une autre mémoire est remplacé.
+	memory int64
 }
 
 // poolInstance : moteur de la réserve, avec son secret.
 type poolInstance struct {
 	Instance
 	secret string
+	memory int64
 }
 
 // Secret : secret que le moteur présente à /engine/token.
@@ -88,6 +92,7 @@ func (p *Pool) Cleanup(ctx context.Context) error {
 func (p *Pool) Start(ctx context.Context, s Spec) (Instance, error) {
 	p.init()
 	p.mu.Lock()
+	p.memory = s.Memory
 	var inst *poolInstance
 	for len(p.ready) > 0 && inst == nil {
 		inst = p.ready[0]
@@ -96,6 +101,11 @@ func (p *Pool) Start(ctx context.Context, s Spec) (Instance, error) {
 		case <-inst.Done(): // parti entre-temps
 			inst = nil
 		default:
+			if inst.memory != s.Memory {
+				// Réglage de mémoire changé depuis son démarrage.
+				go inst.Stop()
+				inst = nil
+			}
 		}
 	}
 	if inst != nil {
@@ -140,11 +150,14 @@ func (p *Pool) launch(ctx context.Context) (*poolInstance, error) {
 	spec := p.Template
 	spec.UserID = PoolPrefix + hex.EncodeToString(b)
 	spec.Secret = randomSecret()
+	p.mu.Lock()
+	spec.Memory = p.memory
+	p.mu.Unlock()
 	inst, err := p.Inner.Start(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
-	return &poolInstance{Instance: inst, secret: spec.Secret}, nil
+	return &poolInstance{Instance: inst, secret: spec.Secret, memory: spec.Memory}, nil
 }
 
 // refillLoop ramène la réserve à Spare moteurs prêts, sans dépasser Max.

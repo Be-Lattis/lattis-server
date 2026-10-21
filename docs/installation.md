@@ -350,6 +350,8 @@ SELECT lattis.create_password_account('paul@acme.fr', 'Paul');  -- renvoie le je
 
 ## 7. Surveiller
 
+Comment le serveur tient la charge (bureau, web), ses goulets et les limites réglables dans l'administration : [montee-en-charge.md](montee-en-charge.md).
+
 - `GET /healthz` (processus vivant) et `GET /readyz` (base joignable).
 - Mesures Prometheus sur `LATTIS_METRICS_ADDR` : connexions et requêtes (`lattis_connections`, `lattis_queries_running`…), sessions par client (`lattis_sessions_active`), réplicas (`lattis_replica_lag_seconds`, `lattis_replica_lag_bytes`, `lattis_replicas_available`).
 - Administration › État : version du schéma, connexions, réplicas surveillés (retard, raison d'un retrait) et points annoncés.

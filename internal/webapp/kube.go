@@ -143,8 +143,12 @@ func (k *KubeLauncher) PodSpec(s Spec, name string) map[string]any {
 	if s.Demo {
 		env = env[1:] // démo publique : aucun secret
 	}
-	resources := map[string]any{"requests": map[string]string{"cpu": c.CPU, "memory": c.Memory},
-		"limits": map[string]string{"memory": c.Memory}}
+	mem := c.Memory
+	if s.Memory > 0 {
+		mem = fmt.Sprintf("%dMi", (s.Memory+(1<<20)-1)>>20)
+	}
+	resources := map[string]any{"requests": map[string]string{"cpu": c.CPU, "memory": mem},
+		"limits": map[string]string{"memory": mem}}
 	spec := map[string]any{
 		"restartPolicy":                 "Never",
 		"automountServiceAccountToken":  false,
