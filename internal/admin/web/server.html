@@ -26,4 +26,20 @@
 {{end}}
 <p class="actions save sticky"><button class="ok">Enregistrer</button></p>
 </form>
+<section class="panel">
+<h2>Logo du serveur</h2>
+<p class="muted lead">Affiché dans l'application Lattis (liste des serveurs), sur les pages de connexion et ici. Image PNG ou JPEG, réduite à 512 px.</p>
+<div class="logo-edit">
+<img class="logo-preview" src="/logo?preview=1" alt="Logo actuel">
+<form method="post" action="/admin/server/logo" enctype="multipart/form-data">
+{{template "csrf" $}}
+<label>Nouvelle image<input type="file" name="file" accept="image/png,image/jpeg" required></label>
+<p class="actions"><button class="ok">Envoyer l'image</button></p>
+</form>
+<form method="post" action="/admin/server/logo" enctype="multipart/form-data">
+{{template "csrf" $}}<input type="hidden" name="remove" value="1">
+<p class="actions"><button>Retirer l'image envoyée</button></p>
+</form>
+</div>
+</section>
 {{end}}

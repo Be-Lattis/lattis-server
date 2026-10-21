@@ -801,7 +801,7 @@ type view struct {
 
 func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, page string, v view) {
 	if cfg, err := s.Store.Config(r.Context()); err == nil {
-		v.Server, v.Logo = cfg.DisplayName, cfg.LogoURL
+		v.Server, v.Logo = cfg.DisplayName, cfg.Logo("")
 	}
 	v.Mail = s.MailEnabled
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

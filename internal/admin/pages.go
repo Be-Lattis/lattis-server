@@ -87,7 +87,8 @@ const (
 var settingGroups = []settingGroup{
 	{Title: "Identité", Help: "Ce que voient les personnes à la connexion et dans Lattis.", Settings: []setting{
 		{Key: "display_name", Label: "Nom du serveur", Kind: "text"},
-		{Key: "logo_url", Label: "Logo (adresse https://)", Kind: "url"},
+		{Key: "logo_url", Label: "Logo par adresse (https://)", Kind: "url",
+			Help: "Facultatif : une image envoyée ci-dessous passe avant. Sans l'une ni l'autre, l'icône Lattis."},
 	}},
 	{Title: "Accès et publication", Help: "Qui peut entrer sur le serveur et qui peut y publier des classeurs.", Settings: []setting{
 		{Key: "access_mode", Label: "Mode d'accès", Kind: "select",

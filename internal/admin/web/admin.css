@@ -236,3 +236,8 @@ details.menu[open] > summary { border-color: var(--accent); }
 .legend { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .sw { display: inline-block; width: 12px; height: 3px; margin: 0 6px 3px 0; border-radius: 2px; vertical-align: middle; }
 .legend .sw:not(:first-child) { margin-left: 12px; }
+
+/* Logo du serveur : image (envoyée, par adresse ou icône Lattis). */
+img.logo { background: none; object-fit: contain; }
+.logo-edit { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; }
+.logo-preview { width: 96px; height: 96px; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--stripe); padding: 6px; }

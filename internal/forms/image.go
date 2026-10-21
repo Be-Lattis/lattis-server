@@ -73,3 +73,10 @@ func fit(src image.Image, maxW, maxH int) image.Image {
 	}
 	return dst
 }
+
+// ShrinkLogo : comme le logo d'un formulaire (PNG ou JPEG, 512 px au plus,
+// métadonnées retirées) ; sert aussi au logo du serveur (administration).
+func ShrinkLogo(r io.Reader) ([]byte, string, error) { return shrink(r, "logo") }
+
+// ErrTooBig : image de plus de 5 Mo.
+var ErrTooBig = errTooBig

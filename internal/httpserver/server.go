@@ -3,6 +3,7 @@ package httpserver
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -63,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /jwks.json", s.jwks)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /readyz", s.readyz)
+	mux.HandleFunc("GET /logo", s.logo)
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("POST /api/push/{id}", s.push)
 	mux.HandleFunc("GET /api/push/{id}", s.pushStatus)
@@ -135,7 +137,7 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 	}
 	d := Discovery{
 		Discovery: protocol.Discovery{
-			Name: cfg.DisplayName, Logo: cfg.LogoURL, Version: Version, MinClientVersion: s.Config.MinClient,
+			Name: cfg.DisplayName, Logo: cfg.Logo(s.Config.Issuer()), Version: Version, MinClientVersion: s.Config.MinClient,
 			Edition: string(s.Config.Edition), AccessMode: cfg.AccessMode, Issuer: s.Config.Issuer(),
 			ClientID: protocol.DesktopClientID, Scope: protocol.DefaultScope,
 			AuthorizationEndpoint: s.Config.URL(protocol.PathAuthorize), TokenEndpoint: s.Config.URL(protocol.PathToken),
@@ -184,6 +186,41 @@ func (s *Server) openidConfiguration(w http.ResponseWriter, r *http.Request) {
 func (s *Server) jwks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	writeJSON(w, s.Keys.JWKS())
+}
+
+// defaultLogo : icône Lattis, logo d'un serveur qui n'en a pas.
+//
+//go:embed web/lattis-logo.png
+var defaultLogo []byte
+
+// logo sert le logo du serveur : celui envoyé dans l'administration, sinon
+// l'adresse logo_url (redirection), sinon l'icône Lattis.
+func (s *Server) logo(w http.ResponseWriter, r *http.Request) {
+	ct, data, err := s.Store.ServerLogo(r.Context())
+	if err == nil {
+		switch q := r.URL.Query(); {
+		case q.Has("preview"):
+			w.Header().Set("Cache-Control", "no-store")
+		case q.Get("v") != "":
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		default:
+			w.Header().Set("Cache-Control", "public, max-age=300")
+		}
+		w.Header().Set("Content-Type", ct)
+		_, _ = w.Write(data)
+		return
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		s.unavailable(w, err)
+		return
+	}
+	if cfg, err := s.Store.Config(r.Context()); err == nil && cfg.LogoURL != "" {
+		http.Redirect(w, r, cfg.LogoURL, http.StatusFound)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Content-Type", "image/png")
+	_, _ = w.Write(defaultLogo)
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {

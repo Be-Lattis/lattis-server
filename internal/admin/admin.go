@@ -254,6 +254,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/status", s.page("status", "État", s.loadStatus))
 	mux.HandleFunc("GET /admin/monitor", s.page("monitor", "Surveillance", s.loadMonitor))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)
+	mux.HandleFunc("POST /admin/server/logo", s.uploadLogo)
 	mux.HandleFunc("GET /w/{id}", s.workbookLink)
 }
 

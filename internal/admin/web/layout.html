@@ -11,7 +11,7 @@
 <body class="{{if .User.ID}}with-side{{else}}bare{{end}}">
 {{if .User.ID}}
 <aside class="side">
-<a class="brand" href="/admin/server"><span class="logo" aria-hidden="true"></span><span class="name">{{.Server}}<small>Administration</small></span></a>
+<a class="brand" href="/admin/server"><img class="logo" src="/logo" alt=""><span class="name">{{.Server}}<small>Administration</small></span></a>
 <nav aria-label="Administration">
 <p class="group">Serveur</p>
 <a href="/admin/server"{{if eq .Page "server"}} aria-current="page"{{end}}>Serveur</a>
@@ -31,7 +31,7 @@
 <form method="post" action="/admin/logout" class="me"><span class="who" title="{{.User.Email}}">{{.User.Email}}</span>{{template "csrf" .}}<button>Se déconnecter</button></form>
 </aside>
 {{else}}
-<header class="top"><p class="brand"><span class="logo" aria-hidden="true"></span><span class="name">{{.Server}}<small>Administration</small></span></p></header>
+<header class="top"><p class="brand"><img class="logo" src="/logo" alt=""><span class="name">{{.Server}}<small>Administration</small></span></p></header>
 {{end}}
 <div class="page">
 <main{{with .Refill}} data-refill="{{.}}"{{end}}>

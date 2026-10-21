@@ -72,11 +72,37 @@ type ServerConfig struct {
 	RefreshTokenTTL     time.Duration
 	PasswordMaxFailures int
 	PasswordLock        time.Duration
+	// LogoVersion : date (secondes) du logo envoyé dans l'administration,
+	// 0 sans logo envoyé.
+	LogoVersion int64
+}
+
+// Logo : adresse du logo du serveur, base étant l'émetteur (ou "" pour une
+// adresse relative). Logo envoyé : /logo (versionné) ; sinon logo_url ;
+// sinon /logo, qui sert l'icône Lattis.
+func (c ServerConfig) Logo(base string) string {
+	switch {
+	case c.LogoVersion > 0:
+		return fmt.Sprintf("%s/logo?v=%d", base, c.LogoVersion)
+	case c.LogoURL != "":
+		return c.LogoURL
+	}
+	return base + "/logo"
+}
+
+// ServerLogo lit le logo envoyé dans l'administration (ErrNotFound sans).
+func (s *Store) ServerLogo(ctx context.Context) (contentType string, data []byte, err error) {
+	err = s.DB.QueryRow(ctx, `SELECT content_type, data FROM lattis.server_logo`).Scan(&contentType, &data)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return
 }
 
 // Config lit les réglages du serveur.
 func (s *Store) Config(ctx context.Context) (ServerConfig, error) {
-	rows, err := s.DB.Query(ctx, `SELECT key, value FROM lattis.server_config`)
+	rows, err := s.DB.Query(ctx, `SELECT key, value FROM lattis.server_config
+		UNION ALL SELECT 'logo_version', to_jsonb(extract(epoch FROM updated_at)::bigint) FROM lattis.server_logo`)
 	if err != nil {
 		return ServerConfig{}, err
 	}
@@ -117,6 +143,7 @@ func (s *Store) Config(ctx context.Context) (ServerConfig, error) {
 	secs("access_token_ttl", &c.AccessTokenTTL)
 	secs("refresh_token_ttl", &c.RefreshTokenTTL)
 	secs("password_lock_seconds", &c.PasswordLock)
+	_ = json.Unmarshal(raw["logo_version"], &c.LogoVersion)
 	var n int
 	if json.Unmarshal(raw["password_max_failures"], &n) == nil && n > 0 {
 		c.PasswordMaxFailures = n
