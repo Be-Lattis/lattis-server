@@ -44,6 +44,9 @@ type Source struct {
 	Sheet     string            `json:"sheet"`
 	Delimiter string            `json:"delimiter"`
 	JSONPath  string            `json:"json_path"`
+	// AutoColumns : colonnes du tableau créées d'après la source (cible
+	// « Créer automatiquement » du Data Lake).
+	AutoColumns bool `json:"auto_columns"`
 }
 
 // openSource ouvre la source d'un pipeline, lue ensuite ligne à ligne : la

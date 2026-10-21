@@ -1,12 +1,19 @@
 {{define "body"}}{{$d := .Data}}
-<p class="lead">Un pipeline lit une source (fichier envoyé ou déposé, adresse HTTP, serveur SFTP, base PostgreSQL) et écrit dans un tableau d'un classeur collaboratif publié, sous une identité technique « Pipeline : … » membre du classeur. Les secrets (mot de passe, jeton, chaîne de connexion) sont des fichiers du dossier des secrets : on n'en saisit que le nom.</p>
+<p class="lead">Un pipeline lit une source (fichier envoyé ou déposé, adresse HTTP, serveur SFTP, base PostgreSQL) et écrit dans une donnée du Data Lake (créée d'après les données, ou existante) ou dans un tableau d'un classeur collaboratif publié, sous une identité technique « Pipeline : … ». Les secrets se saisissent en valeur : ils sont gardés chiffrés sur le serveur.</p>
 
 <details class="panel"{{if not $d.Pipelines}} open{{end}}>
 <summary><h2>Nouveau pipeline</h2><span class="muted">Source, tableau cible, mode d'écriture et horaire.</span></summary>
 <form method="post" action="/admin/do/create_pipeline" class="grid">{{template "csrf" $}}
 <label>Nom <input name="name" required placeholder="Tarifs fournisseur"></label>
-<label>Tableau cible <select name="target" required>{{range $d.Targets}}<option value="{{.workbook_id}}|{{.table_id}}">{{.workbook}} › {{.table}}</option>{{else}}<option value="">Aucun classeur collaboratif publié</option>{{end}}</select></label>
-<label>Rôle de l'identité technique <select name="role"><option value="editor">Éditeur</option><option value="participant">Participant</option></select><small>Le niveau d'un rôle personnalisé se règle ensuite sur la page du classeur.</small></label>
+<label>Cible <select name="target" required>
+<option value="auto" selected>Créer automatiquement en fonction des données (Data Lake)</option>
+<optgroup label="Data Lake">{{range $d.Targets}}{{if .datalake}}<option value="{{.workbook_id}}|{{.table_id}}">{{.dataset}}</option>{{end}}{{end}}</optgroup>
+<optgroup label="Tableaux des classeurs">{{range $d.Targets}}{{if not .datalake}}<option value="{{.workbook_id}}|{{.table_id}}">{{.workbook}} › {{.table}}</option>{{end}}{{end}}</optgroup>
+</select><small>Créer automatiquement : une donnée neuve du Data Lake, dont les colonnes suivent la source (ajoutées à chaque exécution, types devinés).</small></label>
+<label data-show-if="target=auto">Nom de la donnée <input name="auto_name" placeholder="Nom du pipeline par défaut"></label>
+<label data-show-if="target=auto">Dossier du Data Lake <select name="auto_folder"><option value="">— Premier niveau —</option>{{range $d.Folders}}<option value="{{.id}}">{{.path}}</option>{{end}}</select></label>
+<label data-show-if="target=auto" class="wide">Description <input name="auto_description" placeholder="Facultatif : ce que contient la donnée, d'où elle vient"></label>
+<label data-show-if="target!=auto">Rôle de l'identité technique <select name="role"><option value="editor">Éditeur</option><option value="participant">Participant</option></select><small>Le niveau d'un rôle personnalisé se règle ensuite sur la page du classeur.</small></label>
 <label>Source <select name="source_kind">
 <option value="upload">Fichier envoyé depuis cette page</option>
 <option value="file">Dossier de dépôt sur le serveur</option>

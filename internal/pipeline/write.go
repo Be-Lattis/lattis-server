@@ -43,6 +43,13 @@ func (r *Runner) write(ctx context.Context, p *Pipeline, src rowSource, dry bool
 	}
 	err = r.Users.As(ctx, u, func(tx pgx.Tx) error {
 		tbl := pgx.Identifier{schema, p.TableName}
+		if p.Source.AutoColumns { // essai à blanc : annulé avec le reste
+			s, err := r.autoColumns(ctx, tx, p, schema, src)
+			if err != nil {
+				return err
+			}
+			src = s
+		}
 		cols, err := r.targets(ctx, tx, tbl, p, src.Header())
 		if err != nil {
 			return err

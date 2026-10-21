@@ -29,7 +29,13 @@ func (s *Service) loadPipelines(ctx context.Context, tx pgx.Tx, r *http.Request,
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"Pipelines": pipelines, "Targets": targets, "Dir": s.Config.PipelineDir}, nil
+	var cat struct {
+		Folders []map[string]any `json:"folders"`
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.data_catalog()`).Scan(&cat); err != nil {
+		return nil, err
+	}
+	return map[string]any{"Pipelines": pipelines, "Targets": targets, "Folders": cat.Folders, "Dir": s.Config.PipelineDir}, nil
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)

@@ -506,8 +506,9 @@ func addDataAudience(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 
 // createPipeline : formulaire de /admin/pipelines → lattis.create_pipeline.
 func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	auto := f.s("target") == "auto"
 	wb, tbl, _ := strings.Cut(f.s("target"), "|")
-	if wb == "" || tbl == "" {
+	if !auto && (wb == "" || tbl == "") {
 		return "", inputError("Choisissez le tableau cible.")
 	}
 	src := map[string]any{}
@@ -538,6 +539,26 @@ func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string
 	if f.s("name") == "" {
 		return "", inputError("Donnez un nom au pipeline.")
 	}
+	role := f.s("role")
+	if auto {
+		// Donnée neuve du Data Lake, colonnes créées d'après la source :
+		// l'identité technique en est conceptrice (ajout de colonnes).
+		name := f.s("auto_name")
+		if name == "" {
+			name = f.s("name")
+		}
+		b, _ := json.Marshal(map[string]any{"name": name, "folder_id": f.s("auto_folder"),
+			"description": f.s("auto_description"), "key_columns": keys})
+		var t struct {
+			WorkbookID string `json:"workbook_id"`
+			TableID    string `json:"table_id"`
+		}
+		if err := tx.QueryRow(ctx, `SELECT lattis.create_datalake_target($1::jsonb)`, string(b)).Scan(&t); err != nil {
+			return "", err
+		}
+		wb, tbl, role = t.WorkbookID, t.TableID, "designer"
+		src["auto_columns"] = true
+	}
 	cmap := map[string]string{}
 	for _, line := range strings.Split(f.r.PostFormValue("column_map"), "\n") {
 		dst, srcCol, ok := strings.Cut(line, "=")
@@ -554,7 +575,7 @@ func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string
 		return "", err
 	}
 	secret, _ := secretAny.(string)
-	p := map[string]any{"name": f.s("name"), "workbook_id": wb, "table_id": tbl, "role": f.s("role"),
+	p := map[string]any{"name": f.s("name"), "workbook_id": wb, "table_id": tbl, "role": role,
 		"source_kind": f.s("source_kind"), "source": src, "secret_ref": secret, "format": format,
 		"mode": f.s("mode"), "key_columns": keys, "column_map": cmap, "schedule_kind": f.s("schedule_kind"),
 		"webhook_url": f.s("webhook_url")}
