@@ -81,15 +81,30 @@ app.kubernetes.io/component: {{ .component }}
   emptyDir: {}
 {{- end -}}
 
-{{/* Conteneur d'initialisation : clé publique tirée de la clé de signature,
-     pour lattis_oauth.public_keys_file. La clé privée reste dans ce conteneur. */}}
+{{/* Conteneur d'initialisation : clés publiques tirées de la clé de signature
+     (clés privées converties par openssl, clés publiques recopiées), pour
+     lattis_oauth.public_keys_file. La clé privée reste dans ce conteneur.
+     Image de PostgreSQL, pas celle de lattisd : une nouvelle version de
+     lattisd ne relance pas PostgreSQL. */}}
 {{- define "lattis.publicKeysInit" -}}
 - name: public-keys
-  image: "{{ .Values.image.lattisd.repository }}:{{ .Values.image.lattisd.tag | default .Chart.AppVersion }}"
+  image: "{{ .Values.image.server.repository }}:{{ .Values.image.server.tag }}"
   imagePullPolicy: {{ .Values.image.pullPolicy }}
-  args: ["public-keys", "/keys/public.pem"]
-  env:
-    - { name: LATTIS_SIGNING_KEY_FILE, value: /signing/signing.pem }
+  command:
+    - sh
+    - -c
+    - |
+      set -eu
+      : > /keys/public.pem
+      awk -v out=/keys/public.pem '
+      /-----BEGIN PRIVATE KEY-----/ { mode = 1; cmd = "openssl pkey -pubout >> " out }
+      /-----BEGIN PUBLIC KEY-----/ { mode = 2 }
+      mode == 1 { print | cmd }
+      mode == 2 { print >> out }
+      /-----END PRIVATE KEY-----/ { close(cmd); mode = 0 }
+      /-----END PUBLIC KEY-----/ { close(out); mode = 0 }
+      ' /signing/signing.pem
+      grep -q "BEGIN PUBLIC KEY" /keys/public.pem
   volumeMounts:
     - { name: signing, mountPath: /signing, readOnly: true }
     - { name: keys, mountPath: /keys }
