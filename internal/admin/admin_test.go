@@ -199,7 +199,7 @@ func TestAdminConsole(t *testing.T) {
 		// Durées dans l'unité affichée (minutes, jours), enregistrées en secondes.
 		"access_token_ttl": {"10"}, "refresh_token_ttl": {"30"}, "invitation_ttl": {"14"},
 		"password_max_failures": {"5"}, "password_lock_seconds": {"15"}, "tombstone_retention": {"30"},
-		"republish_grace": {"10"}}
+		"republish_grace": {"10"}, "demo_session_seconds": {"10"}}
 
 	// Sans jeton de formulaire : refusé.
 	noCSRF := url.Values{}

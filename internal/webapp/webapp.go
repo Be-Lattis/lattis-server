@@ -89,8 +89,9 @@ type engine struct {
 	// demo : moteur de la démo publique ; ip : adresse du client qui l'a ouvert.
 	demo bool
 	ip   string
-	// deadline : fin d'une démo.
+	// deadline : fin d'une démo ; warn : avertissement avant la fin.
 	deadline time.Time
+	warn     time.Duration
 	// memory : mémoire allouée (réglage web_engine_memory_mb), 0 : défaut.
 	memory int64
 	inst   Instance
@@ -293,7 +294,7 @@ func (m *Manager) start(l Launcher, e *engine) error {
 	spec := Spec{UserID: e.userID, Secret: e.secret, Server: m.Config.Issuer(), TokenURL: m.TokenURL, Idle: m.Config.WebIdle, Memory: e.memory}
 	if e.demo {
 		spec = Spec{UserID: e.userID, Demo: true, Idle: m.Config.WebDemoIdle, Memory: e.memory,
-			Deadline: e.deadline, WarnBefore: demoWarn(time.Until(e.deadline))}
+			Deadline: e.deadline, WarnBefore: e.warn}
 	}
 	inst, err := l.Start(ctx, spec)
 	if err != nil {

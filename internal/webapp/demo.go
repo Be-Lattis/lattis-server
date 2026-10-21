@@ -154,7 +154,7 @@ func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, erro
 		return waitStarted(ctx, e)
 	}
 	life := m.demoLifetime(lim)
-	e := &engine{userID: key, demo: true, ip: ip, memory: lim.EngineMemory, deadline: time.Now().Add(life), started: make(chan struct{})}
+	e := &engine{userID: key, demo: true, ip: ip, memory: lim.EngineMemory, deadline: time.Now().Add(life), warn: demoWarn(life), started: make(chan struct{})}
 	m.engines[key] = e
 	m.mu.Unlock()
 	go func() {
