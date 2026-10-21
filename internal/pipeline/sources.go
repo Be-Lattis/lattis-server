@@ -195,6 +195,9 @@ func (r *Runner) fetchHTTP(ctx context.Context, p *Pipeline, dst io.Writer) erro
 	if p.SecretRef != "" && !strings.HasPrefix(u, "https://") {
 		return errors.New("un secret ne part que sur une adresse https://")
 	}
+	if err := r.teamGuardURL(ctx, p, u); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -262,6 +265,9 @@ func (r *Runner) sftpClient(ctx context.Context, p *Pipeline) (*sftp.Client, fun
 	if !strings.HasPrefix(s.HostKey, "SHA256:") {
 		return nil, nil, errors.New("SFTP : empreinte de la clé du serveur (SHA256:…) obligatoire")
 	}
+	if err := r.teamGuard(ctx, p, s.Host); err != nil {
+		return nil, nil, err
+	}
 	if p.SecretRef == "" {
 		return nil, nil, errors.New("SFTP : secret (mot de passe ou clé privée) manquant")
 	}
@@ -315,6 +321,9 @@ func (r *Runner) querySQL(ctx context.Context, p *Pipeline) (rowSource, error) {
 	}
 	dsn, err := r.secret(p.SecretRef)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.teamGuardDSN(ctx, p, dsn); err != nil {
 		return nil, err
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)

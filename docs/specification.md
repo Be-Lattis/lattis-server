@@ -336,6 +336,7 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 - **Équipes** : membres, sous-équipes, noms et gestionnaires de leur périmètre ; ils ne déplacent ni ne suppriment l'équipe qui leur a été confiée, n'y retirent d'autre gestionnaire qu'eux-mêmes et ne créent pas d'équipe de premier niveau.
 - **Utilisateurs** : les personnes du périmètre ; habilitations jusqu'à la leur incluse (gestionnaire d'équipe, créateur de classeurs, publieur au Data Lake), jamais « propriétaire du serveur », rien sur un propriétaire du serveur ni sur eux-mêmes. Ni création de compte, ni mot de passe, ni désactivation, ni invitation au serveur.
 - **Classeurs**, **Data Lake**, **Pipelines**, **Formulaires** : ce dont ils ont déjà les droits (propriétaire du classeur ; concepteur pour les formulaires ; données qu'ils gèrent).
+- **Pipelines** des gestionnaires : fichiers envoyés ou déposés et tableaux poussés toujours permis ; HTTP, SFTP et PostgreSQL (lecture comme export) et webhook seulement vers les adresses autorisées par les propriétaires (écran Serveur, `pipeline_team_hosts`), vérifiées à la saisie et à chaque exécution ; ni fichier du dossier des secrets, ni motif de dépôt hors du dossier du pipeline.
 - Serveur, Connexion, État, Surveillance et Journal leur restent fermés. Chaque fonction `lattis.*` vérifie le périmètre ; la console refuse en plus les actions hors de sa liste.
 
 ### 15.1 Pipelines d'ingestion et d'export (`/admin/pipelines`)

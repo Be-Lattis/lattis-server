@@ -221,6 +221,29 @@ func TestTeamManagers(t *testing.T) {
 		t.Fatal("pipeline d'autrui administrable")
 	}
 	ok(as(mgr.PGRole, `SELECT lattis.drop_pipeline($1::uuid)`, mineP))
+
+	// Sources réseau : seulement vers les adresses autorisées par un
+	// propriétaire ; le pipeline reste alors restreint.
+	httpSrc := map[string]any{"source_kind": "http", "source": map[string]any{"url": "https://api.exemple.fr/export.csv"}}
+	denied(as(mgr.PGRole, `SELECT lattis.create_pipeline($1::jsonb)`, pipeline(mine, httpSrc)))
+	if err := as(owner.PGRole, `SELECT lattis.set_config('pipeline_team_hosts', '["http://x"]')`); pgCode(err) != "22023" {
+		t.Fatalf("adresse mal écrite acceptée : %v", err)
+	}
+	ok(as(owner.PGRole, `SELECT lattis.set_config('pipeline_team_hosts', '["api.exemple.fr", "*.partenaire.fr"]')`))
+	denied(as(mgr.PGRole, `SELECT lattis.create_pipeline($1::jsonb)`, pipeline(mine, map[string]any{"source_kind": "http",
+		"source": map[string]any{"url": "http://10.0.0.5/x.csv"}})))
+	denied(as(mgr.PGRole, `SELECT lattis.create_pipeline($1::jsonb)`, pipeline(mine, map[string]any{"source_kind": "sftp",
+		"source": map[string]any{"host": "interne.local", "user": "u", "path": "/x"}})))
+	var netP string
+	scan(mgr.PGRole, &netP, `SELECT lattis.create_pipeline($1::jsonb)::text`, pipeline(mine, httpSrc))
+	ok(as(mgr.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"source": {"url": "https://ftp.partenaire.fr/a.csv"}}')`, netP))
+	denied(as(mgr.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"webhook_url": "https://hooks.ailleurs.com/x"}')`, netP))
+	ok(as(owner.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"name": "Repris"}')`, netP))
+	var restricted map[string]bool
+	ok(db.Super.QueryRow(ctx, `SELECT jsonb_object_agg(id, restricted) FROM lattis.pipelines`).Scan(&restricted))
+	if !restricted[netP] || restricted[theirsP] {
+		t.Fatalf("pipelines restreints : %v", restricted)
+	}
 	ok(as(owner.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"secret_ref": "cle-serveur"}')`, theirsP))
 
 	// Adresse → compte : administrateurs seulement.

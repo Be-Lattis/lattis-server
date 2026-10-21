@@ -61,7 +61,7 @@ func queryJSON(ctx context.Context, tx pgx.Tx, q string, args ...any) (any, erro
 
 // setting décrit un champ de l'écran « Serveur ».
 type setting struct {
-	Key, Label, Help, Kind string // Kind : text, url, number, limit (0 : sans limite), duration, bool, select
+	Key, Label, Help, Kind string // Kind : text, url, number, limit (0 : sans limite), duration, bool, select, hosts (un par ligne)
 	Options                [][2]string
 	// Unit, Scale : durée affichée dans cette unité, enregistrée en secondes.
 	Unit  string
@@ -105,6 +105,10 @@ var settingGroups = []settingGroup{
 			Help: "Démo publique : la personne est prévenue avant la fin (2 minutes avant) pour télécharger son classeur, puis la démo s'arrête."},
 		{Key: "public_demo", Label: "Démo publique, sans connexion", Kind: "bool",
 			Help: "Édition web : l'adresse /demo ouvre Lattis dans le navigateur sans compte, sur un classeur jamais enregistré sur le serveur (Ctrl+S le télécharge), avec des données d'exemple. Aucun accès aux classeurs du serveur."},
+	}},
+	{Title: "Pipelines des gestionnaires d'équipe", Help: "Les propriétaires du serveur utilisent toutes les sources et destinations. Les gestionnaires d'équipe ont toujours les fichiers envoyés ou déposés et les tableaux poussés ; HTTP, SFTP et PostgreSQL seulement vers ces adresses.", Settings: []setting{
+		{Key: "pipeline_team_hosts", Label: "Adresses autorisées", Kind: "hosts",
+			Help: "Un nom d'hôte par ligne (api.exemple.fr), *.exemple.fr pour tout un domaine, ou un bloc d'adresses (203.0.113.0/24). Vide : HTTP, SFTP et PostgreSQL réservés aux propriétaires."},
 	}},
 	{Title: "Limites", Help: "Protègent le serveur quand il est très sollicité. Vide ou 0 : sans limite. Une limite atteinte affiche une page qui la nomme ; les propriétaires du serveur entrent toujours.", Settings: []setting{
 		{Key: "max_connected_users", Label: "Utilisateurs connectés en même temps", Kind: "limit", Unit: "personnes",
@@ -174,6 +178,13 @@ func loadServer(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (
 			st.Value = cur[st.Key]
 			if f, ok := st.Value.(float64); ok && st.Kind == "duration" {
 				st.Value = strconv.FormatFloat(f/st.Scale, 'f', -1, 64)
+			}
+			if l, ok := st.Value.([]any); ok && st.Kind == "hosts" {
+				var lines []string
+				for _, h := range l {
+					lines = append(lines, fmt.Sprint(h))
+				}
+				st.Value = strings.Join(lines, "\n")
 			}
 		}
 		out = append(out, g)

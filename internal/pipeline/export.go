@@ -440,6 +440,9 @@ func (r *Runner) exportHTTP(ctx context.Context, p *Pipeline, path, format strin
 	if strings.EqualFold(p.Source.Method, "PUT") {
 		method = http.MethodPut
 	}
+	if err := r.teamGuardURL(ctx, p, u); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, u, f)
 	if err != nil {
 		return err
@@ -494,6 +497,9 @@ func (r *Runner) exportSQL(ctx context.Context, p *Pipeline, cols []column, next
 	}
 	dsn, err := r.secret(p.SecretRef)
 	if err != nil {
+		return 0, err
+	}
+	if err := r.teamGuardDSN(ctx, p, dsn); err != nil {
 		return 0, err
 	}
 	conn, err := pgx.Connect(ctx, strings.TrimSpace(dsn))

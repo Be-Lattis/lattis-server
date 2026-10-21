@@ -51,6 +51,10 @@ type Pipeline struct {
 	AlertEmail string
 	// Direction : in (ingestion) ou out (export du tableau vers SourceKind).
 	Direction string
+	// Restricted : créé ou modifié par un gestionnaire d'équipe ; HTTP,
+	// SFTP, PostgreSQL et webhook ne joignent que les hôtes autorisés aux
+	// gestionnaires (réglage pipeline_team_hosts).
+	Restricted bool
 }
 
 // Result est le bilan d'une exécution.
@@ -317,14 +321,14 @@ func (r *Runner) next(p *Pipeline, t time.Time) *time.Time {
 const selectPipeline = `SELECT id::text, name, workbook_id::text, table_id::text, table_name, source_kind, format, mode,
 	source, coalesce(secret_ref, ''), key_columns, column_map, schedule_kind, coalesce(schedule_minutes, 0),
 	coalesce(schedule_time, ''), coalesce(pending_file, ''), coalesce(pending_trigger, ''), coalesce(webhook_url, ''),
-	user_id::text, coalesce(pending_run_id::text, ''), coalesce(alert_email, ''), direction FROM lattis.pipelines`
+	user_id::text, coalesce(pending_run_id::text, ''), coalesce(alert_email, ''), direction, restricted FROM lattis.pipelines`
 
 func scanPipeline(row pgx.Row) (*Pipeline, error) {
 	p := &Pipeline{}
 	var src, cmap []byte
 	err := row.Scan(&p.ID, &p.Name, &p.WorkbookID, &p.TableID, &p.TableName, &p.SourceKind, &p.Format, &p.Mode,
 		&src, &p.SecretRef, &p.KeyColumns, &cmap, &p.ScheduleKind, &p.ScheduleMinutes, &p.ScheduleTime,
-		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID, &p.AlertEmail, &p.Direction)
+		&p.PendingFile, &p.PendingTrigger, &p.WebhookURL, &p.UserID, &p.PendingRunID, &p.AlertEmail, &p.Direction, &p.Restricted)
 	if err != nil {
 		return nil, err
 	}
@@ -428,6 +432,10 @@ func (r *Runner) alert(p *Pipeline, runID string, res Result) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if err := r.teamGuardURL(ctx, p, p.WebhookURL); err != nil {
+		slog.Warn("pipeline : alerte", "pipeline", p.ID, "err", err)
+		return
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.WebhookURL, bytes.NewReader(body))
 	if err != nil {
 		return

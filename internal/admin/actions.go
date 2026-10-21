@@ -257,6 +257,12 @@ func (s *Service) saveSettings(ctx context.Context, tx pgx.Tx, f form) (string, 
 			v = n
 		case "url":
 			v = f.n(st.Key)
+		case "hosts":
+			hosts := []any{}
+			for _, h := range strings.Fields(strings.NewReplacer(",", " ").Replace(f.r.PostFormValue(st.Key))) {
+				hosts = append(hosts, h)
+			}
+			v = hosts
 		default:
 			v = f.s(st.Key)
 		}

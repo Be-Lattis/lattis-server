@@ -202,7 +202,7 @@ func TestAdminConsole(t *testing.T) {
 		// Durées dans l'unité affichée (minutes, jours), enregistrées en secondes.
 		"access_token_ttl": {"10"}, "refresh_token_ttl": {"30"}, "invitation_ttl": {"14"},
 		"password_max_failures": {"5"}, "password_lock_seconds": {"15"}, "tombstone_retention": {"30"},
-		"republish_grace": {"10"}, "demo_session_seconds": {"10"}}
+		"republish_grace": {"10"}, "demo_session_seconds": {"10"}, "pipeline_team_hosts": {"api.exemple.fr\r\n*.partenaire.fr"}}
 
 	// Sans jeton de formulaire : refusé.
 	noCSRF := url.Values{}
@@ -221,6 +221,13 @@ func TestAdminConsole(t *testing.T) {
 	var ttl float64
 	if err := e.db.Store.DB.QueryRow(ctx, `SELECT (value #>> '{}')::float8 FROM lattis.server_config WHERE key = 'access_token_ttl'`).Scan(&ttl); err != nil || ttl != 600 {
 		t.Fatalf("jetons d'accès : %v s, %v", ttl, err)
+	}
+	var hosts string
+	if err := e.db.Store.DB.QueryRow(ctx, `SELECT value::text FROM lattis.server_config WHERE key = 'pipeline_team_hosts'`).Scan(&hosts); err != nil || hosts != `["api.exemple.fr", "*.partenaire.fr"]` {
+		t.Fatalf("adresses des gestionnaires : %s, %v", hosts, err)
+	}
+	if _, body := b.get("/admin/server"); !strings.Contains(body, "api.exemple.fr\n*.partenaire.fr</textarea>") {
+		t.Fatal("adresses des gestionnaires non réaffichées")
 	}
 	// Valeur refusée par la base : message affiché, rien d'enregistré.
 	bad := url.Values{}

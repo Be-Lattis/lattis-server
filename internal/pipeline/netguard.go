@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Garde réseau des pipelines (sources HTTP et SFTP, webhook) : pas de
@@ -88,4 +91,89 @@ func (r *Runner) guardedClient(timeout time.Duration) *http.Client {
 		}
 		return nil
 	}}
+}
+
+// --- Pipelines des gestionnaires d'équipe -------------------------------------
+
+// ErrTeamHost : hôte hors de la liste autorisée aux gestionnaires d'équipe.
+var ErrTeamHost = errors.New("adresse non autorisée aux gestionnaires d'équipe (à ajouter sur l'écran Serveur par un propriétaire)")
+
+// teamHosts lit la liste des hôtes autorisés aux gestionnaires d'équipe.
+func (r *Runner) teamHosts(ctx context.Context) ([]string, error) {
+	var hosts []string
+	err := r.Store.DB.QueryRow(ctx, `SELECT coalesce((SELECT value FROM lattis.server_config WHERE key = 'pipeline_team_hosts'), '[]')`).Scan(&hosts)
+	return hosts, err
+}
+
+// matchHost : nom exact, *.domaine ou bloc d'adresses.
+func matchHost(list []string, host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, a := range list {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a == "" || host == "" {
+			continue
+		}
+		if a == host || (strings.HasPrefix(a, "*.") && strings.HasSuffix(host, a[1:])) {
+			return true
+		}
+		if _, n, err := net.ParseCIDR(a); err == nil {
+			if ip := net.ParseIP(host); ip != nil && n.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// teamGuard : un pipeline restreint ne joint que les hôtes autorisés aux
+// gestionnaires d'équipe.
+func (r *Runner) teamGuard(ctx context.Context, p *Pipeline, hosts ...string) error {
+	if !p.Restricted {
+		return nil
+	}
+	list, err := r.teamHosts(ctx)
+	if err != nil {
+		return err
+	}
+	if len(hosts) == 0 {
+		return ErrTeamHost
+	}
+	for _, h := range hosts {
+		if !matchHost(list, h) {
+			return fmt.Errorf("%w : %s", ErrTeamHost, h)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) teamGuardURL(ctx context.Context, p *Pipeline, raw string) error {
+	if !p.Restricted {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	return r.teamGuard(ctx, p, u.Hostname())
+}
+
+// teamGuardDSN : hôtes d'une chaîne de connexion PostgreSQL (repli compris).
+func (r *Runner) teamGuardDSN(ctx context.Context, p *Pipeline, dsn string) error {
+	if !p.Restricted {
+		return nil
+	}
+	cfg, err := pgx.ParseConfig(strings.TrimSpace(dsn))
+	if err != nil {
+		return err
+	}
+	hosts := []string{cfg.Host}
+	for _, f := range cfg.Fallbacks {
+		hosts = append(hosts, f.Host)
+	}
+	for _, h := range hosts {
+		if strings.HasPrefix(h, "/") {
+			return fmt.Errorf("%w : socket %s", ErrTeamHost, h)
+		}
+	}
+	return r.teamGuard(ctx, p, hosts...)
 }

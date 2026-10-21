@@ -37,3 +37,22 @@ func TestGuardedClient(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+func TestTeamHosts(t *testing.T) {
+	list := []string{"api.exemple.fr", "*.partenaire.fr", "203.0.113.0/24"}
+	for _, h := range []string{"api.exemple.fr", "API.exemple.fr.", "ftp.partenaire.fr", "203.0.113.7"} {
+		if !matchHost(list, h) {
+			t.Errorf("%s refusé", h)
+		}
+	}
+	for _, h := range []string{"exemple.fr", "partenaire.fr", "evilpartenaire.fr", "10.0.0.1", ""} {
+		if matchHost(list, h) {
+			t.Errorf("%s accepté", h)
+		}
+	}
+	// Pipeline d'un propriétaire : aucune restriction, sans même lire la liste.
+	r := &Runner{}
+	if err := r.teamGuardDSN(t.Context(), &Pipeline{}, "postgres://u@10.0.0.1/db"); err != nil {
+		t.Fatal(err)
+	}
+}
