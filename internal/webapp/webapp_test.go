@@ -92,7 +92,8 @@ func fakeDemoEngine() {
 	mux := http.NewServeMux()
 	mux.HandleFunc(*base+"/", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"path": r.URL.Path, "args": strings.Join(os.Args[1:], " "),
-			"secret": os.Getenv("LATTIS_ENGINE_SECRET"), "cookie": r.Header.Get("Cookie")})
+			"secret": os.Getenv("LATTIS_ENGINE_SECRET"), "cookie": r.Header.Get("Cookie"),
+			"deadline": os.Getenv("LATTIS_DEMO_DEADLINE"), "warn": os.Getenv("LATTIS_DEMO_WARN_BEFORE")})
 	})
 	go func() { _ = http.Serve(ln, mux) }()
 	_, _ = io.Copy(io.Discard, os.Stdin)
@@ -258,6 +259,7 @@ func TestManagerPool(t *testing.T) {
 // l'installation ; limite de l'administration nommée ; arrêt à la durée
 // maximale.
 func TestDemo(t *testing.T) {
+	webapp.SetDemoGrace(0)
 	on := false
 	demoMax := 0
 	m := &webapp.Manager{Users: users{}, DemoEnabled: func(context.Context) bool { return on },
@@ -303,6 +305,10 @@ func TestDemo(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK || id == "" {
 		t.Fatalf("démo : %d %v", resp.StatusCode, out)
+	}
+	// Échéance annoncée au moteur (avertissement à mi-parcours : démo courte).
+	if dl, err := time.Parse(time.RFC3339, fmt.Sprint(out["deadline"])); err != nil || time.Until(dl) > 4*time.Second || out["warn"] != "1.5s" {
+		t.Fatalf("échéance de la démo : %v %v", out["deadline"], out["warn"])
 	}
 	args, _ := out["args"].(string)
 	if !strings.Contains(args, "--public-demo") || !strings.Contains(args, "--base-path /demo") || strings.Contains(args, "--server") ||
@@ -355,5 +361,24 @@ func TestDemo(t *testing.T) {
 	}
 	if m.Count() != 0 {
 		t.Fatalf("moteurs après la durée maximale : %d", m.Count())
+	}
+	// Démo expulsée : page « Démo terminée » pour son navigateur ; une
+	// nouvelle démo reste possible.
+	req, _ := http.NewRequest("GET", srv.URL+"/demo/", nil)
+	req.Header.Set("Cookie", "lattis_demo="+id)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusGone || !strings.Contains(string(b), "Démo terminée") || !strings.Contains(string(b), "/demo/?nouvelle=1") {
+		t.Fatalf("après expulsion : %d %s", resp.StatusCode, b)
+	}
+	demoMax = 0
+	req, _ = http.NewRequest("GET", srv.URL+"/demo/?nouvelle=1", nil)
+	req.Header.Set("Cookie", "lattis_demo="+id)
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("nouvelle démo : %v %v", resp, err)
 	}
 }

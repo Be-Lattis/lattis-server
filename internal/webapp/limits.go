@@ -15,8 +15,10 @@ type Limits struct {
 	// Sessions : sessions web (moteurs attribués, hors démo) au plus, sous
 	// LATTIS_WEB_MAX_ENGINES.
 	Sessions int
-	// DemoSessions : sessions de la démo publique au plus.
+	// DemoSessions : sessions de la démo publique au plus ; DemoLifetime :
+	// durée d'une démo (0 : LATTIS_WEB_DEMO_LIFETIME).
 	DemoSessions int
+	DemoLifetime time.Duration
 	// Memory : mémoire totale des moteurs au-delà de laquelle aucune session
 	// ne s'ouvre ; EngineMemory : mémoire allouée à chaque moteur (octets).
 	Memory, EngineMemory int64

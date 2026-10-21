@@ -134,11 +134,12 @@ func TestServer(t *testing.T) {
 	if resp, _ := call("POST", "/engines", tok, `{"user_id":"u9","demo":true}`); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("démo hors préfixe : %d", resp.StatusCode)
 	}
-	if resp, _ := call("POST", "/engines", tok, `{"user_id":"demo-ab12","demo":true}`); resp.StatusCode != http.StatusCreated {
+	if resp, _ := call("POST", "/engines", tok, `{"user_id":"demo-ab12","demo":true,"env":["LATTIS_DEMO_DEADLINE=2026-10-21T08:30:00Z","LATTIS_DEMO_WARN_BEFORE=2m0s","PATH=/tmp","LATTIS_ENGINE_SECRET=x"]}`); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("démo : %d", resp.StatusCode)
 	}
 	b, _ = json.Marshal(fd.created)
 	if !strings.Contains(string(b), `"--public-demo"`) || strings.Contains(string(b), "--server") || strings.Contains(string(b), "LATTIS_ENGINE_SECRET") ||
+		!strings.Contains(string(b), `"LATTIS_DEMO_DEADLINE=2026-10-21T08:30:00Z","LATTIS_DEMO_WARN_BEFORE=2m0s"]`) || strings.Contains(string(b), "PATH=/tmp") ||
 		strings.Contains(string(b), `"Source":"lattis-web-demo`) {
 		t.Fatalf("conteneur de démo : %s", b)
 	}

@@ -143,6 +143,10 @@ func (k *KubeLauncher) PodSpec(s Spec, name string) map[string]any {
 	if s.Demo {
 		env = env[1:] // démo publique : aucun secret
 	}
+	for _, kv := range DemoEnv(s) {
+		k, v, _ := strings.Cut(kv, "=")
+		env = append(env, map[string]string{"name": k, "value": v})
+	}
 	mem := c.Memory
 	if s.Memory > 0 {
 		mem = fmt.Sprintf("%dMi", (s.Memory+(1<<20)-1)>>20)

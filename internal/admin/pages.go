@@ -101,6 +101,8 @@ var settingGroups = []settingGroup{
 			Options: [][2]string{{"everyone", "Tout utilisateur"}, {"owners", "Propriétaires et créateurs"}},
 			Help:    "Le rôle « créateur de classeurs » se donne sur la page Utilisateurs."},
 		{Key: "invitation_ttl", Label: "Validité des invitations", Kind: "duration", Unit: "jours", Scale: day},
+		{Key: "demo_session_seconds", Label: "Durée d'une démo", Kind: "duration", Unit: "minutes", Scale: minute,
+			Help: "Démo publique : la personne est prévenue avant la fin (2 minutes avant) pour télécharger son classeur, puis la démo s'arrête."},
 		{Key: "public_demo", Label: "Démo publique, sans connexion", Kind: "bool",
 			Help: "Édition web : l'adresse /demo ouvre Lattis dans le navigateur sans compte, sur un classeur jamais enregistré sur le serveur (Ctrl+S le télécharge), avec des données d'exemple. Aucun accès aux classeurs du serveur."},
 	}},

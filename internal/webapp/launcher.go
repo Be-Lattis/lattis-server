@@ -25,6 +25,18 @@ type Spec struct {
 	// Memory : mémoire allouée au moteur en octets (réglage
 	// web_engine_memory_mb) ; 0 : celle du lanceur.
 	Memory int64
+	// Deadline : fin d'une démo (expulsion) ; le moteur prévient la personne
+	// WarnBefore avant (LATTIS_DEMO_DEADLINE, LATTIS_DEMO_WARN_BEFORE).
+	Deadline   time.Time
+	WarnBefore time.Duration
+}
+
+// DemoEnv : variables d'environnement de l'échéance d'une démo.
+func DemoEnv(s Spec) []string {
+	if s.Deadline.IsZero() {
+		return nil
+	}
+	return []string{"LATTIS_DEMO_DEADLINE=" + s.Deadline.UTC().Format(time.RFC3339), "LATTIS_DEMO_WARN_BEFORE=" + s.WarnBefore.String()}
 }
 
 // EngineArgs : options de lattis-engine pour s, écoute addr et répertoire dir.

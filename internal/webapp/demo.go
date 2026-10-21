@@ -60,8 +60,12 @@ func (m *Manager) demo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := ""
-	if c, err := r.Cookie(demoCookie); err == nil && demoIDRe.MatchString(c.Value) {
+	if c, err := r.Cookie(demoCookie); err == nil && demoIDRe.MatchString(c.Value) && !r.URL.Query().Has("nouvelle") {
 		id = c.Value
+	}
+	if id != "" && m.demoEnded(demoPrefix+id) {
+		demoEndedResponse(w, r)
+		return
 	}
 	if id == "" {
 		// Nouvelle démo : seulement à l'ouverture d'une page.
@@ -74,7 +78,7 @@ func (m *Manager) demo(w http.ResponseWriter, r *http.Request) {
 		id = hex.EncodeToString(b)
 		http.SetCookie(w, &http.Cookie{Name: demoCookie, Value: id, Path: DemoBase + "/", HttpOnly: true,
 			Secure: m.Config.PublicURL != nil && m.Config.PublicURL.Scheme == "https", SameSite: http.SameSiteLaxMode,
-			MaxAge: int(m.Config.WebDemoLimit.Seconds())})
+			MaxAge: int(m.demoLifetime(m.limits(r.Context())).Seconds()) + 3600})
 	}
 	e, err := m.demoEngine(r.Context(), demoPrefix+id, m.clientIP(r))
 	var le *LimitError
@@ -149,7 +153,8 @@ func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, erro
 		m.mu.Unlock()
 		return waitStarted(ctx, e)
 	}
-	e := &engine{userID: key, demo: true, ip: ip, memory: lim.EngineMemory, started: make(chan struct{})}
+	life := m.demoLifetime(lim)
+	e := &engine{userID: key, demo: true, ip: ip, memory: lim.EngineMemory, deadline: time.Now().Add(life), started: make(chan struct{})}
 	m.engines[key] = e
 	m.mu.Unlock()
 	go func() {
@@ -157,12 +162,14 @@ func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, erro
 		if e.startErr != nil {
 			m.forget(e)
 		} else {
-			// Durée maximale : arrêt propre, puis forcé.
+			// Échéance : la personne a été prévenue par le moteur ; arrêt
+			// propre peu après, puis forcé.
 			go func() {
 				select {
 				case <-e.inst.Done():
-				case <-time.After(m.Config.WebDemoLimit):
-					slog.Info("démo publique : durée maximale atteinte", "engine", key)
+				case <-time.After(time.Until(e.deadline) + demoGrace):
+					slog.Info("démo publique : durée écoulée, démo arrêtée", "engine", key)
+					m.markEnded(key)
 					e.inst.Stop()
 					select {
 					case <-e.inst.Done():
@@ -187,4 +194,68 @@ func waitStarted(ctx context.Context, e *engine) (*engine, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// demoGrace : délai entre l'échéance d'une démo (annoncée au moteur) et son
+// arrêt, pour un dernier téléchargement.
+var demoGrace = 15 * time.Second
+
+// demoLifetime : durée d'une démo (réglage de l'administration, sinon
+// LATTIS_WEB_DEMO_LIFETIME).
+func (m *Manager) demoLifetime(lim Limits) time.Duration {
+	if lim.DemoLifetime > 0 {
+		return lim.DemoLifetime
+	}
+	return m.Config.WebDemoLimit
+}
+
+// demoWarn : avertissement 2 minutes avant la fin, ou à mi-parcours pour
+// une démo de moins de 4 minutes.
+func demoWarn(life time.Duration) time.Duration {
+	if life < 4*time.Minute {
+		return life / 2
+	}
+	return 2 * time.Minute
+}
+
+// markEnded retient une démo arrêtée à son échéance (page « Démo
+// terminée » pour son navigateur, pendant une heure).
+func (m *Manager) markEnded(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ended == nil {
+		m.ended = map[string]time.Time{}
+	}
+	now := time.Now()
+	for k, at := range m.ended {
+		if now.Sub(at) > time.Hour {
+			delete(m.ended, k)
+		}
+	}
+	m.ended[key] = now
+}
+
+func (m *Manager) demoEnded(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	at, ok := m.ended[key]
+	return ok && time.Since(at) <= time.Hour
+}
+
+// demoEndedResponse : la démo de ce navigateur est terminée (410).
+func demoEndedResponse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodGet || isWebSocket(r) {
+		http.Error(w, "démo terminée", http.StatusGone)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	_, _ = w.Write([]byte(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Démo terminée</title></head><body style="font-family:system-ui,sans-serif;max-width:38rem;margin:4rem auto;padding:0 1rem;line-height:1.5">
+<h1>Démo terminée</h1>
+<p>Le temps de cette démonstration de Lattis est écoulé, et son classeur n'est pas gardé sur le serveur.</p>
+<p><a href="` + DemoBase + `/?nouvelle=1">Commencer une nouvelle démo</a></p>
+<p style="color:#5f6b76">Pour garder votre travail, installez Lattis sur votre poste : un classeur téléchargé pendant la démo s'y ouvre.</p>
+</body></html>`))
 }

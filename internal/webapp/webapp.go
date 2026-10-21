@@ -78,8 +78,9 @@ type Manager struct {
 	memLast int64
 
 	mu      sync.Mutex
-	engines map[string]*engine // par utilisateur
-	secrets map[string]string  // secret → utilisateur
+	engines map[string]*engine   // par utilisateur
+	ended   map[string]time.Time // démos arrêtées à leur échéance
+	secrets map[string]string    // secret → utilisateur
 }
 
 type engine struct {
@@ -88,6 +89,8 @@ type engine struct {
 	// demo : moteur de la démo publique ; ip : adresse du client qui l'a ouvert.
 	demo bool
 	ip   string
+	// deadline : fin d'une démo.
+	deadline time.Time
 	// memory : mémoire allouée (réglage web_engine_memory_mb), 0 : défaut.
 	memory int64
 	inst   Instance
@@ -289,7 +292,8 @@ func (m *Manager) start(l Launcher, e *engine) error {
 	defer cancel()
 	spec := Spec{UserID: e.userID, Secret: e.secret, Server: m.Config.Issuer(), TokenURL: m.TokenURL, Idle: m.Config.WebIdle, Memory: e.memory}
 	if e.demo {
-		spec = Spec{UserID: e.userID, Demo: true, Idle: m.Config.WebDemoIdle, Memory: e.memory}
+		spec = Spec{UserID: e.userID, Demo: true, Idle: m.Config.WebDemoIdle, Memory: e.memory,
+			Deadline: e.deadline, WarnBefore: demoWarn(time.Until(e.deadline))}
 	}
 	inst, err := l.Start(ctx, spec)
 	if err != nil {

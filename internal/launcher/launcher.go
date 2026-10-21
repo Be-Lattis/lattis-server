@@ -48,8 +48,10 @@ type Server struct {
 }
 
 var (
-	userRe   = regexp.MustCompile(`^[0-9A-Za-z-]{1,64}$`)
-	secretRe = regexp.MustCompile(`^[0-9A-Za-z_-]{20,128}$`)
+	// demoEnvRe : seules variables acceptées pour une démo.
+	demoEnvRe = regexp.MustCompile(`^LATTIS_DEMO_(DEADLINE=[0-9T:Z+-]{1,40}|WARN_BEFORE=[0-9a-z.]{1,20})$`)
+	userRe    = regexp.MustCompile(`^[0-9A-Za-z-]{1,64}$`)
+	secretRe  = regexp.MustCompile(`^[0-9A-Za-z_-]{20,128}$`)
 )
 
 // Label : étiquette des conteneurs de moteurs.
@@ -84,6 +86,8 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		// Memory : mémoire demandée par lattisd (octets), jamais au-delà de
 		// LAUNCHER_MEMORY.
 		Memory int64 `json:"memory"`
+		// Env : échéance d'une démo (LATTIS_DEMO_DEADLINE, LATTIS_DEMO_WARN_BEFORE).
+		Env []string `json:"env"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil ||
 		!userRe.MatchString(in.UserID) || (!in.Demo && !secretRe.MatchString(in.Secret)) ||
@@ -124,6 +128,11 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		cmd = []string{"--addr", "0.0.0.0:" + EnginePort, "--dir", "/home/nonroot", "--base-path", "/demo",
 			"--public-demo", "--idle", c.DemoIdle}
 		env = nil
+		for _, kv := range in.Env {
+			if demoEnvRe.MatchString(kv) {
+				env = append(env, kv)
+			}
+		}
 	}
 	spec := map[string]any{
 		"Image": c.Image,
