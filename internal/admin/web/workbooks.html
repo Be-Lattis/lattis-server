@@ -1,5 +1,6 @@
 {{define "body"}}
-<details class="panel">
+{{if not .Owner}}<p class="muted">Classeurs dont vous êtes propriétaire, en personne ou par une équipe.</p>{{end}}
+{{if .Data.CanCreate}}<details class="panel">
 <summary><h2>Nouveau classeur</h2><span class="muted">Créé ici puis complété dans l'application (tableaux, mise en page, formules).</span></summary>
 <form method="post" action="/admin/do/create_workbook" class="grid">{{template "csrf" $}}
 <label>Titre <input name="title" required placeholder="Suivi des commandes"></label>
@@ -9,7 +10,7 @@
 <label class="wide" data-show-if="table!=">Colonnes du tableau <textarea name="columns" rows="4" placeholder="Client : texte&#10;Montant : décimal&#10;Date : date&#10;Livrée : booléen"></textarea><small>Une par ligne, « Nom : type ». Types : texte, entier, décimal, date, date et heure, booléen.</small></label>
 <p class="actions"><button class="ok">Créer le classeur</button></p>
 </form>
-</details>
+</details>{{end}}
 <div class="scroll"><table>
 <thead><tr><th>Classeur</th><th>Mode</th><th>Propriétaires</th><th>Membres</th><th>Dernière modification</th><th>Dernière lecture</th><th>Taille</th><th>Version</th><th></th></tr></thead>
 <tbody>

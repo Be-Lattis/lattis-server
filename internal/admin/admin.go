@@ -227,9 +227,7 @@ func (s *Service) now() time.Time {
 
 // Routes enregistre les points d'accès.
 func (s *Service) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /admin/{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/server", http.StatusFound)
-	})
+	mux.HandleFunc("GET /admin/{$}", s.home)
 	mux.HandleFunc("GET /admin/login", s.login)
 	mux.HandleFunc("GET /admin/callback", s.callback)
 	mux.HandleFunc("POST /admin/logout", s.logout)
@@ -342,7 +340,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 	s.clearCookie(w, sessionCookie, "/admin") // session d'avant le 18/10, sous /admin
 	next := ld.Next
 	if next == "" {
-		next = "/admin/server"
+		next = "/admin/"
 	}
 	http.Redirect(w, r, next, http.StatusFound)
 }
@@ -398,6 +396,56 @@ func (s *Service) session(r *http.Request) (store.User, error) {
 
 // --- Pages -------------------------------------------------------------------------
 
+// Accès à l'administration (lattis.admin_access) : un gestionnaire d'équipe
+// n'a que les écrans de son périmètre.
+const (
+	accessOwner       = "owner"
+	accessTeamManager = "team_manager"
+)
+
+// ownerPages : écrans réservés aux propriétaires du serveur.
+var ownerPages = map[string]bool{"server": true, "providers": true, "status": true, "monitor": true, "audit": true}
+
+// adminAccess lit l'accès de l'utilisateur connecté ("" : aucun).
+func adminAccess(ctx context.Context, tx pgx.Tx) (string, error) {
+	var a *string
+	if err := tx.QueryRow(ctx, `SELECT lattis.admin_access()`).Scan(&a); err != nil || a == nil {
+		return "", err
+	}
+	return *a, nil
+}
+
+// home : premier écran selon l'accès.
+func (s *Service) home(w http.ResponseWriter, r *http.Request) {
+	u, err := s.session(r)
+	if err != nil {
+		http.Redirect(w, r, "/admin/login?next="+url.QueryEscape("/admin/"), http.StatusFound)
+		return
+	}
+	var access string
+	if err := s.Users.As(r.Context(), u, func(tx pgx.Tx) (err error) {
+		access, err = adminAccess(r.Context(), tx)
+		return err
+	}); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	switch access {
+	case accessOwner:
+		http.Redirect(w, r, "/admin/server", http.StatusFound)
+	case accessTeamManager:
+		http.Redirect(w, r, "/admin/teams", http.StatusFound)
+	default:
+		s.forbidden(w, r, u)
+	}
+}
+
+// forbidden : page « Accès réservé » d'un compte sans administration.
+func (s *Service) forbidden(w http.ResponseWriter, r *http.Request, u store.User) {
+	s.message(w, r, http.StatusForbidden, "Accès réservé",
+		"L'administration est réservée aux propriétaires du serveur et aux gestionnaires d'équipe ("+u.Email+").")
+}
+
 type loader func(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error)
 
 type view struct {
@@ -412,9 +460,11 @@ type view struct {
 	FlashLink string
 	Error     string
 	Path      string
-	Data      any
-	Version   string
-	Edition   string
+	// Owner : propriétaire du serveur (sinon gestionnaire d'équipe).
+	Owner   bool
+	Data    any
+	Version string
+	Edition string
 	// Back : lien de retour d'une page de message.
 	Back string
 	// Refill : saisie à remettre dans le formulaire refusé (JSON).
@@ -437,23 +487,25 @@ func (s *Service) page(name, title string, load loader) http.HandlerFunc {
 			v.Refill = string(b)
 		}
 		v.Flash, v.FlashLink = splitSetupLink(v.Flash)
-		var forbidden bool
+		var access string
 		err = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
-			var owner bool
-			if err := tx.QueryRow(r.Context(), `SELECT (s ->> 'server_owner')::boolean, s #>> '{server,display_name}' FROM lattis.login_summary() s`).
-				Scan(&owner, &v.Server); err != nil {
+			var err error
+			if access, err = adminAccess(r.Context(), tx); err != nil || access == "" || (access != accessOwner && ownerPages[name]) {
 				return err
 			}
-			if !owner {
-				forbidden = true
-				return nil
+			if err := tx.QueryRow(r.Context(), `SELECT s #>> '{server,display_name}' FROM lattis.login_summary() s`).Scan(&v.Server); err != nil {
+				return err
 			}
+			v.Owner = access == accessOwner
 			v.Data, err = load(r.Context(), tx, r, u)
 			return err
 		})
-		if forbidden {
-			s.message(w, r, http.StatusForbidden, "Accès réservé",
-				"L'administration est réservée aux propriétaires du serveur ("+u.Email+").")
+		if err == nil && access == "" {
+			s.forbidden(w, r, u)
+			return
+		}
+		if err == nil && access != accessOwner && ownerPages[name] {
+			s.message(w, r, http.StatusForbidden, "Accès réservé", "Cet écran est réservé aux propriétaires du serveur.")
 			return
 		}
 		if err != nil {
@@ -493,6 +545,13 @@ func (s *Service) message(w http.ResponseWriter, r *http.Request, status int, ti
 		if u, err := s.session(r); err == nil {
 			v.User = u
 			v.CSRF = s.csrf(w, r)
+			if s.Users != nil {
+				_ = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
+					a, err := adminAccess(r.Context(), tx)
+					v.Owner = a == accessOwner
+					return err
+				})
+			}
 		}
 	}
 	v.Back = safeBack(r.PostFormValue("back"))

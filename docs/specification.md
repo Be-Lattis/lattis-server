@@ -332,6 +332,12 @@ Les mesures « requêtes » sont lues dans `pg_stat_activity` (classement lourd/
 6. **Journal** : `audit`, filtrable.
 7. **État** : parent, réplicas, retard, connexions, version.
 
+**Gestionnaires d'équipe.** Un propriétaire du serveur nomme des gestionnaires sur une équipe (page Équipes). Leur périmètre : cette équipe, ses sous-équipes et les personnes qui en sont membres ou gestionnaires. Ils entrent dans une administration réduite :
+- **Équipes** : membres, sous-équipes, noms et gestionnaires de leur périmètre ; ils ne déplacent ni ne suppriment l'équipe qui leur a été confiée, n'y retirent d'autre gestionnaire qu'eux-mêmes et ne créent pas d'équipe de premier niveau.
+- **Utilisateurs** : les personnes du périmètre ; habilitations jusqu'à la leur incluse (gestionnaire d'équipe, créateur de classeurs, publieur au Data Lake), jamais « propriétaire du serveur », rien sur un propriétaire du serveur ni sur eux-mêmes. Ni création de compte, ni mot de passe, ni désactivation, ni invitation au serveur.
+- **Classeurs**, **Data Lake**, **Pipelines**, **Formulaires** : ce dont ils ont déjà les droits (propriétaire du classeur ; concepteur pour les formulaires ; données qu'ils gèrent).
+- Serveur, Connexion, État, Surveillance et Journal leur restent fermés. Chaque fonction `lattis.*` vérifie le périmètre ; la console refuse en plus les actions hors de sa liste.
+
 ### 15.1 Pipelines d'ingestion (`/admin/pipelines`)
 
 Un pipeline (`lattis.pipelines`, migration 0020) lit une source et écrit dans un tableau d'un classeur collaboratif publié ; une donnée du Data Lake Lattis tirée de ce tableau suit.

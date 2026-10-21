@@ -1,4 +1,4 @@
-{{define "teamopts"}}<option value="">— Aucune (premier niveau) —</option>{{end}}
+{{define "teamopts"}}{{if .Owner}}<option value="">— Aucune (premier niveau) —</option>{{end}}{{end}}
 {{define "teamnode"}}{{$p := .Page}}{{$t := .Node.Item}}{{$all := .All}}
 <details class="panel tree" id="team-{{$t.id}}" data-remember>
 <summary><h2>{{$t.name}}</h2><span class="tag">{{str $t.member_count}} membre(s)</span>{{if .Node.Children}}<span class="tag">{{len .Node.Children}} sous-équipe(s)</span>{{end}}</summary>
@@ -6,28 +6,37 @@
 <form method="post" action="/admin/do/rename_team" class="row editform">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">
 <div class="field grow"><span class="flabel">Nom de l'équipe</span><div class="control"><input name="name" required value="{{$t.name}}" aria-label="Nom de l'équipe">{{template "pen" "nom de l'équipe"}}</div></div>
 <span class="actions save"><button class="ok">Renommer</button></span></form>
-<form method="post" action="/admin/do/set_team_parent" class="row editform">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">
-<div class="field grow"><span class="flabel">Équipe parente</span><div class="control select"><select name="parent_id" aria-label="Équipe parente">{{template "teamopts"}}{{$par := str $t.parent_id}}{{range $all}}{{if ne (str .id) (str $t.id)}}<option value="{{.id}}"{{if eq (str .id) $par}} selected{{end}}>{{.path}}</option>{{end}}{{end}}</select>{{template "pen" "équipe parente"}}</div></div>
-<span class="actions save"><button class="ok">Déplacer</button></span></form>
+{{if $t.movable}}<form method="post" action="/admin/do/set_team_parent" class="row editform">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">
+<div class="field grow"><span class="flabel">Équipe parente</span><div class="control select"><select name="parent_id" aria-label="Équipe parente">{{template "teamopts" $p}}{{$par := str $t.parent_id}}{{range $all}}{{if ne (str .id) (str $t.id)}}<option value="{{.id}}"{{if eq (str .id) $par}} selected{{end}}>{{.path}}</option>{{end}}{{end}}</select>{{template "pen" "équipe parente"}}</div></div>
+<span class="actions save"><button class="ok">Déplacer</button></span></form>{{end}}
 </div>
+<h3>Membres</h3>
 <table class="compact"><tbody>
 {{range $t.members}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}</td><td><form method="post" action="/admin/do/remove_team_member">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form></td></tr>
 {{else}}<tr><td class="muted">Aucun membre direct.</td></tr>{{end}}
 </tbody></table>
 <form method="post" action="/admin/do/add_team_member" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Ajouter un utilisateur existant" aria-label="Adresse du membre à ajouter"><button>Ajouter</button></form>
-<form method="post" action="/admin/do/drop_team" class="row danger">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">{{template "confirm"}}<button>Supprimer l'équipe</button></form>
+<h3>Gestionnaires</h3>
+<p class="muted">Ils gèrent cette équipe et ses sous-équipes depuis l'administration : membres, sous-équipes, gestionnaires, et les rôles de créateur de classeurs et de publieur au Data Lake de leurs membres.</p>
+<table class="compact"><tbody>
+{{range $t.managers}}<tr><td>{{.email}}{{if .display_name}} <small>{{.display_name}}</small>{{end}}{{if .me}} <span class="tag">vous</span>{{end}}</td><td>{{if or .me $t.movable}}<form method="post" action="/admin/do/team_manager_off">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="hidden" name="user_id" value="{{.user_id}}"><button>Retirer</button></form>{{end}}</td></tr>
+{{else}}<tr><td class="muted">Aucun gestionnaire.</td></tr>{{end}}
+</tbody></table>
+<form method="post" action="/admin/do/team_manager_on" class="row">{{template "csrf" $p}}<input type="hidden" name="team_id" value="{{$t.id}}"><input type="email" name="email" required placeholder="Nommer un gestionnaire (utilisateur existant)" aria-label="Adresse du gestionnaire à nommer"><button>Nommer</button></form>
+{{if $t.movable}}<form method="post" action="/admin/do/drop_team" class="row danger">{{template "csrf" $p}}<input type="hidden" name="id" value="{{$t.id}}">{{template "confirm"}}<button>Supprimer l'équipe</button></form>{{end}}
 {{range .Node.Children}}{{template "teamnode" (node $p . $all)}}{{end}}
 </details>
 {{end}}
 {{define "body"}}{{$all := .Data.Teams}}{{$p := .}}
 <p class="lead">Une équipe se donne à un rôle de classeur comme une personne : ses membres reçoivent le rôle. Un rôle donné à une équipe vaut aussi pour toutes ses sous-équipes. Dans un filtre, <code>"Équipe" IN (SELECT lattis.my_teams())</code> garde les lignes des équipes de la personne qui lit, équipes parentes comprises.</p>
+{{if not .Owner}}<p class="muted">Vous voyez les équipes dont vous êtes gestionnaire et leurs sous-équipes. Seul un propriétaire du serveur crée une équipe de premier niveau, ou déplace et supprime une équipe qui vous a été confiée.</p>{{end}}
 
-<section class="panel">
-<h2>Créer une équipe</h2>
+{{if or .Owner $all}}<section class="panel">
+<h2>{{if .Owner}}Créer une équipe{{else}}Créer une sous-équipe{{end}}</h2>
 <form method="post" action="/admin/do/create_team" class="row">{{template "csrf" $}}<input name="name" required placeholder="Nom de l'équipe" aria-label="Nom de l'équipe">
-<select name="parent_id" aria-label="Équipe parente">{{template "teamopts"}}{{range $all}}<option value="{{.id}}">{{.path}}</option>{{end}}</select>
+<select name="parent_id" aria-label="Équipe parente">{{template "teamopts" $p}}{{range $all}}<option value="{{.id}}">{{.path}}</option>{{end}}</select>
 <button class="ok">Créer</button></form>
-</section>
+</section>{{end}}
 
 {{if .Data.Tree}}<p class="tree-tools"><button type="button" data-tree="open">Tout déplier</button> <button type="button" data-tree="close">Tout replier</button></p>{{end}}
 {{range .Data.Tree}}{{template "teamnode" (node $p . $all)}}{{else}}<p class="muted">Aucune équipe.</p>{{end}}

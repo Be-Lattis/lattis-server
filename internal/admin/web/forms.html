@@ -1,12 +1,12 @@
 {{define "body"}}{{$d := .Data}}
-<section class="panel">
+{{if .Owner}}<section class="panel">
 <h2>Lien public</h2>
 <p class="muted">Un formulaire à lien public met une page du serveur sur internet, ouverte à toute personne qui a le lien, sans compte. Les protections restent actives (débit par adresse et par formulaire, pot de miel, délai minimal, pause automatique sur un pic). Les concepteurs choisissent ensuite ce mode formulaire par formulaire.</p>
 <form method="post" action="/admin/do/forms_public" class="row">{{template "csrf" $}}
 {{if $d.Public}}<input type="hidden" name="public" value="false"><span class="tag warn">permis</span> <button>Ne plus permettre le lien public</button>
 {{else}}<input type="hidden" name="public" value="true"><span class="tag">non permis</span> <button>Permettre le lien public</button>{{end}}
 </form>
-</section>
+</section>{{else}}<p class="muted">Formulaires des classeurs dont vous êtes propriétaire ou concepteur.</p>{{end}}
 <div class="scroll"><table>
 <thead><tr><th>Formulaire</th><th>Classeur › tableau</th><th>Accès</th><th>État</th><th>Réponses</th><th>24 h</th><th>Dernière</th><th></th></tr></thead>
 <tbody>

@@ -94,6 +94,8 @@ func (s *Service) actions() map[string]actionFunc {
 		"rename_team":          exec1(`SELECT lattis.rename_team($1::uuid, $2)`, "Équipe renommée.", false, "id", "name"),
 		"drop_team":            exec1(`SELECT lattis.drop_team($1::uuid)`, "Équipe supprimée.", true, "id"),
 		"add_team_member":      addTeamMember,
+		"team_manager_on":      addTeamManager,
+		"team_manager_off":     exec1(`SELECT lattis.set_team_manager($1::uuid, $2::uuid, false)`, "Gestionnaire retiré de l'équipe.", false, "team_id", "user_id"),
 		"remove_team_member":   exec1(`SELECT lattis.remove_team_member($1::uuid, $2::uuid)`, "Membre retiré de l'équipe.", false, "team_id", "user_id"),
 		"grant_team":           exec1(`SELECT lattis.grant_role($1::uuid, $2::uuid)`, "Équipe ajoutée au rôle.", false, "role_id", "team_id"),
 		"invite_workbook":      inviteWorkbook,
@@ -107,23 +109,44 @@ func (s *Service) actions() map[string]actionFunc {
 	}
 }
 
+// managerActions : actions ouvertes aux gestionnaires d'équipe ; les
+// fonctions SQL appelées vérifient le périmètre.
+var managerActions = map[string]bool{
+	"workbook_creator_on": true, "workbook_creator_off": true, "data_publisher_on": true, "data_publisher_off": true,
+	"create_team": true, "rename_team": true, "drop_team": true, "set_team_parent": true,
+	"add_team_member": true, "remove_team_member": true, "team_manager_on": true, "team_manager_off": true,
+	"create_workbook": true, "drop_workbook": true, "revoke_invitation": true, "invite_workbook": true,
+	"create_role": true, "drop_role": true, "set_level": true, "grant_role": true, "revoke_role": true, "grant_team": true,
+	"add_restriction": true, "drop_restriction": true,
+	"create_data_folder": true, "rename_data_folder": true, "move_data_folder": true, "drop_data_folder": true,
+	"drop_dataset": true, "add_data_audience": true, "remove_data_audience": true,
+	"form_state": true,
+}
+
 func (s *Service) do(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err != nil || !s.checkCSRF(r) {
 		s.message(w, r, http.StatusForbidden, "Demande refusée", "Cette page était restée ouverte trop longtemps : revenez-y et recommencez.")
 		return
 	}
-	fn, ok := s.actions()[r.PathValue("action")]
+	name := r.PathValue("action")
+	fn, ok := s.actions()[name]
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	s.perform(w, r, fn)
+	s.performAs(w, r, !managerActions[name], fn)
 }
 
-// perform exécute une action sous l'identité de l'administrateur connecté
-// (formulaire déjà lu et jeton anti-CSRF vérifié), puis revient à la page.
+// perform exécute une action réservée aux propriétaires du serveur.
 func (s *Service) perform(w http.ResponseWriter, r *http.Request, fn actionFunc) {
+	s.performAs(w, r, true, fn)
+}
+
+// performAs exécute une action sous l'identité de l'administrateur connecté
+// (formulaire déjà lu et jeton anti-CSRF vérifié), puis revient à la page.
+// ownerOnly : refusée aux gestionnaires d'équipe.
+func (s *Service) performAs(w http.ResponseWriter, r *http.Request, ownerOnly bool, fn actionFunc) {
 	u, err := s.session(r)
 	if err != nil {
 		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
@@ -131,21 +154,23 @@ func (s *Service) perform(w http.ResponseWriter, r *http.Request, fn actionFunc)
 	}
 	back := safeBack(r.PostFormValue("back"))
 	if back == "" {
-		back = "/admin/server"
+		back = "/admin/"
 	}
 	f := form{r}
 	var msg string
 	err = s.Users.As(r.Context(), u, func(tx pgx.Tx) error {
-		// Seuls les propriétaires du serveur utilisent l'administration web ;
-		// les fonctions vérifient de toute façon leurs propres droits.
-		var owner bool
-		if err := tx.QueryRow(r.Context(), `SELECT lattis.is_server_owner()`).Scan(&owner); err != nil {
+		// Propriétaires du serveur et gestionnaires d'équipe ; les fonctions
+		// vérifient de toute façon leurs propres droits.
+		access, err := adminAccess(r.Context(), tx)
+		if err != nil {
 			return err
 		}
-		if !owner {
+		if access == "" {
+			return inputError("Réservé aux propriétaires du serveur et aux gestionnaires d'équipe.")
+		}
+		if ownerOnly && access != accessOwner {
 			return inputError("Réservé aux propriétaires du serveur.")
 		}
-		var err error
 		msg, err = fn(r.Context(), tx, f)
 		return err
 	})
@@ -445,17 +470,20 @@ func setLevel(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 
 // userByEmail : compte le plus récemment connecté pour une adresse.
 func userByEmail(ctx context.Context, tx pgx.Tx, email string) (string, error) {
-	var uid string
-	var verified bool
-	err := tx.QueryRow(ctx, `SELECT id::text, email_verified FROM lattis.users WHERE email = $1
-		ORDER BY email_verified DESC, last_login_at DESC NULLS LAST LIMIT 1`, email).Scan(&uid, &verified)
-	if errors.Is(err, pgx.ErrNoRows) {
+	var found *struct {
+		ID       string `json:"id"`
+		Verified bool   `json:"verified"`
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.find_user($1)`, email).Scan(&found); err != nil {
+		return "", err
+	}
+	if found == nil {
 		return "", inputError("Aucun compte pour " + email + " : créez-le (page Utilisateurs) ou invitez la personne à un classeur.")
 	}
-	if err == nil && !verified {
+	if !found.Verified {
 		return "", inputError("L'adresse " + email + " a été choisie par la personne elle-même et n'est pas vérifiée : elle ne peut pas recevoir de droits par adresse.")
 	}
-	return uid, err
+	return found.ID, nil
 }
 
 func grantRole(ctx context.Context, tx pgx.Tx, f form) (string, error) {
@@ -476,6 +504,16 @@ func addTeamMember(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	}
 	_, err = tx.Exec(ctx, `SELECT lattis.add_team_member($1::uuid, $2::uuid)`, f.s("team_id"), uid)
 	return email + " ajouté à l'équipe.", err
+}
+
+func addTeamManager(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	email := strings.ToLower(f.s("email"))
+	uid, err := userByEmail(ctx, tx, email)
+	if err != nil {
+		return "", err
+	}
+	_, err = tx.Exec(ctx, `SELECT lattis.set_team_manager($1::uuid, $2::uuid, true)`, f.s("team_id"), uid)
+	return email + " gère maintenant cette équipe et ses sous-équipes.", err
 }
 
 func addRestriction(ctx context.Context, tx pgx.Tx, f form) (string, error) {

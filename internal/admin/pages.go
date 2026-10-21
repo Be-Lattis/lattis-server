@@ -239,36 +239,15 @@ func (s *Service) loadProviders(ctx context.Context, tx pgx.Tx, r *http.Request,
 
 func loadUsers(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	users, err := queryJSON(ctx, tx, `
-		SELECT coalesce(jsonb_agg(jsonb_build_object(
-			'id', u.id, 'email', u.email, 'display_name', u.display_name, 'provider', p.label, 'kind', p.kind,
-			'created_at', u.created_at, 'last_login_at', u.last_login_at, 'disabled', u.disabled,
-			'pending', u.subject IS NULL AND u.last_login_at IS NULL,
-			'server_owner', pg_has_role(u.pg_role, 'lattis_server_owners', 'MEMBER'),
-			'workbook_creator', pg_has_role(u.pg_role, 'lattis_workbook_creators', 'MEMBER'),
-			'data_publisher', pg_has_role(u.pg_role, 'lattis_data_publishers', 'MEMBER'),
-			'email_verified', u.email_verified,
-			'link_expires_at', lattis.setup_link_expiry(u.id),
-			'link_expired', lattis.setup_link_expiry(u.id) < now())
-			ORDER BY u.email), '[]')
-		FROM (SELECT * FROM lattis.users
-		      WHERE $1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'
-		      ORDER BY email LIMIT 500) u
-		LEFT JOIN lattis.identity_providers p ON p.id = u.provider_id`, q)
-	if err != nil {
+	var out struct {
+		Users       any    `json:"users"`
+		Invitations any    `json:"invitations"`
+		Creators    string `json:"creators"`
+	}
+	if err := tx.QueryRow(ctx, `SELECT lattis.admin_users($1)`, q).Scan(&out); err != nil {
 		return nil, err
 	}
-	invitations, err := queryJSON(ctx, tx, `
-		SELECT coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'email', i.email, 'roles', i.roles,
-			'workbook', w.title, 'invited_by', i.invited_by, 'expires_at', i.expires_at) ORDER BY i.created_at DESC), '[]')
-		FROM lattis.invitations i LEFT JOIN lattis.workbooks w ON w.id = i.workbook_id
-		WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()`)
-	if err != nil {
-		return nil, err
-	}
-	var creators string
-	_ = tx.QueryRow(ctx, `SELECT coalesce((SELECT value #>> '{}' FROM lattis.server_config WHERE key = 'workbook_creators'), 'everyone')`).Scan(&creators)
-	return map[string]any{"Q": q, "Users": users, "Invitations": invitations, "Me": u.ID, "Creators": creators == "owners"}, nil
+	return map[string]any{"Q": q, "Users": out.Users, "Invitations": out.Invitations, "Me": u.ID, "Creators": out.Creators == "owners"}, nil
 }
 
 // --- Équipes -------------------------------------------------------------------------------
@@ -302,9 +281,17 @@ func buildTree(items []map[string]any) []*treeNode {
 }
 
 func loadTeams(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
-	var teams []map[string]any
-	if err := tx.QueryRow(ctx, `SELECT lattis.list_teams()`).Scan(&teams); err != nil {
+	var all []map[string]any
+	if err := tx.QueryRow(ctx, `SELECT lattis.list_teams()`).Scan(&all); err != nil {
 		return nil, err
+	}
+	// Gestionnaire d'équipe : ses équipes seulement, chacune à la racine de
+	// son sous-arbre.
+	var teams []map[string]any
+	for _, t := range all {
+		if m, _ := t["manageable"].(bool); m {
+			teams = append(teams, t)
+		}
 	}
 	return map[string]any{"Teams": teams, "Tree": buildTree(teams)}, nil
 }
@@ -353,7 +340,12 @@ func loadData(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (an
 
 func loadWorkbooks(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {
 	wbs, err := queryJSON(ctx, tx, `SELECT lattis.admin_workbooks()`)
-	return map[string]any{"Workbooks": wbs}, err
+	if err != nil {
+		return nil, err
+	}
+	var create bool
+	err = tx.QueryRow(ctx, `SELECT lattis.can_create_workbooks()`).Scan(&create)
+	return map[string]any{"Workbooks": wbs, "CanCreate": create}, err
 }
 
 // nodeLevel : niveau propre d'un rôle sur un nœud, pour l'arborescence.
@@ -445,9 +437,8 @@ func (s *Service) loadWorkbook(ctx context.Context, tx pgx.Tx, r *http.Request, 
 	if email, table := strings.TrimSpace(q.Get("preview_user")), q.Get("preview_table"); email != "" && table != "" {
 		out["PreviewUser"], out["PreviewTable"] = email, table
 		var uid string
-		err := tx.QueryRow(ctx, `SELECT id::text FROM lattis.users WHERE email = lower($1)
-			ORDER BY last_login_at DESC NULLS LAST LIMIT 1`, email).Scan(&uid)
-		if err == pgx.ErrNoRows {
+		err := tx.QueryRow(ctx, `SELECT coalesce(lattis.find_user($1) ->> 'id', '')`, email).Scan(&uid)
+		if err == pgx.ErrNoRows || (err == nil && uid == "") {
 			out["PreviewError"] = "Aucun compte pour " + email + "."
 		} else if err != nil {
 			return nil, err
