@@ -69,6 +69,26 @@ func (l *ProcessLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 	return inst, nil
 }
 
+// Cleanup efface les répertoires éphémères (réserve, démo publique) laissés
+// par un lattisd arrêté brutalement ; les caches des utilisateurs restent.
+func (l *ProcessLauncher) Cleanup(context.Context) error {
+	entries, err := os.ReadDir(l.CacheDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() && (isPool(e.Name()) || isDemo(e.Name())) {
+			if err := os.RemoveAll(filepath.Join(l.CacheDir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (l *ProcessLauncher) reserve(user string) (int, error) {
 	if l.UIDs[1] == 0 {
 		return -1, nil

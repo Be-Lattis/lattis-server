@@ -127,7 +127,7 @@ func (d *Docker) Stop(ctx context.Context, id string) error {
 
 // Remove arrête et supprime tout de suite.
 func (d *Docker) Remove(ctx context.Context, id string) error {
-	err := d.do(ctx, http.MethodDelete, "/containers/"+url.PathEscape(id)+"?force=1", nil, nil)
+	err := d.do(ctx, http.MethodDelete, "/containers/"+url.PathEscape(id)+"?force=1&v=1", nil, nil)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}

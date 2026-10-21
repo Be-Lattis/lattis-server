@@ -84,3 +84,21 @@ func TestKubeDemoPod(t *testing.T) {
 		}
 	}
 }
+
+// Répertoires éphémères laissés par un arrêt brutal : effacés au démarrage,
+// les caches des utilisateurs restent.
+func TestProcessCleanup(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"demo-ab", "pool-1", "u1"} {
+		if err := os.MkdirAll(dir+"/"+d+"/work", 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := (&ProcessLauncher{CacheDir: dir}).Cleanup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "u1" {
+		t.Fatalf("après nettoyage : %v", entries)
+	}
+}
