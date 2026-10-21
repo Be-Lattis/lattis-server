@@ -2,7 +2,11 @@
 {{range .Data.Providers}}
 <section class="panel">
 <h2>{{.Label}} <span class="tag">{{.Kind}}</span>{{if not .Enabled}} <span class="tag off">désactivé</span>{{end}}</h2>
-{{if ne .Kind "password"}}<p class="muted">URI de redirection à déclarer chez le fournisseur : <code>{{.Callback}}</code></p>{{end}}
+{{if ne .Kind "password"}}<div class="panel linkbox callback">
+<p><strong>URI de redirection à déclarer chez {{if or (eq .Kind "google") (eq .Kind "google_workspace")}}Google (Google Cloud Console › Identifiants › votre client OAuth › URI de redirection autorisés){{else if eq .Kind "microsoft"}}Microsoft (Entra ID › Inscriptions d'applications › Authentification › URI de redirection){{else}}le fournisseur (URI de redirection du client){{end}}</strong></p>
+<p class="copy"><input id="cb-{{.ID}}" readonly value="{{.Callback}}" aria-label="URI de redirection"><button type="button" data-copy="cb-{{.ID}}">Copier</button></p>
+<small>Exactement cette adresse : elle contient l'identifiant de ce fournisseur. Sans elle, le fournisseur refuse la connexion.</small>
+</div>{{end}}
 <form method="post" action="/admin/do/update_provider" class="grid editform">
 {{template "csrf" $}}
 <input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="kind" value="{{.Kind}}">
@@ -53,6 +57,7 @@
 <label>Secret du client <input type="password" name="secret_value" autocomplete="new-password"><small>Gardé chiffré sur le serveur, jamais réaffiché.</small></label>
 <details class="sub wide"><summary>Fichier du dossier des secrets (avancé)</summary><input name="secret_ref" placeholder="nom-du-fichier" aria-label="Fichier du secret"></details>
 <label>Scopes <input name="scopes" placeholder="openid email profile"></label>
+<p class="muted wide">Une fois le fournisseur ajouté, son URI de redirection s'affiche ici, avec un bouton Copier : déclarez-la chez le fournisseur.</p>
 <p class="actions"><button class="ok">Ajouter</button></p>
 </form>
 </details>

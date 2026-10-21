@@ -240,7 +240,8 @@ func TestAdminConsole(t *testing.T) {
 	// Fournisseur Google : secret saisi en valeur ; l'enregistrer de nouveau
 	// (formulaire sans émetteur) garde l'émetteur et le secret.
 	if _, body := b.post("/admin/do/add_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "kind": {"google"},
-		"label": {"Google"}, "client_id": {"cid"}, "secret_value": {"gs3cret"}, "scopes": {"openid email"}}); !strings.Contains(body, "Fournisseur ajouté") {
+		"label": {"Google"}, "client_id": {"cid"}, "secret_value": {"gs3cret"}, "scopes": {"openid email"}}); !strings.Contains(body, "Fournisseur ajouté") ||
+		!strings.Contains(body, `id="flashlink" readonly value="`+e.srv.URL+`/callback/`) {
 		t.Fatalf("ajout du fournisseur : %s", body)
 	}
 	var gid, issuer, ref string

@@ -632,7 +632,9 @@ func randomString() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-var setupLinkRe = regexp.MustCompile(`https?://\S+/setup\?token=[A-Za-z0-9_-]+`)
+// setupLinkRe : lien du message à copier (choix du mot de passe, URI de
+// redirection d'un fournisseur ajouté).
+var setupLinkRe = regexp.MustCompile(`https?://\S+/(setup\?token=[A-Za-z0-9_-]+|callback/[0-9a-f-]{36})`)
 
 // splitSetupLink sépare d'un message le lien de choix du mot de passe.
 func splitSetupLink(msg string) (string, string) {

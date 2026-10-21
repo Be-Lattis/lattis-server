@@ -244,3 +244,6 @@ img.logo { background: none; object-fit: contain; }
 
 /* Secret saisi : masqué à la frappe là où le navigateur le permet. */
 textarea.secret { -webkit-text-security: disc; text-security: disc; font-family: var(--mono); resize: vertical; }
+
+/* URI de redirection d'un fournisseur, à déclarer chez lui. */
+.callback { margin: 4px 0 16px; padding: 12px 14px; box-shadow: none; } .callback p { margin: 0 0 6px; }

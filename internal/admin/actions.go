@@ -276,9 +276,12 @@ func (s *Service) addProvider(ctx context.Context, tx pgx.Tx, f form) (string, e
 	if err != nil {
 		return "", err
 	}
-	_, err = tx.Exec(ctx, `SELECT lattis.add_provider($1, $2, $3, $4, $5, $6::text[])`,
-		f.s("kind"), f.s("label"), f.n("issuer"), f.n("client_id"), ref, scopes(f.s("scopes")))
-	return "Fournisseur ajouté.", err
+	var id string
+	if err := tx.QueryRow(ctx, `SELECT lattis.add_provider($1, $2, $3, $4, $5, $6::text[])::text`,
+		f.s("kind"), f.s("label"), f.n("issuer"), f.n("client_id"), ref, scopes(f.s("scopes"))).Scan(&id); err != nil {
+		return "", err
+	}
+	return "Fournisseur ajouté. Déclarez chez lui l'URI de redirection affichée sur sa carte : " + s.Config.URL("/callback/"+id), nil
 }
 
 func (s *Service) updateProvider(ctx context.Context, tx pgx.Tx, f form) (string, error) {
