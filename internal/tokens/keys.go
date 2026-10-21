@@ -5,6 +5,7 @@ package tokens
 
 import (
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -88,6 +89,29 @@ func ParseKeys(data []byte) (*KeySet, error) {
 		return nil, errors.New("aucune clé privée de signature")
 	}
 	return ks, nil
+}
+
+// Derive : clé symétrique de 32 octets tirée de la clé qui signe, pour
+// l'usage label, et l'identifiant de cette clé.
+func (ks *KeySet) Derive(label string) (string, []byte) {
+	return ks.signer.ID, derive(ks.signer.Private, label)
+}
+
+// DeriveFor : même dérivation pour la clé kid, si sa partie privée est
+// encore dans le fichier.
+func (ks *KeySet) DeriveFor(kid, label string) ([]byte, bool) {
+	for _, k := range ks.keys {
+		if k.ID == kid && k.Private != nil {
+			return derive(k.Private, label), true
+		}
+	}
+	return nil, false
+}
+
+func derive(priv ed25519.PrivateKey, label string) []byte {
+	h := hmac.New(sha256.New, priv.Seed())
+	h.Write([]byte(label))
+	return h.Sum(nil)
 }
 
 // GenerateKeyPEM crée une clé Ed25519 au format PEM PKCS#8.

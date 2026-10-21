@@ -56,8 +56,8 @@ func (e inputError) Error() string { return string(e) }
 func (s *Service) actions() map[string]actionFunc {
 	return map[string]actionFunc{
 		"server_settings":      s.saveSettings,
-		"add_provider":         addProvider,
-		"update_provider":      updateProvider,
+		"add_provider":         s.addProvider,
+		"update_provider":      s.updateProvider,
 		"remove_provider":      exec1(`SELECT lattis.remove_provider($1::uuid)`, "Fournisseur supprimé.", true, "id"),
 		"allow_tenant":         allowTenant,
 		"disallow_tenant":      exec1(`SELECT lattis.disallow_tenant($1::uuid)`, "Tenant retiré.", true, "id"),
@@ -79,7 +79,7 @@ func (s *Service) actions() map[string]actionFunc {
 		"drop_dataset":         exec1(`SELECT lattis.drop_dataset($1::uuid)`, "Partage retiré.", true, "id"),
 		"remove_data_audience": exec1(`SELECT lattis.remove_data_audience($1::uuid)`, "Retiré de l'audience.", false, "id"),
 		"add_data_audience":    addDataAudience,
-		"create_pipeline":      createPipeline,
+		"create_pipeline":      s.createPipeline,
 		"simulate_pipeline":    s.simulatePipeline,
 		"create_workbook":      createWorkbook,
 		"run_pipeline":         exec1(`SELECT lattis.run_pipeline($1::uuid, NULL)`, "Exécution demandée : elle démarre dans les secondes qui viennent.", false, "id"),
@@ -251,13 +251,37 @@ func scopes(s string) any {
 	return f
 }
 
-func addProvider(ctx context.Context, tx pgx.Tx, f form) (string, error) {
-	_, err := tx.Exec(ctx, `SELECT lattis.add_provider($1, $2, $3, $4, $5, $6::text[])`,
-		f.s("kind"), f.s("label"), f.n("issuer"), f.n("client_id"), f.n("secret_ref"), scopes(f.s("scopes")))
+// secretRef : référence du secret d'un formulaire. Une valeur saisie
+// (secret_value) est chiffrée et gardée en base, en remplaçant old ; sinon
+// le nom de fichier saisi (secret_ref, avancé) ; sinon keep et old inchangé.
+func (s *Service) secretRef(ctx context.Context, tx pgx.Tx, f form, old string) (ref any, changed bool, err error) {
+	if v := f.r.PostFormValue("secret_value"); strings.TrimSpace(v) != "" {
+		if s.Vault == nil {
+			return nil, false, inputError("Secrets en valeur indisponibles sur ce serveur : indiquez un fichier du dossier des secrets.")
+		}
+		r, err := s.Vault.Store(ctx, tx, strings.TrimSpace(v), old)
+		return r, true, err
+	}
+	if fr := f.s("secret_ref"); fr != "" && fr != old {
+		return fr, true, nil
+	}
+	if f.checked("secret_clear") {
+		return nil, true, nil
+	}
+	return nil, false, nil
+}
+
+func (s *Service) addProvider(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+	ref, _, err := s.secretRef(ctx, tx, f, "")
+	if err != nil {
+		return "", err
+	}
+	_, err = tx.Exec(ctx, `SELECT lattis.add_provider($1, $2, $3, $4, $5, $6::text[])`,
+		f.s("kind"), f.s("label"), f.n("issuer"), f.n("client_id"), ref, scopes(f.s("scopes")))
 	return "Fournisseur ajouté.", err
 }
 
-func updateProvider(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+func (s *Service) updateProvider(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	pos, err := strconv.Atoi(f.s("position"))
 	if err != nil {
 		return "", inputError("Ordre : nombre entier attendu.")
@@ -266,7 +290,17 @@ func updateProvider(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	if f.s("kind") != "password" {
 		changes["issuer"] = f.n("issuer")
 		changes["client_id"] = f.n("client_id")
-		changes["client_secret_ref"] = f.n("secret_ref")
+		var old string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(client_secret_ref, '') FROM lattis.identity_providers WHERE id = $1::uuid`, f.s("id")).Scan(&old); err != nil {
+			return "", err
+		}
+		ref, changed, err := s.secretRef(ctx, tx, f, old)
+		if err != nil {
+			return "", err
+		}
+		if changed {
+			changes["client_secret_ref"] = ref
+		}
 		changes["claim_name"] = f.n("claim_name")
 		changes["claim_value"] = f.n("claim_value")
 		if sc := scopes(f.s("scopes")); sc != nil {
@@ -464,7 +498,7 @@ func addDataAudience(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 }
 
 // createPipeline : formulaire de /admin/pipelines → lattis.create_pipeline.
-func createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
+func (s *Service) createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	wb, tbl, _ := strings.Cut(f.s("target"), "|")
 	if wb == "" || tbl == "" {
 		return "", inputError("Choisissez le tableau cible.")
@@ -508,8 +542,13 @@ func createPipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	if f.s("source_kind") == "sql" {
 		format = "sql"
 	}
+	secretAny, _, err := s.secretRef(ctx, tx, f, "")
+	if err != nil {
+		return "", err
+	}
+	secret, _ := secretAny.(string)
 	p := map[string]any{"name": f.s("name"), "workbook_id": wb, "table_id": tbl, "role": f.s("role"),
-		"source_kind": f.s("source_kind"), "source": src, "secret_ref": f.s("secret_ref"), "format": format,
+		"source_kind": f.s("source_kind"), "source": src, "secret_ref": secret, "format": format,
 		"mode": f.s("mode"), "key_columns": keys, "column_map": cmap, "schedule_kind": f.s("schedule_kind"),
 		"webhook_url": f.s("webhook_url")}
 	if keys == nil {

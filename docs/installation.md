@@ -160,7 +160,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_PG_DATABASE` | `lattis` | Base annoncée aux postes. |
 | `LATTIS_PG_SSLMODE` | `verify-full` | `sslmode` annoncé aux postes (`require` pour un certificat autosigné d'essai). |
 | `LATTIS_SIGNING_KEY_FILE` | (obligatoire) | Clé(s) de signature des jetons, la première signe. |
-| `LATTIS_SECRETS_DIR` | vide | Dossier des secrets des fournisseurs (un fichier par référence). |
+| `LATTIS_SECRETS_DIR` | vide | Facultatif : dossier de secrets des fournisseurs (un fichier par référence), à la place d'une valeur saisie dans l'administration. |
 | `LATTIS_BOOTSTRAP_OWNER` | vide | Premier propriétaire du serveur, invité au premier démarrage (lien `/setup` dans les journaux). |
 | `LATTIS_LISTEN_ADDR` | `:8080` | Adresse HTTP. |
 | `LATTIS_TLS_CERT_FILE`, `LATTIS_TLS_KEY_FILE` | vide | HTTPS servi par `lattisd` lui-même (sans mandataire). |
@@ -174,7 +174,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_DOWNLOAD_URL` | vide | Page de téléchargement de l'application, proposée sur les liens vers un classeur (`/w/<id>`). |
 | `LATTIS_SOURCE_URL` | `https://github.com/Be-Lattis/lattis-server` | Lien « Code source » au pied des pages (AGPL-3.0, article 13) : à faire pointer vers le code de votre version si vous l'avez modifiée. |
 | `LATTIS_PIPELINE_DIR` | `/var/lib/lattis/pipelines` | Fichiers des pipelines d'ingestion : `<pipeline>/uploads` (envois depuis /admin), `<pipeline>/inbox` (dossier de dépôt), puis `done/` et `failed/`. Volume en écriture pour l'utilisateur de lattisd. |
-| `LATTIS_PIPELINE_SECRETS_DIR` | vide | Secrets des pipelines (mot de passe SFTP, jeton d'API, chaîne de connexion), un fichier par secret. Distinct du dossier des clients OAuth : un pipeline n'y a pas accès. Vide : pipelines sans secret seulement. |
+| `LATTIS_PIPELINE_SECRETS_DIR` | vide | Secrets des pipelines (mot de passe SFTP, jeton d'API, chaîne de connexion), un fichier par secret. Distinct du dossier des clients OAuth : un pipeline n'y a pas accès. Facultatif : un secret saisi dans l'administration est gardé chiffré en base. |
 | `LATTIS_PIPELINE_ALLOWED_HOSTS` | vide | Hôtes, `*.domaine` ou réseaux CIDR internes que les pipelines et leurs alertes peuvent joindre. Sans eux, bouclage, réseaux privés, link-local et métadonnées du nuage sont refusés. |
 | `LATTIS_TIMEZONE` | `Europe/Paris` | Fuseau des horaires de pipelines, des dates importées sans fuseau et des dates affichées dans l'administration. |
 
@@ -336,7 +336,7 @@ Tout le reste se règle dans `/admin` (propriétaires du serveur), ou en SQL ave
 | `republish_grace` | 600 s | Délai pendant lequel l'ancienne version d'un classeur figé reste lisible après republication. |
 | `tombstone_retention` | 30 j | Conservation des suppressions pour la synchronisation. |
 
-**Fournisseurs d'identité** (Administration › Connexion) : mot de passe (intégré), Google, Google Workspace, Microsoft, Keycloak, OIDC générique. Pour chacun : l'ajouter avec l'identifiant client et la **référence** du secret (le nom du fichier dans `LATTIS_SECRETS_DIR` : le secret n'est jamais en base), puis déclarer chez le fournisseur l'URI de redirection `https://lattis.acme.fr/callback/<identifiant>`, où `<identifiant>` est l'identifiant (UUID) que l'ajout a donné au fournisseur (`lattis.add_provider` le renvoie). Les domaines ou tenants autorisés et leur rôle par défaut se règlent au même endroit.
+**Fournisseurs d'identité** (Administration › Connexion) : mot de passe (intégré), Google, Google Workspace, Microsoft, Keycloak, OIDC générique. Pour chacun : l'ajouter avec l'identifiant client et son **secret**. Le secret est saisi en valeur : `lattisd` le garde chiffré en base (AES-256-GCM, clé tirée de sa clé de signature), et l'administration ne l'affiche plus jamais, elle permet seulement de le remplacer. On peut encore donner à la place le nom d'un fichier de `LATTIS_SECRETS_DIR`. Les secrets saisis suivent une rotation de la clé de signature tant que l'ancienne clé reste dans le fichier ; une fois l'ancienne clé retirée, ceux qu'elle chiffrait sont à saisir de nouveau. puis déclarer chez le fournisseur l'URI de redirection `https://lattis.acme.fr/callback/<identifiant>`, où `<identifiant>` est l'identifiant (UUID) que l'ajout a donné au fournisseur (`lattis.add_provider` le renvoie). Les domaines ou tenants autorisés et leur rôle par défaut se règlent au même endroit.
 
 Équivalent en SQL :
 

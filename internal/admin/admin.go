@@ -38,6 +38,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/userdb"
+	"github.com/Be-Lattis/lattis-server/internal/vault"
 )
 
 const (
@@ -92,8 +93,10 @@ var funcs = template.FuncMap{
 		return providerField{Label: label, Name: name, Value: value, Help: help, Required: required}
 	},
 	"join": func(v []string) string { return strings.Join(v, " ") },
-	"node": func(page view, n *treeNode, all any) treeCtx { return treeCtx{Page: page, Node: n, All: all} },
-	"leaf": func(item map[string]any) *treeNode { return &treeNode{Item: item} },
+	// dbSecret : secret saisi en valeur, gardé chiffré en base.
+	"dbSecret": vault.IsRef,
+	"node":     func(page view, n *treeNode, all any) treeCtx { return treeCtx{Page: page, Node: n, All: all} },
+	"leaf":     func(item map[string]any) *treeNode { return &treeNode{Item: item} },
 	"audienceCtx": func(page view, entries any, dataset, folder string, teams any, inherit bool) audienceCtx {
 		return audienceCtx{Page: page, Entries: entries, Dataset: dataset, Folder: folder, Teams: teams, Inherit: inherit}
 	},
@@ -210,6 +213,9 @@ type Service struct {
 	Mailer mail.Sender
 	// Monitor : relevés de l'écran Surveillance ; nil : écran vide.
 	Monitor *monitor.Monitor
+	// Vault : secrets saisis en valeur (fournisseurs, pipelines) ; nil :
+	// seulement les fichiers du dossier des secrets.
+	Vault *vault.Vault
 }
 
 func (s *Service) now() time.Time {

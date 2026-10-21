@@ -10,7 +10,10 @@
 {{if ne .Kind "password"}}
 {{if not (or (eq .Kind "google") (eq .Kind "google_workspace"))}}{{template "pfield" (pf "Émetteur (issuer)" "issuer" .Issuer "" false)}}{{end}}
 {{template "pfield" (pf "Identifiant client" "client_id" .ClientID "" false)}}
-{{template "pfield" (pf "Référence du secret" "secret_ref" .SecretRef "Nom du fichier dans le dossier des secrets, jamais le secret lui-même." false)}}
+<div class="field"><span class="flabel">Secret du client</span>
+<div class="control"><input type="password" name="secret_value" autocomplete="new-password" aria-label="Secret du client" placeholder="{{if .SecretRef}}•••••••••••• (enregistré){{else}}Collez le secret du client{{end}}">{{template "pen" "Secret du client"}}</div>
+<small>{{if dbSecret .SecretRef}}Gardé chiffré sur le serveur et jamais réaffiché : saisissez une valeur pour le remplacer.{{else if .SecretRef}}Lu dans le fichier « {{.SecretRef}} » du dossier des secrets : saisissez une valeur pour le remplacer.{{else}}Gardé chiffré sur le serveur, jamais réaffiché.{{end}}</small>
+<details class="sub"><summary>Fichier du dossier des secrets (avancé)</summary><input name="secret_ref" placeholder="nom-du-fichier" aria-label="Fichier du secret"{{if and .SecretRef (not (dbSecret .SecretRef))}} value="{{.SecretRef}}"{{end}}><small>Nom d'un fichier de LATTIS_SECRETS_DIR, à la place d'une valeur.</small></details></div>
 {{template "pfield" (pf "Scopes" "scopes" (join .Scopes) "" false)}}
 {{if or (eq .Kind "keycloak") (eq .Kind "oidc")}}{{template "pfield" (pf "Revendication exigée" "claim_name" .ClaimName "Par exemple groups." false)}}
 {{template "pfield" (pf "Valeur exigée" "claim_value" .ClaimValue "" false)}}{{end}}
@@ -46,7 +49,8 @@
 <label>Libellé <input name="label" required placeholder="Se connecter avec…"></label>
 <label data-show-if="kind=microsoft,keycloak,oidc">Émetteur (issuer) <input name="issuer" placeholder="https://…"><small data-show-if="kind=microsoft">Vide : tous les tenants Microsoft (à restreindre ensuite par tenant).</small></label>
 <label>Identifiant client <input name="client_id" required></label>
-<label>Référence du secret <input name="secret_ref"></label>
+<label>Secret du client <input type="password" name="secret_value" autocomplete="new-password"><small>Gardé chiffré sur le serveur, jamais réaffiché.</small></label>
+<details class="sub wide"><summary>Fichier du dossier des secrets (avancé)</summary><input name="secret_ref" placeholder="nom-du-fichier" aria-label="Fichier du secret"></details>
 <label>Scopes <input name="scopes" placeholder="openid email profile"></label>
 <p class="actions"><button class="ok">Ajouter</button></p>
 </form>

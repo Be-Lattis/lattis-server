@@ -23,6 +23,7 @@ import (
 
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/userdb"
+	"github.com/Be-Lattis/lattis-server/internal/vault"
 )
 
 // Interval : période du relevé des pipelines dus.
@@ -77,8 +78,10 @@ type Runner struct {
 	Users      userdb.Runner
 	Dir        string // dossier des fichiers (LATTIS_PIPELINE_DIR)
 	SecretsDir string
-	AdminURL   string // pour les alertes
-	Metrics    Counter
+	// Vault : secrets saisis dans l'administration (références db-…).
+	Vault    *vault.Vault
+	AdminURL string // pour les alertes
+	Metrics  Counter
 	// AllowedHosts : hôtes ou réseaux internes que les sources et alertes
 	// peuvent joindre malgré la garde réseau (LATTIS_PIPELINE_ALLOWED_HOSTS).
 	AllowedHosts []string
@@ -122,6 +125,12 @@ func (r *Runner) client() *http.Client {
 func (r *Runner) dir(p *Pipeline) string { return filepath.Join(r.Dir, p.ID) }
 
 func (r *Runner) secret(ref string) (string, error) {
+	if vault.IsRef(ref) && r.Vault != nil {
+		// Secret saisi dans l'administration, gardé en base.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return r.Vault.Get(ctx, ref)
+	}
 	if r.SecretsDir == "" {
 		return "", fmt.Errorf("secret %q : LATTIS_PIPELINE_SECRETS_DIR manquant", ref)
 	}

@@ -44,6 +44,7 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/tokens"
 	"github.com/Be-Lattis/lattis-server/internal/upstream"
 	"github.com/Be-Lattis/lattis-server/internal/userdb"
+	"github.com/Be-Lattis/lattis-server/internal/vault"
 	"github.com/Be-Lattis/lattis-server/internal/webapp"
 )
 
@@ -258,9 +259,14 @@ func serve(doMigrate bool) error {
 	m := metrics.New(cfg.PGPublicRW.Host, st.DB)
 	m.BuildInfo.WithLabelValues(httpserver.Version, string(cfg.Edition), pgVersion).Set(1)
 
+	// Secrets saisis dans l'administration : chiffrés par la clé de signature.
+	vlt := &vault.Vault{Pool: st.DB, Keys: keys}
+	if err := vlt.Reseal(ctx); err != nil {
+		slog.Warn("rechiffrement des secrets", "err", err)
+	}
 	authSvc := &auth.Service{
 		Config: cfg, Store: st, Keys: keys, Metrics: m,
-		Upstream: &upstream.Registry{SecretsDir: cfg.SecretsDir,
+		Upstream: &upstream.Registry{SecretsDir: cfg.SecretsDir, Vault: vlt,
 			CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }},
 	}
 	users, err := userdb.NewOAuth(cfg.PGRWURL, keys, cfg.Issuer())
@@ -275,7 +281,7 @@ func serve(doMigrate bool) error {
 	defer reps.Close()
 	m.Registry.MustRegister(reps)
 	go reps.Run(ctx)
-	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version}
+	adminSvc := &admin.Service{Config: cfg, Store: st, Keys: keys, Users: users, Replicas: reps, Version: httpserver.Version, Vault: vlt}
 	authSvc.AdminURL = "/admin/"
 	// Horaires des pipelines, dates importées et affichage : fuseau du serveur.
 	time.Local = cfg.Timezone
@@ -330,7 +336,7 @@ func serve(doMigrate bool) error {
 	internal := &http.Server{Addr: cfg.MetricsAddr, Handler: metricsMux, ReadHeaderTimeout: 10 * time.Second}
 
 	go purgeLoop(ctx, st)
-	runner := &pipeline.Runner{Store: st, Users: users, Dir: cfg.PipelineDir, SecretsDir: cfg.PipelineSecretsDir,
+	runner := &pipeline.Runner{Store: st, Users: users, Dir: cfg.PipelineDir, SecretsDir: cfg.PipelineSecretsDir, Vault: vlt,
 		AllowedHosts: cfg.PipelineAllowedHosts, AdminURL: cfg.URL("/admin/pipelines"), Metrics: m}
 	adminSvc.Pipelines = runner
 	srv.Users, srv.Pipelines = users, runner
@@ -410,6 +416,12 @@ func purgeLoop(ctx context.Context, st *store.Store) {
 				return err
 			}); err != nil {
 				slog.Warn("entretien des formulaires", "err", err)
+			}
+			if err := st.AsActor(ctx, "lattisd (secrets)", func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `SELECT lattis.secrets_housekeeping()`)
+				return err
+			}); err != nil {
+				slog.Warn("entretien des secrets", "err", err)
 			}
 		}
 	}

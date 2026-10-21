@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
 	"github.com/Be-Lattis/lattis-server/internal/store"
+	"github.com/Be-Lattis/lattis-server/internal/vault"
 )
 
 const microsoftIssuerTemplate = "https://login.microsoftonline.com/{tenantid}/v2.0"
@@ -30,6 +32,8 @@ type Client struct {
 // Registry garde les clients découverts, par fournisseur.
 type Registry struct {
 	SecretsDir string
+	// Vault : secrets saisis dans l'administration (références db-…).
+	Vault *vault.Vault
 	// CallbackURL construit l'URI de retour d'un fournisseur.
 	CallbackURL func(providerID string) string
 
@@ -95,6 +99,12 @@ func (r *Registry) Get(ctx context.Context, p store.Provider) (*Client, error) {
 func (r *Registry) secret(ref string) (string, error) {
 	if ref == "" {
 		return "", nil
+	}
+	if vault.IsRef(ref) && r.Vault != nil {
+		// Secret saisi dans l'administration, gardé en base.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return r.Vault.Get(ctx, ref)
 	}
 	if r.SecretsDir == "" {
 		return "", fmt.Errorf("secret %q : LATTIS_SECRETS_DIR manquant", ref)
