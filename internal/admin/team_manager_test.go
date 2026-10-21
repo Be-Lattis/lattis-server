@@ -81,7 +81,7 @@ func TestTeamManagerConsole(t *testing.T) {
 			t.Fatalf("%s : %d", p, resp.StatusCode)
 		}
 	}
-	for _, p := range []string{"/admin/users", "/admin/teams", "/admin/workbooks", "/admin/data", "/admin/forms"} {
+	for _, p := range []string{"/admin/users", "/admin/teams", "/admin/workbooks", "/admin/data", "/admin/pipelines", "/admin/forms"} {
 		if resp, body := mb.get(p); resp.StatusCode != http.StatusOK || strings.Contains(body, `class="error`) {
 			t.Fatalf("%s : %d %s", p, resp.StatusCode, body)
 		}

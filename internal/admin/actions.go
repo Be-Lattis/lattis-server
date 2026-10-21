@@ -120,7 +120,22 @@ var managerActions = map[string]bool{
 	"add_restriction": true, "drop_restriction": true,
 	"create_data_folder": true, "rename_data_folder": true, "move_data_folder": true, "drop_data_folder": true,
 	"drop_dataset": true, "add_data_audience": true, "remove_data_audience": true,
-	"form_state": true,
+	"form_state":      true,
+	"create_pipeline": true, "simulate_pipeline": true, "run_pipeline": true, "toggle_pipeline": true,
+	"pipeline_alert_email": true, "drop_pipeline": true, "drop_pushed_source": true,
+}
+
+// requirePipeline : le pipeline est administré par l'utilisateur (avant une
+// simulation, qui tourne sous l'identité du service).
+func requirePipeline(ctx context.Context, tx pgx.Tx, id string) error {
+	var ok bool
+	if err := tx.QueryRow(ctx, `SELECT lattis.can_manage_pipeline($1::uuid)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return inputError("Ce pipeline écrit dans un classeur dont vous n'êtes pas propriétaire.")
+	}
+	return nil
 }
 
 func (s *Service) do(w http.ResponseWriter, r *http.Request) {
@@ -725,6 +740,9 @@ func dropWorkbook(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 func (s *Service) simulatePipeline(ctx context.Context, tx pgx.Tx, f form) (string, error) {
 	if s.Pipelines == nil {
 		return "", inputError("Simulation indisponible sur ce serveur.")
+	}
+	if err := requirePipeline(ctx, tx, f.s("id")); err != nil {
+		return "", err
 	}
 	res, err := s.Pipelines.Simulate(ctx, f.s("id"), "")
 	if err != nil {

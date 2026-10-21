@@ -81,13 +81,16 @@ func (s *Service) uploadPipeline(w http.ResponseWriter, r *http.Request) {
 		name = name[:200]
 	}
 	if r.PostFormValue("simulate") != "" {
-		s.perform(w, r, func(ctx context.Context, tx pgx.Tx, _ form) (string, error) {
+		s.performAs(w, r, false, func(ctx context.Context, tx pgx.Tx, _ form) (string, error) {
+			if err := requirePipeline(ctx, tx, id); err != nil {
+				return "", err
+			}
 			return s.simulateUpload(ctx, id, name, f)
 		})
 		return
 	}
-	s.perform(w, r, func(ctx context.Context, tx pgx.Tx, _ form) (string, error) {
-		// Droits vérifiés par run_pipeline (propriétaire du serveur) avant
+	s.performAs(w, r, false, func(ctx context.Context, tx pgx.Tx, _ form) (string, error) {
+		// Droits vérifiés par run_pipeline (pipeline administré) avant
 		// l'écriture du fichier : la transaction échoue sinon.
 		if _, err := tx.Exec(ctx, `SELECT lattis.run_pipeline($1::uuid, $2)`, id, name); err != nil {
 			return "", err

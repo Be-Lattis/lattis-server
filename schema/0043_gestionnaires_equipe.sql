@@ -515,3 +515,276 @@ REVOKE EXECUTE ON FUNCTION lattis.managed_teams(), lattis.is_team_manager(), lat
     lattis.move_team_unchecked(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION lattis.admin_access(), lattis.find_user(text), lattis.set_team_manager(uuid, uuid, boolean),
     lattis.admin_users(text) TO PUBLIC;
+
+-- Pipelines : ceux des classeurs dont on est propriétaire ---------------------------
+
+-- Pipeline administré par l'utilisateur courant : tous pour les
+-- propriétaires du serveur ; pour un gestionnaire d'équipe, ceux qui
+-- écrivent dans un classeur dont il est propriétaire.
+CREATE FUNCTION lattis.can_manage_pipeline(p_id uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+    SELECT lattis.is_server_owner() OR (lattis.is_team_manager() AND EXISTS (
+        SELECT 1 FROM lattis.pipelines x WHERE x.id = p_id AND lattis.has_workbook_role(x.workbook_id, '{owner}')))
+$$;
+
+CREATE FUNCTION lattis.require_pipeline_admin(p_id uuid) RETURNS lattis.pipelines
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    x lattis.pipelines;
+BEGIN
+    SELECT * INTO x FROM lattis.pipelines WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'pipeline inconnu' USING ERRCODE = 'no_data_found';
+    END IF;
+    IF NOT lattis.can_manage_pipeline(p_id) THEN
+        RAISE EXCEPTION 'réservé aux propriétaires du serveur et aux gestionnaires d''équipe propriétaires du classeur'
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    RETURN x;
+END
+$$;
+
+-- Ce qu'un gestionnaire d'équipe ne peut pas faire lire au serveur : un
+-- fichier du dossier des secrets (seulement un secret saisi en valeur), et
+-- un fichier hors du dossier de dépôt du pipeline.
+CREATE FUNCTION lattis.pipeline_check_manager(p jsonb) RETURNS void
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF lattis.is_server_owner() THEN
+        RETURN;
+    END IF;
+    IF coalesce(p ->> 'secret_ref', '') <> '' AND (p ->> 'secret_ref') !~ '^db-[0-9a-f]{32}$' THEN
+        RAISE EXCEPTION 'un fichier du dossier des secrets est réservé aux propriétaires du serveur : saisissez le secret en valeur'
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF coalesce(p #>> '{source,pattern}', '') ~ '[/\\]|\.\.' THEN
+        RAISE EXCEPTION 'motif de fichier : un nom simple, sans dossier' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.create_pipeline(p jsonb) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_id   uuid := gen_random_uuid();
+    v      lattis.workbooks;
+    v_tab  record;
+    v_user lattis.users;
+    v_role uuid;
+BEGIN
+    PERFORM lattis.require_admin();
+    v := lattis.require_workbook_role((p ->> 'workbook_id')::uuid, '{owner}', true);
+    PERFORM lattis.pipeline_check_manager(p);
+    IF v.mode <> 'collaborative' OR v.state <> 'published' THEN
+        RAISE EXCEPTION 'un pipeline écrit dans un classeur collaboratif publié' USING ERRCODE = 'object_not_in_prerequisite_state';
+    END IF;
+    EXECUTE format('SELECT table_id, name, local_id FROM %I.lattis_meta_tables WHERE table_id = $1', v.schema_name)
+        INTO v_tab USING (p ->> 'table_id')::uuid;
+    IF v_tab.table_id IS NULL THEN
+        RAISE EXCEPTION 'tableau inconnu' USING ERRCODE = 'no_data_found';
+    END IF;
+    PERFORM lattis.pipeline_check(p, v, v_tab.name);
+    SELECT id INTO v_role FROM lattis.roles WHERE workbook_id = v.id AND builtin = coalesce(nullif(p ->> 'role', ''), 'editor');
+    IF v_role IS NULL THEN
+        RAISE EXCEPTION 'rôle « % » inexistant sur ce classeur', p ->> 'role' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    -- Identité technique : un compte sans fournisseur, jamais connecté en personne.
+    v_user := lattis.create_user('pipeline+' || left(replace(v_id::text, '-', ''), 12) || '@lattis.invalid',
+                                 'Pipeline : ' || trim(p ->> 'name'), NULL, NULL);
+    PERFORM lattis.activate_user(v_user.id);
+    INSERT INTO lattis.pipelines (id, name, workbook_id, table_local_id, table_id, table_name, source_kind, source, secret_ref,
+                                  format, mode, key_columns, column_map, schedule_kind, schedule_minutes, schedule_time,
+                                  webhook_url, user_id, created_by)
+    VALUES (v_id, trim(p ->> 'name'), v.id, v_tab.local_id, v_tab.table_id, v_tab.name, p ->> 'source_kind',
+            coalesce(p -> 'source', '{}'), nullif(p ->> 'secret_ref', ''), coalesce(nullif(p ->> 'format', ''), 'csv'), p ->> 'mode',
+            ARRAY(SELECT jsonb_array_elements_text(coalesce(p -> 'key_columns', '[]'))), coalesce(p -> 'column_map', '{}'),
+            coalesce(nullif(p ->> 'schedule_kind', ''), 'manual'), (nullif(p ->> 'schedule_minutes', ''))::integer,
+            nullif(p ->> 'schedule_time', ''), nullif(p ->> 'webhook_url', ''), v_user.id, lattis.actor());
+    PERFORM lattis.grant_role(v_role, v_user.id);
+    PERFORM lattis.audit_log('create_pipeline', v_id::text, NULL, p);
+    RETURN v_id;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.update_pipeline(p_id uuid, p jsonb) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    x     lattis.pipelines;
+    v     lattis.workbooks;
+    v_key text;
+BEGIN
+    PERFORM lattis.require_pipeline_admin(p_id);
+    PERFORM lattis.pipeline_check_manager(p);
+    SELECT * INTO x FROM lattis.pipelines WHERE id = p_id FOR UPDATE;
+    FOR v_key IN SELECT jsonb_object_keys(p) LOOP
+        IF v_key NOT IN ('name', 'source_kind', 'source', 'secret_ref', 'format', 'mode', 'key_columns', 'column_map',
+                         'schedule_kind', 'schedule_minutes', 'schedule_time', 'webhook_url', 'enabled') THEN
+            RAISE EXCEPTION 'champ inconnu : %', v_key USING ERRCODE = 'invalid_parameter_value';
+        END IF;
+    END LOOP;
+    v := lattis.workbook(x.workbook_id);
+    PERFORM lattis.pipeline_check(p, v, x.table_name);
+    UPDATE lattis.pipelines SET
+        name             = CASE WHEN p ? 'name' THEN trim(p ->> 'name') ELSE name END,
+        source_kind      = CASE WHEN p ? 'source_kind' THEN p ->> 'source_kind' ELSE source_kind END,
+        source           = CASE WHEN p ? 'source' THEN coalesce(p -> 'source', '{}') ELSE source END,
+        secret_ref       = CASE WHEN p ? 'secret_ref' THEN nullif(p ->> 'secret_ref', '') ELSE secret_ref END,
+        format           = CASE WHEN p ? 'format' THEN p ->> 'format' ELSE format END,
+        mode             = CASE WHEN p ? 'mode' THEN p ->> 'mode' ELSE mode END,
+        key_columns      = CASE WHEN p ? 'key_columns' THEN ARRAY(SELECT jsonb_array_elements_text(p -> 'key_columns')) ELSE key_columns END,
+        column_map       = CASE WHEN p ? 'column_map' THEN coalesce(p -> 'column_map', '{}') ELSE column_map END,
+        schedule_kind    = CASE WHEN p ? 'schedule_kind' THEN p ->> 'schedule_kind' ELSE schedule_kind END,
+        schedule_minutes = CASE WHEN p ? 'schedule_minutes' THEN (nullif(p ->> 'schedule_minutes', ''))::integer ELSE schedule_minutes END,
+        schedule_time    = CASE WHEN p ? 'schedule_time' THEN nullif(p ->> 'schedule_time', '') ELSE schedule_time END,
+        webhook_url      = CASE WHEN p ? 'webhook_url' THEN nullif(p ->> 'webhook_url', '') ELSE webhook_url END,
+        enabled          = CASE WHEN p ? 'enabled' THEN (p ->> 'enabled')::boolean ELSE enabled END,
+        next_run_at      = NULL, -- recalculé par lattisd
+        updated_at       = now()
+    WHERE id = p_id;
+    PERFORM lattis.audit_log('update_pipeline', p_id::text, to_jsonb(x), p);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.drop_pipeline(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM lattis.require_pipeline_admin(p_id);
+    PERFORM lattis.drop_pipeline_as(p_id);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.run_pipeline(p_id uuid, p_file text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM lattis.require_pipeline_admin(p_id);
+    IF p_file IS NOT NULL AND p_file !~ '^[A-Za-z0-9._-]{1,200}$' THEN
+        RAISE EXCEPTION 'nom de fichier invalide' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF p_file IS NOT NULL AND EXISTS (SELECT 1 FROM lattis.pipelines WHERE id = p_id AND pending_file IS NOT NULL) THEN
+        RAISE EXCEPTION 'un fichier attend déjà d''être traité : patientez la fin de son exécution' USING ERRCODE = 'object_not_in_prerequisite_state';
+    END IF;
+    UPDATE lattis.pipelines SET next_run_at = now(), pending_file = p_file,
+           pending_trigger = CASE WHEN p_file IS NULL THEN 'manual' ELSE 'upload' END
+    WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'pipeline inconnu' USING ERRCODE = 'no_data_found';
+    END IF;
+    PERFORM lattis.audit_log('run_pipeline', p_id::text, NULL, jsonb_build_object('file', p_file));
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.set_pipeline_alert_email(p_id uuid, p_email text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM lattis.require_pipeline_admin(p_id);
+    UPDATE lattis.pipelines SET alert_email = nullif(lower(trim(p_email)), ''), updated_at = now() WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'pipeline inconnu' USING ERRCODE = 'no_data_found';
+    END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.admin_pipelines() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM lattis.require_admin();
+    RETURN (SELECT coalesce(jsonb_agg(to_jsonb(x) || jsonb_build_object(
+                'workbook', w.title, 'workbook_kind', w.kind, 'identity', u.email,
+                'datasets', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'sql_name', d.sql_name)), '[]')
+                             FROM lattis.datasets d WHERE d.workbook_id = w.id AND d.table_id = x.table_id),
+                'runs', (SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.started_at DESC), '[]')
+                         FROM (SELECT * FROM lattis.pipeline_runs WHERE pipeline_id = x.id ORDER BY started_at DESC LIMIT 10) r))
+            ORDER BY lower(x.name)), '[]')
+            FROM lattis.pipelines x JOIN lattis.workbooks w ON w.id = x.workbook_id JOIN lattis.users u ON u.id = x.user_id
+            WHERE lattis.is_server_owner() OR lattis.has_workbook_role(x.workbook_id, '{owner}'));
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.pipeline_targets() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    w      lattis.workbooks;
+    t      record;
+    v_out  jsonb := '[]';
+    v_cols jsonb;
+    v_ds   text;
+BEGIN
+    PERFORM lattis.require_admin();
+    FOR w IN SELECT * FROM lattis.workbooks WHERE mode = 'collaborative' AND state = 'published' AND kind IN ('workbook', 'source')
+               AND (lattis.is_server_owner() OR lattis.has_workbook_role(id, '{owner}'))
+             ORDER BY kind DESC, lower(title) LOOP
+        FOR t IN SELECT * FROM lattis.data_tables(w.schema_name) LOOP
+            EXECUTE format('SELECT coalesce(jsonb_agg(jsonb_build_object(''name'', name, ''type'', type) ORDER BY position), ''[]'')
+                            FROM %I.lattis_meta_columns WHERE table_id = $1', w.schema_name) INTO v_cols USING t.table_id;
+            SELECT string_agg(d.name, ', ' ORDER BY d.name) INTO v_ds FROM lattis.datasets d
+            WHERE d.workbook_id = w.id AND d.table_id = t.table_id;
+            IF w.kind = 'source' AND v_ds IS NULL THEN
+                CONTINUE;
+            END IF;
+            v_out := v_out || jsonb_build_object('workbook_id', w.id, 'workbook', w.title, 'table_id', t.table_id,
+                                                 'table', t.name, 'columns', v_cols, 'datalake', w.kind = 'source',
+                                                 'dataset', v_ds);
+        END LOOP;
+    END LOOP;
+    RETURN v_out;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.store_secret(p_name text, p_key_id text, p_sealed bytea, p_old text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM lattis.require_admin();
+    INSERT INTO lattis.stored_secrets (name, key_id, sealed) VALUES (p_name, p_key_id, p_sealed);
+    -- Gestionnaire d'équipe : il ne remplace que le secret d'un de ses pipelines.
+    IF p_old IS NOT NULL AND p_old <> p_name AND (lattis.is_server_owner() OR EXISTS (
+            SELECT 1 FROM lattis.pipelines x WHERE x.secret_ref = p_old AND lattis.has_workbook_role(x.workbook_id, '{owner}'))) THEN
+        DELETE FROM lattis.stored_secrets WHERE name = p_old;
+    END IF;
+    PERFORM lattis.audit_log('store_secret', p_name, NULL, NULL);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION lattis.create_datalake_target(p jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_name text := trim(coalesce(p ->> 'name', ''));
+    v_cols jsonb;
+    v_wb   uuid;
+    v_tid  uuid;
+    v_ds   uuid;
+BEGIN
+    -- Gestionnaire d'équipe : s'il peut créer des classeurs et publier au Data Lake.
+    IF NOT (lattis.is_server_owner() OR (lattis.is_team_manager() AND lattis.can_create_workbooks() AND lattis.can_publish_data())) THEN
+        RAISE EXCEPTION 'réservé aux propriétaires du serveur et aux gestionnaires d''équipe créateurs de classeurs et publieurs au Data Lake'
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF v_name = '' THEN
+        RAISE EXCEPTION 'nom de la donnée manquant' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('name', k, 'type', 'text')), '[]') INTO v_cols
+    FROM jsonb_array_elements_text(coalesce(p -> 'key_columns', '[]')) k;
+    IF jsonb_array_length(v_cols) = 0 THEN
+        v_cols := '[{"name": "Colonne en attente", "type": "text"}]';
+    END IF;
+    v_wb := lattis.create_workbook_as('Source : ' || v_name, 'collaborative', 'source');
+    v_tid := lattis.create_table(v_wb, v_name, v_cols);
+    PERFORM lattis.finish_publish(v_wb);
+    v_ds := lattis.create_dataset(v_wb, v_tid, nullif(p ->> 'folder_id', '')::uuid, v_name, p ->> 'description', NULL, '{}');
+    RETURN jsonb_build_object('workbook_id', v_wb, 'table_id', v_tid, 'dataset_id', v_ds);
+END
+$$;
+
+REVOKE EXECUTE ON FUNCTION lattis.require_pipeline_admin(uuid), lattis.pipeline_check_manager(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION lattis.can_manage_pipeline(uuid) TO PUBLIC;

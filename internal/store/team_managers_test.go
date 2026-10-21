@@ -159,10 +159,13 @@ func TestTeamManagers(t *testing.T) {
 	// Classeurs : ceux dont il est propriétaire.
 	ok(as(owner.PGRole, `SELECT lattis.set_config('workbook_creators', '"everyone"')`))
 	var mine, theirs string
+	tables := map[string]string{}
 	newWorkbook := func(role, title string) string {
-		var wb string
+		var wb, tid string
 		scan(role, &wb, `SELECT lattis.create_workbook($1, 'collaborative')::text`, title)
+		scan(role, &tid, `SELECT lattis.create_table($1::uuid, 'Lignes', '[{"name":"Code","type":"text"}]')::text`, wb)
 		ok(as(role, `SELECT lattis.finish_publish($1::uuid)`, wb))
+		tables[wb] = tid
 		return wb
 	}
 	mine, theirs = newWorkbook(mgr.PGRole, "À moi"), newWorkbook(owner.PGRole, "Pas à moi")
@@ -178,6 +181,47 @@ func TestTeamManagers(t *testing.T) {
 	}
 	var forms json.RawMessage
 	scan(mgr.PGRole, &forms, `SELECT lattis.admin_forms()`)
+
+	// Pipelines : ceux de ses classeurs ; ni fichier du dossier des secrets,
+	// ni motif qui sort du dossier de dépôt.
+	pipeline := func(wb string, extra map[string]any) string {
+		p := map[string]any{"name": "Import " + wb[:4], "workbook_id": wb, "table_id": tables[wb], "source_kind": "file",
+			"source": map[string]any{"pattern": "*.csv"}, "format": "csv", "mode": "append"}
+		for k, v := range extra {
+			p[k] = v
+		}
+		b, _ := json.Marshal(p)
+		return string(b)
+	}
+	var mineP, theirsP string
+	scan(mgr.PGRole, &mineP, `SELECT lattis.create_pipeline($1::jsonb)::text`, pipeline(mine, nil))
+	scan(owner.PGRole, &theirsP, `SELECT lattis.create_pipeline($1::jsonb)::text`, pipeline(theirs, nil))
+	denied(as(mgr.PGRole, `SELECT lattis.create_pipeline($1::jsonb)`, pipeline(theirs, nil)))
+	denied(as(mgr.PGRole, `SELECT lattis.create_pipeline($1::jsonb)`, pipeline(mine, map[string]any{"secret_ref": "cle-serveur"})))
+	if err := as(mgr.PGRole, `SELECT lattis.create_pipeline($1::jsonb)`, pipeline(mine, map[string]any{"source": map[string]any{"pattern": "../*"}})); pgCode(err) != "22023" {
+		t.Fatalf("motif hors du dépôt : %v", err)
+	}
+	denied(as(mgr.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"secret_ref": "cle-serveur"}')`, mineP))
+	ok(as(mgr.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"enabled": false}')`, mineP))
+	ok(as(mgr.PGRole, `SELECT lattis.run_pipeline($1::uuid, NULL)`, mineP))
+	ok(as(mgr.PGRole, `SELECT lattis.set_pipeline_alert_email($1::uuid, $2)`, mineP, mgr.Email))
+	for _, q := range []string{`SELECT lattis.run_pipeline($1::uuid, NULL)`, `SELECT lattis.drop_pipeline($1::uuid)`,
+		`SELECT lattis.update_pipeline($1::uuid, '{"enabled": false}')`, `SELECT lattis.set_pipeline_alert_email($1::uuid, 'x@example.test')`} {
+		denied(as(mgr.PGRole, q, theirsP))
+	}
+	var pls, targets []map[string]any
+	scan(mgr.PGRole, &pls, `SELECT lattis.admin_pipelines()`)
+	scan(mgr.PGRole, &targets, `SELECT lattis.pipeline_targets()`)
+	if len(pls) != 1 || pls[0]["id"] != mineP || len(targets) != 1 || targets[0]["workbook_id"] != mine {
+		t.Fatalf("pipelines du gestionnaire : %v, cibles %v", pls, targets)
+	}
+	var can bool
+	scan(mgr.PGRole, &can, `SELECT lattis.can_manage_pipeline($1::uuid)`, theirsP)
+	if can {
+		t.Fatal("pipeline d'autrui administrable")
+	}
+	ok(as(mgr.PGRole, `SELECT lattis.drop_pipeline($1::uuid)`, mineP))
+	ok(as(owner.PGRole, `SELECT lattis.update_pipeline($1::uuid, '{"secret_ref": "cle-serveur"}')`, theirsP))
 
 	// Adresse → compte : administrateurs seulement.
 	var found map[string]any
