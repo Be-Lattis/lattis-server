@@ -96,6 +96,9 @@ jobs:
           # démarrage réel (relais des changements, formulaires).
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/events)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/form-static/form.css)" = 200
+          # Logo du serveur (icône Lattis par défaut), aussi en favicon.
+          test "$(curl -s -o /dev/null -w '%{http_code} %{content_type}' http://localhost:8080/logo)" = "200 image/png"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/favicon.ico)" = 200
           if curl -s http://localhost:8080/f/inconnu | grep -q '^404 page not found'; then exit 1; fi
       - name: Parcours d'un poste
         run: |

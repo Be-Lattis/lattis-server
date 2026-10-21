@@ -65,6 +65,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /logo", s.logo)
+	// Favicon : le logo du serveur, aussi pour l'application web et la démo,
+	// dont les pages n'en déclarent pas (le navigateur demande /favicon.ico).
+	mux.HandleFunc("GET /favicon.ico", s.logo)
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("POST /api/push/{id}", s.push)
 	mux.HandleFunc("GET /api/push/{id}", s.pushStatus)
