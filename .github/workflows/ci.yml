@@ -43,6 +43,22 @@ jobs:
           helm template t deploy/helm/lattis $V --set web.enabled=true --set web.cache.size=1Gi | tee /tmp/web.yaml | grep -q "kind: NetworkPolicy"
           grep -q "LATTIS_WEB_LAUNCHER" /tmp/web.yaml
           helm template t deploy/helm/lattis $V --set replicas.count=1 | grep -c "fsGroupChangePolicy: OnRootMismatch" | grep -qx 2
+      - name: Nouvelle version du chart sans redémarrage de PostgreSQL
+        # Entre deux versions du chart, seuls changent les labels de version
+        # des objets (pas ceux des pods) et l'image de lattisd : PostgreSQL,
+        # ses réplicas et leurs pods restent identiques.
+        run: |
+          set -o pipefail
+          V="--set publicURL=https://lattis.example.com --set secrets.existingSecret=s --set secrets.signingKeySecret=k --set secrets.postgresTLSSecret=t --set lattisd.bootstrapOwner=a@example.com --set replicas.count=1 --set web.enabled=true --set web.cache.size=1Gi"
+          cp -r deploy/helm/lattis /tmp/next
+          sed -i 's/^version: .*/version: 99.0.0/; s/^appVersion: .*/appVersion: "99.0.0-beta"/' /tmp/next/Chart.yaml
+          helm template t deploy/helm/lattis $V > /tmp/a.yaml
+          helm template t /tmp/next $V > /tmp/b.yaml
+          diff /tmp/a.yaml /tmp/b.yaml | grep '^[<>]' > /tmp/diff.txt || true
+          cat /tmp/diff.txt
+          if grep -vE '^[<>] {5}(app\.kubernetes\.io/version|helm\.sh/chart): |^[<>] +image: "[^"]*/lattisd:' /tmp/diff.txt; then
+            echo "une nouvelle version du chart change autre chose que les labels de version et l'image de lattisd"; exit 1
+          fi
 
   server-image:
     runs-on: ubuntu-latest
