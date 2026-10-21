@@ -2,6 +2,6 @@ apiVersion: v2
 name: lattis
 description: Serveur Lattis (lattisd, édition « gestion des rôles » ou web, et PostgreSQL 18 avec réplicas en lecture).
 type: application
-version: 0.3.6
-appVersion: "0.3.6-beta"
+version: 0.3.7
+appVersion: "0.3.7-beta"
 home: https://github.com/Be-Lattis/lattis-server
