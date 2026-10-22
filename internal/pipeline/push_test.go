@@ -167,6 +167,14 @@ func TestPushedSource(t *testing.T) {
 	if code, body := get("/api/push/" + pid); code != http.StatusOK || !strings.Contains(body, `"last_run"`) || !strings.Contains(body, `"mode":"replace"`) {
 		t.Fatalf("état : %d %s", code, body)
 	}
+	// Écrit sous le compte de la personne qui pousse, pas sous une identité
+	// technique.
+	var identity, updatedBy string
+	must(db.Super.QueryRow(ctx, `SELECT u.email FROM lattis.pipelines p JOIN lattis.users u ON u.id = p.user_id WHERE p.id = $1`, pid).Scan(&identity))
+	must(db.Super.QueryRow(ctx, `SELECT DISTINCT lattis_updated_by FROM `+pgx.Identifier{schema, "Clients partagés"}.Sanitize()).Scan(&updatedBy))
+	if identity != author.Email || updatedBy != author.PGRole {
+		t.Fatalf("identité de la source poussée : %s, écrit par %s", identity, updatedBy)
+	}
 
 	// Suppression : donnée, pipeline et classeur technique.
 	must(as(author, func(tx pgx.Tx) error {
@@ -178,5 +186,11 @@ func TestPushedSource(t *testing.T) {
 		+ (SELECT count(*) FROM lattis.workbooks WHERE id = $3)`, created["dataset_id"], pid, created["workbook_id"]).Scan(&left))
 	if left != 0 {
 		t.Fatalf("restes après suppression : %d", left)
+	}
+	// Le compte de la personne reste actif après la suppression.
+	var disabled bool
+	must(db.Super.QueryRow(ctx, `SELECT disabled FROM lattis.users WHERE id = $1`, author.UserID).Scan(&disabled))
+	if disabled {
+		t.Fatal("compte de la personne désactivé avec sa source")
 	}
 }
