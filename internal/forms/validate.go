@@ -198,8 +198,10 @@ func checkValue(f Field, c Column, list []any, raw string, t tr) (val string, ms
 		if raw == "" {
 			return "", ""
 		}
+		// Heure sans fuseau, comme dans Lattis : gardée telle quelle, marquée
+		// UTC (l'application relit les dates-heures en UTC).
 		for _, l := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05", "2006-01-02 15:04", "02/01/2006 15:04"} {
-			if d, err := time.ParseInLocation(l, raw, time.Local); err == nil {
+			if d, err := time.ParseInLocation(l, raw, time.UTC); err == nil {
 				return d.Format(time.RFC3339), ""
 			}
 		}

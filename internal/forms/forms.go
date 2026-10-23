@@ -620,7 +620,9 @@ func (h *Handler) write(ctx context.Context, p *Page, values map[string]string, 
 				if c.Type == "date" {
 					values[sv.Column] = h.now().Format("2006-01-02")
 				} else {
-					values[sv.Column] = h.now().Format(time.RFC3339)
+					// Heure locale du serveur, sans fuseau, marquée UTC
+					// comme les dates-heures de Lattis.
+					values[sv.Column] = h.now().Format("2006-01-02T15:04:05") + "Z"
 				}
 			case "respondent":
 				values[sv.Column] = email

@@ -82,7 +82,8 @@ func TestFormPage(t *testing.T) {
 
 	pem, _ := tokens.GenerateKeyPEM()
 	keys, _ := tokens.ParseKeys(pem)
-	clock := time.Now()
+	// Serveur hors UTC : l'heure de réception garde l'heure locale, marquée UTC.
+	clock := time.Date(2026, 10, 23, 14, 30, 0, 0, time.FixedZone("Paris", 2*3600))
 	current := map[string]store.Enrollment{}
 	who := ""
 	h := &forms.Handler{Store: db.Store, Users: userdb.SessionAuth{Pool: db.Super}, Keys: keys, Now: func() time.Time { return clock },
@@ -157,8 +158,11 @@ func TestFormPage(t *testing.T) {
 	var recu time.Time
 	must(db.Super.QueryRow(ctx, `SELECT "Commune", "Nombre", "Reçu", "N", "Par", lattis_author FROM `+pgx.Identifier{schema, "Relevés"}.Sanitize()).
 		Scan(&commune, new(int), &recu, &n, &by, &author))
-	if commune != "Brest" || n != 1 || by != reader.Email || !strings.HasPrefix(author, "form+") || recu.IsZero() {
+	if commune != "Brest" || n != 1 || by != reader.Email || !strings.HasPrefix(author, "form+") {
 		t.Fatalf("ligne écrite : %s %d %s %s", commune, n, by, author)
+	}
+	if u := recu.UTC(); u.Hour() != 14 || u.Minute() != 30 {
+		t.Fatalf("heure de réception : %v", recu)
 	}
 	// Une réponse par personne.
 	_, page, _ = do("GET", "/f/"+code, nil)
