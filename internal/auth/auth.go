@@ -307,6 +307,10 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 		s.passwordForm(w, r, p, signed, req.LoginHint, "")
 		return
 	}
+	if p.Kind == "proxy" {
+		s.proxyLogin(w, r, p, req)
+		return
+	}
 	c, err := s.Upstream.Get(r.Context(), p)
 	if err != nil {
 		slog.Error("fournisseur indisponible", "provider", p.Label, "err", err)
@@ -337,6 +341,32 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Redirect(w, r, c.OAuth2.AuthCodeURL(st.SID, opts...), http.StatusFound)
+}
+
+// proxyLogin : connexion par un reverse proxy qui a déjà authentifié la
+// personne (en-têtes d'identité et de contrôle).
+func (s *Service) proxyLogin(w http.ResponseWriter, r *http.Request, p store.Provider, req authRequest) {
+	claims, err := s.Upstream.ProxyClaims(p, r.Header)
+	if err != nil {
+		s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultError).Inc()
+		slog.Warn("connexion par le reverse proxy refusée", "provider", p.Label, "err", err)
+		s.render(w, r, http.StatusForbidden, "message", view{Title: "Connexion",
+			Error: "La connexion par « " + p.Label + " » n'a pas été reconnue : passez par l'adresse du serveur derrière votre portail d'entreprise, ou choisissez un autre moyen de connexion."})
+		return
+	}
+	tenants, err := s.Store.Tenants(r.Context(), p.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	id, err := upstream.Admit(p, tenants, claims)
+	if err != nil {
+		s.Metrics.Logins.WithLabelValues(p.Kind, metrics.ResultTenant).Inc()
+		s.render(w, r, http.StatusForbidden, "message", view{Title: "Accès refusé",
+			Error: "Votre compte " + claims.Email + " n'est pas autorisé sur ce serveur."})
+		return
+	}
+	s.complete(w, r, p, req, id)
 }
 
 func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
@@ -565,7 +595,24 @@ func (s *Service) setupForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, http.StatusOK, "setup", view{Title: "Choisir un mot de passe", Token: token, Email: email,
-		CSRF: s.csrf(w, r), MinLength: password.MinLength})
+		CSRF: s.csrf(w, r), MinLength: password.MinLength, Links: s.providerSignup(r)})
+}
+
+// providerSignup : s'inscrire sans mot de passe, par un fournisseur de
+// connexion (Google, Microsoft…) : le compte de l'adresse s'y relie.
+func (s *Service) providerSignup(r *http.Request) []providerLink {
+	ps, err := s.Store.Providers(r.Context())
+	if err != nil {
+		return nil
+	}
+	var out []providerLink
+	for _, p := range ps {
+		if p.Kind != "password" && p.Kind != "proxy" {
+			out = append(out, providerLink{Label: "Continuer avec " + p.Label, URL: "/admin/login?next=" + url.QueryEscape("/admin/bienvenue")})
+			break
+		}
+	}
+	return out
 }
 
 func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {

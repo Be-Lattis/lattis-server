@@ -5,8 +5,10 @@ package upstream
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -235,4 +237,34 @@ func match(kind string, t store.Tenant, cl *Claims) bool {
 		return (kind == "keycloak" || kind == "oidc") && strings.TrimSuffix(cl.Issuer, "/") == strings.TrimSuffix(t.Value, "/")
 	}
 	return false
+}
+
+// ErrProxy : requête qui ne vient pas du reverse proxy (contrôle absent ou
+// faux) ou sans adresse.
+var ErrProxy = errors.New("identité du reverse proxy refusée")
+
+// ProxyClaims lit l'identité transmise par un reverse proxy (fournisseur
+// « proxy ») : l'en-tête de contrôle doit porter la valeur secrète du
+// fournisseur, l'en-tête d'identité une adresse e-mail.
+func (r *Registry) ProxyClaims(p store.Provider, h http.Header) (*Claims, error) {
+	if p.Kind != "proxy" || p.ClientID == "" || p.ClaimName == "" || p.SecretRef == "" {
+		return nil, fmt.Errorf("%w : fournisseur incomplet", ErrProxy)
+	}
+	want, err := r.secret(p.SecretRef)
+	if err != nil {
+		return nil, err
+	}
+	got := h.Get(p.ClaimName)
+	if want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		return nil, fmt.Errorf("%w : en-tête de contrôle « %s » absent ou faux", ErrProxy, p.ClaimName)
+	}
+	email := strings.ToLower(strings.TrimSpace(h.Get(p.ClientID)))
+	if !strings.Contains(email, "@") || strings.ContainsAny(email, " ,;") {
+		return nil, fmt.Errorf("%w : en-tête « %s » sans adresse e-mail", ErrProxy, p.ClientID)
+	}
+	cl := &Claims{Subject: email, Email: email, EmailVerified: true}
+	if p.ClaimValue != "" {
+		cl.Name = strings.TrimSpace(h.Get(p.ClaimValue))
+	}
+	return cl, nil
 }

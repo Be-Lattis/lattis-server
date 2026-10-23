@@ -2,7 +2,7 @@
 {{range .Data.Providers}}
 <section class="panel">
 <h2>{{.Label}} <span class="tag">{{.Kind}}</span>{{if not .Enabled}} <span class="tag off">désactivé</span>{{end}}</h2>
-{{if ne .Kind "password"}}<div class="panel linkbox callback">
+{{if and (ne .Kind "password") (ne .Kind "proxy")}}<div class="panel linkbox callback">
 <p><strong>URI de redirection à déclarer chez {{if or (eq .Kind "google") (eq .Kind "google_workspace")}}Google (Google Cloud Console › Identifiants › votre client OAuth › URI de redirection autorisés){{else if eq .Kind "microsoft"}}Microsoft (Entra ID › Inscriptions d'applications › Authentification › URI de redirection){{else}}le fournisseur (URI de redirection du client){{end}}</strong></p>
 <p class="copy"><input id="cb-{{.ID}}" readonly value="{{.Callback}}" aria-label="URI de redirection"><button type="button" data-copy="cb-{{.ID}}">Copier</button></p>
 <small>Exactement cette adresse : elle contient l'identifiant de ce fournisseur. Sans elle, le fournisseur refuse la connexion.</small>
@@ -12,7 +12,14 @@
 <input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="kind" value="{{.Kind}}">
 {{template "pfield" (pf "Libellé" "label" .Label "" true)}}
 {{template "pfield" (pf "Ordre d'affichage" "position" (str .Position) "" false)}}
-{{if ne .Kind "password"}}
+{{if eq .Kind "proxy"}}
+{{template "pfield" (pf "En-tête de l'adresse e-mail" "client_id" .ClientID "Posé par le proxy une fois la personne authentifiée, par exemple X-Forwarded-Email." true)}}
+{{template "pfield" (pf "En-tête de contrôle" "claim_name" .ClaimName "Le proxy y met la valeur de contrôle ci-dessous, à chaque requête." true)}}
+{{template "pfield" (pf "En-tête du nom (facultatif)" "claim_value" .ClaimValue "Par exemple X-Forwarded-Preferred-Username." false)}}
+<div class="field"><span class="flabel">Valeur de contrôle</span>
+<div class="control"><input type="password" name="secret_value" autocomplete="new-password" aria-label="Valeur de contrôle" placeholder="{{if .SecretRef}}•••••••••••• (enregistrée){{else}}Valeur secrète partagée avec le proxy{{end}}">{{template "pen" "Valeur de contrôle"}}</div>
+<small>Prouve que la requête vient bien du proxy. Gardée chiffrée, jamais réaffichée. Le proxy doit retirer ces en-têtes des requêtes qu'il reçoit.</small></div>
+{{else if ne .Kind "password"}}
 {{if not (or (eq .Kind "google") (eq .Kind "google_workspace"))}}{{template "pfield" (pf "Émetteur (issuer)" "issuer" .Issuer "" false)}}{{end}}
 {{template "pfield" (pf "Identifiant client" "client_id" .ClientID "" false)}}
 <div class="field"><span class="flabel">Secret du client</span>
@@ -53,10 +60,13 @@
 <label>Type <select name="kind">{{range .Data.Kinds}}<option value="{{index . 0}}">{{index . 1}}</option>{{end}}</select></label>
 <label>Libellé <input name="label" required placeholder="Se connecter avec…"></label>
 <label data-show-if="kind=microsoft,keycloak,oidc">Émetteur (issuer) <input name="issuer" placeholder="https://…"><small data-show-if="kind=microsoft">Vide : tous les tenants Microsoft (à restreindre ensuite par tenant).</small></label>
-<label>Identifiant client <input name="client_id" required></label>
+<label data-show-if="kind!=proxy">Identifiant client <input name="client_id" required></label>
+<label data-show-if="kind=proxy">En-tête de l'adresse e-mail <input name="client_id" required placeholder="X-Forwarded-Email"></label>
+<label data-show-if="kind=proxy">En-tête de contrôle <input name="claim_name" required placeholder="X-Lattis-Proxy-Secret"></label>
+<label data-show-if="kind=proxy">En-tête du nom (facultatif) <input name="claim_value" placeholder="X-Forwarded-Preferred-Username"></label>
 <label>Secret du client <input type="password" name="secret_value" autocomplete="new-password"><small>Gardé chiffré sur le serveur, jamais réaffiché.</small></label>
 <details class="sub wide"><summary>Fichier du dossier des secrets (avancé)</summary><input name="secret_ref" placeholder="nom-du-fichier" aria-label="Fichier du secret"></details>
-<label>Scopes <input name="scopes" placeholder="openid email profile"></label>
+<label data-show-if="kind!=proxy">Scopes <input name="scopes" placeholder="openid email profile"></label>
 <p class="muted wide">Une fois le fournisseur ajouté, son URI de redirection s'affiche ici, avec un bouton Copier : déclarez-la chez le fournisseur.</p>
 <p class="actions"><button class="ok">Ajouter</button></p>
 </form>

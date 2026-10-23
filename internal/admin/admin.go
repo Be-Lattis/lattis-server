@@ -260,6 +260,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/monitor", s.page("monitor", "Surveillance", s.loadMonitor))
 	mux.HandleFunc("POST /admin/do/{action}", s.do)
 	mux.HandleFunc("GET /admin/api/people", s.searchPeople)
+	mux.HandleFunc("GET /admin/bienvenue", s.welcome)
 	mux.HandleFunc("POST /admin/server/logo", s.uploadLogo)
 	mux.HandleFunc("GET /w/{id}", s.workbookLink)
 }
@@ -764,4 +765,22 @@ func (s *Service) searchPeople(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(out)
+}
+
+// welcome : compte prêt après une inscription par un fournisseur (page de
+// choix du mot de passe, invitation).
+func (s *Service) welcome(w http.ResponseWriter, r *http.Request) {
+	u, err := s.session(r)
+	if err != nil {
+		http.Redirect(w, r, "/admin/login?next="+url.QueryEscape("/admin/bienvenue"), http.StatusFound)
+		return
+	}
+	msg := "Votre compte " + u.Email + " est prêt : vos accès s'appliquent. Ouvrez Lattis et ajoutez le serveur " + s.Config.Issuer() + "."
+	if s.Config.Edition == config.EditionWeb {
+		msg += " Vous pouvez aussi l'utiliser dans le navigateur : " + s.Config.URL("/app/") + "."
+	}
+	if s.Config.DownloadURL != "" {
+		msg += " Télécharger l'application : " + s.Config.DownloadURL + "."
+	}
+	s.message(w, r, http.StatusOK, "Bienvenue", msg)
 }

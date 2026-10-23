@@ -8,5 +8,8 @@
 <label>Confirmation<input type="password" name="confirm" autocomplete="new-password" required></label>
 <button type="submit" class="ok">Enregistrer</button>
 </form>
+{{with .Links}}<p class="or">Ou, sans mot de passe :</p>
+<p class="links">{{range .}}<a class="button" href="{{.URL}}">{{.Label}}</a> {{end}}</p>
+<p class="muted">Avec la même adresse e-mail, vos accès vous attendent.</p>{{end}}
 {{end}}
 {{end}}

@@ -203,7 +203,7 @@ type providerRow struct {
 
 var providerKinds = [][2]string{
 	{"google", "Google"}, {"google_workspace", "Google Workspace"}, {"microsoft", "Microsoft"},
-	{"keycloak", "Keycloak"}, {"oidc", "OIDC générique"},
+	{"keycloak", "Keycloak"}, {"oidc", "OIDC générique"}, {"proxy", "Reverse proxy (en-têtes)"},
 }
 
 func (s *Service) loadProviders(ctx context.Context, tx pgx.Tx, r *http.Request, u store.User) (any, error) {

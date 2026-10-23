@@ -291,6 +291,20 @@ func TestAdminConsole(t *testing.T) {
 	if _, body := b.post("/admin/do/remove_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "id": {gid}, "confirm": {"on"}}); !strings.Contains(body, "supprimé") {
 		t.Fatalf("suppression du fournisseur : %s", body)
 	}
+	// Reverse proxy : en-têtes et valeur de contrôle, sans adresse de rappel.
+	if _, body := b.post("/admin/do/add_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "kind": {"proxy"},
+		"label": {"Portail"}, "client_id": {"X-Forwarded-Email"}, "claim_name": {"X-Proxy-Secret"}, "secret_value": {"ctl"}}); !strings.Contains(body, "reverse proxy lui transmet") {
+		t.Fatalf("ajout du reverse proxy : %s", body)
+	}
+	var pxid string
+	if err := e.db.Super.QueryRow(ctx, `SELECT p.id::text FROM lattis.identity_providers p JOIN lattis.allowed_tenants t ON t.provider_id = p.id
+		WHERE p.kind = 'proxy' AND p.claim_name = 'X-Proxy-Secret' AND t.kind = 'any'`).Scan(&pxid); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := b.get("/admin/providers"); !strings.Contains(body, "En-tête de contrôle") || strings.Contains(body, "/callback/"+pxid) {
+		t.Fatal("page des fournisseurs : reverse proxy mal affiché")
+	}
+	b.post("/admin/do/remove_provider", url.Values{"csrf": {csrf}, "back": {"/admin/providers"}, "id": {pxid}, "confirm": {"on"}})
 
 	// Compte à mot de passe créé depuis la console, puis connexion refusée à
 	// l'administration (pas propriétaire du serveur).
@@ -304,6 +318,10 @@ func TestAdminConsole(t *testing.T) {
 	ob := e.browser()
 	if resp, body := ob.login(other, pw, "/admin/users"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "réservée aux propriétaires") {
 		t.Fatalf("non-propriétaire : %d", resp.StatusCode)
+	}
+	// Compte prêt (inscription par un fournisseur) : ouvert à tout utilisateur.
+	if resp, body := ob.get("/admin/bienvenue"); resp.StatusCode != http.StatusOK || !strings.Contains(body, other+" est prêt") {
+		t.Fatalf("bienvenue : %d", resp.StatusCode)
 	}
 	if resp, _ := ob.post("/admin/do/disable_user", url.Values{"csrf": {csrf}, "id": {"00000000-0000-0000-0000-000000000000"}}); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("action d'un non-propriétaire sans son jeton : %d", resp.StatusCode)

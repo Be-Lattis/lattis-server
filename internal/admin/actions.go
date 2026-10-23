@@ -322,10 +322,25 @@ func (s *Service) addProvider(ctx context.Context, tx pgx.Tx, f form) (string, e
 	if err != nil {
 		return "", err
 	}
+	if f.s("kind") == "proxy" && (ref == nil || f.s("claim_name") == "") {
+		return "", inputError("Reverse proxy : en-tête de contrôle et valeur de contrôle obligatoires.")
+	}
 	var id string
 	if err := tx.QueryRow(ctx, `SELECT lattis.add_provider($1, $2, $3, $4, $5, $6::text[])::text`,
 		f.s("kind"), f.s("label"), f.n("issuer"), f.n("client_id"), ref, scopes(f.s("scopes"))).Scan(&id); err != nil {
 		return "", err
+	}
+	if f.s("kind") == "proxy" {
+		b, _ := json.Marshal(map[string]any{"claim_name": f.n("claim_name"), "claim_value": f.n("claim_value")})
+		if _, err := tx.Exec(ctx, `SELECT lattis.update_provider($1::uuid, $2::jsonb)`, id, string(b)); err != nil {
+			return "", err
+		}
+		// Le proxy a déjà authentifié la personne : toute adresse transmise
+		// est admise (à restreindre par domaine dans la liste des tenants).
+		if _, err := tx.Exec(ctx, `SELECT lattis.allow_tenant($1::uuid, 'any', '', NULL)`, id); err != nil {
+			return "", err
+		}
+		return "Fournisseur ajouté : il reconnaît les personnes que le reverse proxy lui transmet.", nil
 	}
 	return "Fournisseur ajouté. Déclarez chez lui l'URI de redirection affichée sur sa carte : " + s.Config.URL("/callback/"+id), nil
 }

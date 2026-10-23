@@ -10,6 +10,8 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -35,6 +37,7 @@ type env struct {
 	keys *tokens.KeySet
 	srv  *httptest.Server
 	c    *http.Client
+	up   *upstream.Registry
 }
 
 func newKeys(t *testing.T) *tokens.KeySet {
@@ -59,8 +62,8 @@ func setup(t *testing.T) *env {
 	cfg := &config.Config{Edition: config.EditionAdmin, SourceURL: "https://example.test/source", PublicURL: pub, PGDatabase: "lattis", PGSSLMode: "verify-full",
 		PGPublicRW: config.Endpoint{Host: "pg.example.test", Port: 5432}, RateLimit: 10000}
 	m := metrics.New("test", db.Store.DB)
-	a := &auth.Service{Config: cfg, Store: db.Store, Keys: keys, Metrics: m,
-		Upstream: &upstream.Registry{CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }}}
+	up := &upstream.Registry{SecretsDir: t.TempDir(), CallbackURL: func(id string) string { return cfg.URL("/callback/" + id) }}
+	a := &auth.Service{Config: cfg, Store: db.Store, Keys: keys, Metrics: m, Upstream: up}
 	h = (&httpserver.Server{Config: cfg, Store: db.Store, Keys: keys, Auth: a}).Handler()
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -69,7 +72,7 @@ func setup(t *testing.T) *env {
 		}
 		return nil
 	}}
-	return &env{t: t, db: db, keys: keys, srv: srv, c: c}
+	return &env{t: t, db: db, keys: keys, srv: srv, c: c, up: up}
 }
 
 var fieldRe = regexp.MustCompile(`name="(req|csrf|token)" value="([^"]*)"`)
@@ -335,6 +338,15 @@ func TestUpstreamOIDCFlow(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Inscription sans mot de passe : proposée sur la page du lien d'inscription.
+	token, err := e.db.Store.Bootstrap(ctx, testpg.Email("owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, body := e.get(e.srv.URL + "/setup?token=" + token); !strings.Contains(body, "Continuer avec Keycloak Acme") ||
+		!strings.Contains(body, "/admin/login?next=%2Fadmin%2Fbienvenue") {
+		t.Fatal("inscription par fournisseur non proposée")
+	}
 	email := testpg.Email("kc")
 	idp.claims = tokens.Claims{Subject: "kc-42", Email: email, Name: "Agent Keycloak"}
 
@@ -362,6 +374,63 @@ func TestUpstreamOIDCFlow(t *testing.T) {
 	resp, body := e.get(e.authorizeURL(challenge, "&provider="+pid))
 	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "invitation") {
 		t.Fatalf("non invité : %d", resp.StatusCode)
+	}
+}
+
+// Reverse proxy : identité lue dans un en-tête, admise seulement avec la
+// valeur de contrôle du proxy.
+func TestProxyFlow(t *testing.T) {
+	ctx := context.Background()
+	e := setup(t)
+	if err := os.WriteFile(filepath.Join(e.up.SecretsDir, "proxy"), []byte("controle-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var pid string
+	if err := e.db.Store.AsActor(ctx, "test", func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT lattis.add_provider('proxy', 'Portail Acme', NULL, 'X-Forwarded-Email', 'proxy', NULL)::text`).Scan(&pid); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT lattis.update_provider($1::uuid, '{"claim_name": "X-Proxy-Secret", "claim_value": "X-Forwarded-User"}')`, pid); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SELECT lattis.allow_tenant($1::uuid, 'any', '', NULL)`, pid); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `SELECT lattis.set_config('access_mode', '"open"')`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	email := testpg.Email("proxy")
+	verifier, challenge := pkce()
+	get := func(secret string) *http.Response {
+		req, _ := http.NewRequest("GET", e.authorizeURL(challenge, "&provider="+pid), nil)
+		req.Header.Set("X-Forwarded-Email", strings.ToUpper(email))
+		req.Header.Set("X-Forwarded-User", "Agent Proxy")
+		if secret != "" {
+			req.Header.Set("X-Proxy-Secret", secret)
+		}
+		resp, err := e.c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	for _, bad := range []string{"", "faux"} {
+		if resp := get(bad); resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("contrôle %q accepté : %d", bad, resp.StatusCode)
+		}
+	}
+	code := codeFrom(t, get("controle-secret"))
+	st, tr, er := e.exchange(url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirect}, "code_verifier": {verifier}})
+	if st != 200 || tr.PGRole != email {
+		t.Fatalf("échange : %d %v %+v", st, er, tr)
+	}
+	var name string
+	_ = e.db.Super.QueryRow(ctx, `SELECT display_name FROM lattis.users WHERE email = $1`, email).Scan(&name)
+	if name != "Agent Proxy" {
+		t.Fatalf("nom : %q", name)
 	}
 }
 
