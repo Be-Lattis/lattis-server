@@ -63,6 +63,7 @@ spec:
           env:
             - { name: LATTIS_PRIMARY_HOST, value: {{ include "lattis.primaryHost" . | quote }} }
             - { name: LATTIS_REPLICATION_SLOT, value: auto }
+            - { name: LATTIS_ISSUER, value: {{ .Values.publicURL | quote }} }
             - name: LATTIS_REPLICATION_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: replication-password } }
           ports:

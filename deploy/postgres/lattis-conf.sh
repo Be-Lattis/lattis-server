@@ -10,6 +10,8 @@
 #                               lecture sur un réplica (30s)
 #   LATTIS_PG_IDLE_TX_TIMEOUT   session fermée si elle reste plus longtemps
 #                               « idle in transaction » (5min ; 0 : jamais)
+#   LATTIS_ISSUER               adresse publique de lattisd : émetteur des
+#                               jetons, dans lattis.conf et pg_hba.conf
 set -euo pipefail
 : "${PGDATA:?}"
 [ -s "$PGDATA/PG_VERSION" ] || exit 0
@@ -26,6 +28,22 @@ max_standby_streaming_delay = '${LATTIS_PG_STANDBY_DELAY:-30s}'
 # tout ce qui a changé depuis. Les sauvegardes (pg_dump) ne sont pas « idle ».
 idle_in_transaction_session_timeout = '${LATTIS_PG_IDLE_TX_TIMEOUT:-5min}'
 CONF
+# Émetteur des jetons (adresse publique de lattisd) : suit LATTIS_ISSUER, pour
+# qu'un changement d'adresse publique ne laisse pas l'ancienne dans
+# postgresql.conf et pg_hba.conf (écrits une seule fois, à l'initdb).
+if [ -n "${LATTIS_ISSUER:-}" ]; then
+	case "$LATTIS_ISSUER" in
+	*"'"* | *'"'* | *'|'* | *'&'* | *'\'* | *' '* | *$'\t'* | *$'\n'*) echo "LATTIS_ISSUER invalide : $LATTIS_ISSUER" >&2; exit 1 ;;
+	esac
+	printf "# Émetteur des jetons, depuis LATTIS_ISSUER.\nlattis_oauth.issuer = '%s'\n" "$LATTIS_ISSUER" >> "$PGDATA/lattis.conf"
+	if [ -f "$PGDATA/pg_hba.conf" ] && grep ' oauth issuer="' "$PGDATA/pg_hba.conf" | grep -qvF "issuer=\"$LATTIS_ISSUER\""; then
+		sed -i -E "s|( oauth issuer=)\"[^\"]*\"|\1\"$LATTIS_ISSUER\"|" "$PGDATA/pg_hba.conf"
+		if [ "$(id -u)" = 0 ]; then
+			chown postgres:postgres "$PGDATA/pg_hba.conf"
+		fi
+		echo "pg_hba.conf : émetteur des jetons mis à jour ($LATTIS_ISSUER)"
+	fi
+fi
 if ! grep -q "^include_if_exists = 'lattis.conf'" "$PGDATA/postgresql.conf"; then
 	printf "\n# Réglages gérés par l'image be-lattis/server (en dernier : ils l'emportent).\ninclude_if_exists = 'lattis.conf'\n" >> "$PGDATA/postgresql.conf"
 fi
