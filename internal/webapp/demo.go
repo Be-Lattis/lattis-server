@@ -80,10 +80,10 @@ func (m *Manager) demo(w http.ResponseWriter, r *http.Request) {
 			Secure: m.Config.PublicURL != nil && m.Config.PublicURL.Scheme == "https", SameSite: http.SameSiteLaxMode,
 			MaxAge: int(m.demoLifetime(m.limits(r.Context())).Seconds()) + 3600})
 	}
-	e, err := m.demoEngine(r.Context(), demoPrefix+id, m.clientIP(r))
+	e, err := m.demoEngineFor(r.Context(), demoPrefix+id, m.clientIP(r), queueToken(r))
 	var le *LimitError
 	if errors.As(err, &le) {
-		limitResponse(w, r, le)
+		m.queueResponse(w, r, le, queueDemo)
 		return
 	}
 	if err != nil {
@@ -108,6 +108,12 @@ func (m *Manager) clientIP(r *http.Request) string {
 
 // demoEngine : moteur de démo de la clé key, démarré au besoin.
 func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, error) {
+	return m.demoEngineFor(ctx, key, ip, "")
+}
+
+// demoEngineFor : demoEngine, une nouvelle démo passant après la file
+// d'attente sauf pour le ticket tok à son tour.
+func (m *Manager) demoEngineFor(ctx context.Context, key, ip, tok string) (*engine, error) {
 	l := m.launcher()
 	// La réserve garde des moteurs du mode serveur : la démo passe à côté.
 	if p, ok := l.(*Pool); ok {
@@ -122,6 +128,9 @@ func (m *Manager) demoEngine(ctx context.Context, key, ip string) (*engine, erro
 		m.engines, m.secrets = map[string]*engine{}, map[string]string{}
 	}
 	m.mu.Unlock()
+	if err := m.admit(ctx, queueDemo, tok); err != nil {
+		return nil, err
+	}
 	lim := m.limits(ctx)
 	m.mu.Lock()
 	demos := 0

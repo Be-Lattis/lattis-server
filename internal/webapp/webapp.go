@@ -78,6 +78,7 @@ type Manager struct {
 	memLast int64
 
 	mu      sync.Mutex
+	queue   *waitQueue
 	engines map[string]*engine   // par utilisateur
 	ended   map[string]time.Time // démos arrêtées à leur échéance
 	secrets map[string]string    // secret → utilisateur
@@ -134,6 +135,7 @@ func (m *Manager) Routes(mux *http.ServeMux) {
 		m.token(w, r)
 	})
 	m.demoRoutes(mux)
+	mux.HandleFunc("GET /queue", m.queueStatus)
 }
 
 // TokenHandler sert /engine/token aux moteurs en conteneur, sur une écoute
@@ -179,10 +181,10 @@ func (m *Manager) app(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "origine refusée", http.StatusForbidden)
 		return
 	}
-	e, err := m.engine(r.Context(), u)
+	e, err := m.engineFor(r.Context(), u, queueToken(r))
 	var le *LimitError
 	if errors.As(err, &le) {
-		limitResponse(w, r, le)
+		m.queueResponse(w, r, le, queueApp)
 		return
 	}
 	if errors.Is(err, ErrBusy) {
@@ -223,6 +225,12 @@ func isWebSocket(r *http.Request) bool {
 
 // engine renvoie le moteur de l'utilisateur, lancé au besoin.
 func (m *Manager) engine(ctx context.Context, u store.User) (*engine, error) {
+	return m.engineFor(ctx, u, "")
+}
+
+// engineFor : engine, une nouvelle session passant après la file d'attente
+// sauf pour le ticket tok à son tour.
+func (m *Manager) engineFor(ctx context.Context, u store.User, tok string) (*engine, error) {
 	l := m.launcher()
 	m.mu.Lock()
 	if e, ok := m.engines[u.ID]; ok {
@@ -240,6 +248,11 @@ func (m *Manager) engine(ctx context.Context, u store.User) (*engine, error) {
 	if m.engines == nil {
 		m.engines, m.secrets = map[string]*engine{}, map[string]string{}
 	}
+	m.mu.Unlock()
+	if err := m.admit(ctx, queueApp, tok); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
 	if len(m.engines) >= m.Config.WebMaxEngines {
 		m.mu.Unlock()
 		slog.Warn("session web refusée : plafond de l'installation", "max", m.Config.WebMaxEngines, "user", u.ID)

@@ -31,6 +31,9 @@ const (
 	LimitDemo     = "demo"
 	// LimitInstall : plafond de l'installation (LATTIS_WEB_MAX_ENGINES).
 	LimitInstall = "install"
+	// LimitQueue : des places sont libres, mais promises à la file
+	// d'attente (Max : position).
+	LimitQueue = "queue"
 )
 
 // LimitError : une limite de l'administration empêche d'ouvrir une session.
@@ -46,6 +49,8 @@ func (e *LimitError) Error() string {
 		return fmt.Sprintf("mémoire de l'application web au maximum (%d Mo sur %d Mo)", e.Used>>20, e.Max>>20)
 	case LimitDemo:
 		return fmt.Sprintf("sessions de démonstration au maximum (%d)", e.Max)
+	case LimitQueue:
+		return fmt.Sprintf("places promises à la file d'attente (position %d)", e.Max)
 	case LimitInstall:
 		return fmt.Sprintf("moteurs au maximum de l'installation (%d, LATTIS_WEB_MAX_ENGINES)", e.Max)
 	}
@@ -106,21 +111,7 @@ func limitResponse(w http.ResponseWriter, r *http.Request, e *LimitError) {
 		http.Error(w, e.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	title, body := "Nombre maximal de sessions web atteint",
-		fmt.Sprintf("Ce serveur accepte au plus %d sessions de l'application web en même temps, et elles sont toutes ouvertes.", e.Max)
-	admin := "Administrateur : cette limite se règle dans Administration › Serveur › Limites ; l'écran Surveillance montre l'occupation."
-	switch e.Kind {
-	case LimitMemory:
-		title = "Mémoire maximale de l'application web atteinte"
-		body = fmt.Sprintf("Les sessions web ouvertes occupent %d Mo, pour une limite de %d Mo fixée par l'administrateur. Aucune nouvelle session ne s'ouvre tant que de la mémoire n'est pas libérée.", e.Used>>20, e.Max>>20)
-	case LimitDemo:
-		title = "La démo est complète"
-		body = fmt.Sprintf("Ce serveur accepte au plus %d sessions de démonstration en même temps, et elles sont toutes ouvertes.", e.Max)
-	case LimitInstall:
-		title = "Plus de ressources disponibles"
-		body = fmt.Sprintf("Ce serveur fait tourner au plus %d moteurs de l'application web à la fois (sessions et démonstrations), et ils sont tous pris.", e.Max)
-		admin = "Administrateur : ce plafond est fixé à l'installation (LATTIS_WEB_MAX_ENGINES, chart : web.maxEngines) ; l'écran Surveillance montre l'occupation."
-	}
+	title, body, admin := limitText(e)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	fmt.Fprintf(w, `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -130,4 +121,27 @@ func limitResponse(w http.ResponseWriter, r *http.Request, e *LimitError) {
 <p>Réessayez dans quelques minutes : une session se libère après une période d'inactivité. Vous pouvez aussi ouvrir vos classeurs avec l'application Lattis sur votre poste.</p>
 <p style="color:#5f6b76">%[3]s</p>
 </body></html>`, html.EscapeString(title), html.EscapeString(body), html.EscapeString(admin))
+}
+
+// limitText : titre, explication et mot pour l'administrateur d'une limite.
+func limitText(e *LimitError) (title, body, admin string) {
+	title, body = "Nombre maximal de sessions web atteint",
+		fmt.Sprintf("Ce serveur accepte au plus %d sessions de l'application web en même temps, et elles sont toutes ouvertes.", e.Max)
+	admin = "Administrateur : cette limite se règle dans Administration › Serveur › Limites ; l'écran Surveillance montre l'occupation."
+	switch e.Kind {
+	case LimitMemory:
+		title = "Mémoire maximale de l'application web atteinte"
+		body = fmt.Sprintf("Les sessions web ouvertes occupent %d Mo, pour une limite de %d Mo fixée par l'administrateur. Aucune nouvelle session ne s'ouvre tant que de la mémoire n'est pas libérée.", e.Used>>20, e.Max>>20)
+	case LimitQueue:
+		title = "Vous êtes dans la file d'attente"
+		body = fmt.Sprintf("Des places se libèrent, mais elles reviennent d'abord aux personnes qui attendent avant vous (position %d).", e.Max)
+	case LimitDemo:
+		title = "La démo est complète"
+		body = fmt.Sprintf("Ce serveur accepte au plus %d sessions de démonstration en même temps, et elles sont toutes ouvertes.", e.Max)
+	case LimitInstall:
+		title = "Plus de ressources disponibles"
+		body = fmt.Sprintf("Ce serveur fait tourner au plus %d moteurs de l'application web à la fois (sessions et démonstrations), et ils sont tous pris.", e.Max)
+		admin = "Administrateur : ce plafond est fixé à l'installation (LATTIS_WEB_MAX_ENGINES, chart : web.maxEngines) ; l'écran Surveillance montre l'occupation."
+	}
+	return title, body, admin
 }
