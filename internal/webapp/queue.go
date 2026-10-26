@@ -35,8 +35,16 @@ const (
 // interrogation par minute au pire dans Chrome).
 var queueTTL = 90 * time.Second
 
-// queuePoll : intervalle d'interrogation suggéré à la page.
-const queuePoll = 3 * time.Second
+// queuePoll : intervalle d'interrogation suggéré à la page : toutes les
+// 10 s, puis toutes les 3 s dans les queueNear dernières places.
+const queueNear = 10
+
+func queuePoll(pos int) time.Duration {
+	if pos > queueNear {
+		return 10 * time.Second
+	}
+	return 3 * time.Second
+}
 
 var queueTokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 
@@ -203,7 +211,7 @@ func (m *Manager) queueStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"position": pos, "ready": pos <= m.room(r.Context(), kind),
-		"poll_ms": queuePoll.Milliseconds()})
+		"poll_ms": queuePoll(pos).Milliseconds()})
 }
 
 // queueResponse : page d'attente avec le ticket et la position (requêtes
@@ -251,5 +259,5 @@ func (m *Manager) queueResponse(w http.ResponseWriter, r *http.Request, e *Limit
   document.addEventListener("visibilitychange", function () { if (!document.hidden) poll(); });
 })();
 </script>
-</body></html>`, html.EscapeString(title), html.EscapeString(body), html.EscapeString(admin), pos, queuePoll.Milliseconds())
+</body></html>`, html.EscapeString(title), html.EscapeString(body), html.EscapeString(admin), pos, queuePoll(pos).Milliseconds())
 }

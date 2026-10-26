@@ -49,12 +49,16 @@ func TestQueue(t *testing.T) {
 		var st struct {
 			Position int  `json:"position"`
 			Ready    bool `json:"ready"`
+			PollMS   int  `json:"poll_ms"`
 		}
 		req := httptest.NewRequest("GET", "/queue", nil)
 		req.AddCookie(&http.Cookie{Name: queueCookie, Value: tok})
 		rec = httptest.NewRecorder()
 		m.queueStatus(rec, req)
 		_ = json.Unmarshal(rec.Body.Bytes(), &st)
+		if st.PollMS != 3000 {
+			t.Fatalf("intervalle près de la tête : %d", st.PollMS)
+		}
 		return tok, st.Position
 	}
 	tb, pb := wait("b")
@@ -85,5 +89,11 @@ func TestQueue(t *testing.T) {
 	}
 	if _, err := m.engineFor(ctx, store.User{ID: "d"}, ""); err != nil {
 		t.Fatalf("file vide : %v", err)
+	}
+}
+
+func TestQueuePoll(t *testing.T) {
+	if queuePoll(11) != 10*time.Second || queuePoll(10) != 3*time.Second || queuePoll(1) != 3*time.Second {
+		t.Fatal("intervalle d'interrogation")
 	}
 }
