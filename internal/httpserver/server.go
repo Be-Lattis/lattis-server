@@ -76,7 +76,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Forms != nil {
 		s.Forms.Bearer = s.bearer
-		s.Forms.ClientIP = func(r *http.Request) string { return auth.ClientIP(r, s.Config.TrustProxy) }
+		s.Forms.ClientIP = func(r *http.Request) string { return auth.ClientIP(r, s.Config.TrustProxy, s.Config.TrustedProxies...) }
 		s.Forms.Routes(mux)
 	}
 	s.Auth.Routes(mux)
@@ -96,7 +96,7 @@ func (s *Server) Handler() http.Handler {
 	return securityHeaders(s.Config.PublicURL.Scheme == "https", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		if strings.HasPrefix(p, "/oauth/") || (strings.HasPrefix(p, "/api/") && p != "/api/events") || strings.HasPrefix(p, "/admin/do/") || strings.HasPrefix(p, "/login/") || strings.HasPrefix(p, "/setup") || strings.HasPrefix(p, "/password/") {
-			if !limiter.allow(auth.ClientIP(r, s.Config.TrustProxy)) {
+			if !limiter.allow(auth.ClientIP(r, s.Config.TrustProxy, s.Config.TrustedProxies...)) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "trop de requêtes", http.StatusTooManyRequests)
 				return

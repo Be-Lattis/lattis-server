@@ -165,6 +165,7 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_LISTEN_ADDR` | `:8080` | Adresse HTTP. |
 | `LATTIS_TLS_CERT_FILE`, `LATTIS_TLS_KEY_FILE` | vide | HTTPS servi par `lattisd` lui-même (sans mandataire). |
 | `LATTIS_TRUST_PROXY` | `false` | Lire l'adresse du client dans `X-Forwarded-For`. |
+| `LATTIS_TRUSTED_PROXIES` | vide | Avec `LATTIS_TRUST_PROXY=true` : adresses ou plages CIDR des mandataires de confiance, séparées par des virgules (`10.42.0.0/16,192.168.1.10`). `X-Forwarded-For` est lu depuis la fin en les sautant : à poser quand plusieurs mandataires se suivent (Nginx Proxy Manager puis Traefik), sinon tous les clients partagent l'adresse du premier et ses limites de débit. |
 | `LATTIS_METRICS_ADDR` | `:9464` | Adresse de `/metrics` (réseau interne). |
 | `LATTIS_SHUTDOWN_DELAY` | `0s` | À l'arrêt, temps pendant lequel `lattisd` sert encore après être sorti du service (`/readyz` en 503) ; 5 s dans le chart (`docs/mise-a-jour.md`). |
 | `LATTIS_SHUTDOWN_GRACE` | `15s` | À l'arrêt, temps laissé aux requêtes en cours. |

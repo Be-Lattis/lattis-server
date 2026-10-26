@@ -468,7 +468,7 @@ func webSettings(st *store.Store) func(context.Context) webSet {
 // webManager : moteurs de l'édition web, lancés selon LATTIS_WEB_LAUNCHER.
 func webManager(cfg *config.Config, st *store.Store, keys *tokens.KeySet, session func(*http.Request) (store.User, error)) (*webapp.Manager, error) {
 	m := &webapp.Manager{Config: cfg, Users: st, Keys: keys, Session: session, TokenURL: cfg.WebTokenURL,
-		ClientIP: func(r *http.Request) string { return auth.ClientIP(r, cfg.TrustProxy) }}
+		ClientIP: func(r *http.Request) string { return auth.ClientIP(r, cfg.TrustProxy, cfg.TrustedProxies...) }}
 	ws := webSettings(st)
 	m.DemoEnabled = func(ctx context.Context) bool { return ws(ctx).demo }
 	m.Limits = func(ctx context.Context) webapp.Limits { return ws(ctx).limits }

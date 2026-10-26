@@ -94,6 +94,9 @@ spec:
             - { name: LATTIS_PUBLIC_URL, value: {{ .Values.publicURL | quote }} }
             - { name: LATTIS_BOOTSTRAP_OWNER, value: {{ .Values.lattisd.bootstrapOwner | quote }} }
             - { name: LATTIS_TRUST_PROXY, value: {{ .Values.lattisd.trustProxy | quote }} }
+            {{- with .Values.lattisd.trustedProxies }}
+            - { name: LATTIS_TRUSTED_PROXIES, value: {{ . | quote }} }
+            {{- end }}
             - name: LATTIS_SERVICE_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ .Values.secrets.existingSecret }}, key: service-password } }
             - name: LATTIS_PG_RW_URL

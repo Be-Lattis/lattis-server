@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -937,14 +938,26 @@ func (s *Service) checkCSRF(r *http.Request) bool {
 }
 
 // ClientIP renvoie l'adresse du client (pour la limitation de débit).
-func ClientIP(r *http.Request, trustProxy bool) string {
+// trusted : mandataires de confiance (LATTIS_TRUSTED_PROXIES), sautés en
+// lisant X-Forwarded-For depuis la fin ; sans eux, la dernière adresse.
+func ClientIP(r *http.Request, trustProxy bool, trusted ...netip.Prefix) string {
 	if trustProxy {
-		// Dernière adresse de la chaîne : celle que le mandataire de confiance
-		// a ajoutée. Les premières sont fournies par le client et ne prouvent rien.
-		if f := r.Header.Values("X-Forwarded-For"); len(f) > 0 {
-			parts := strings.Split(f[len(f)-1], ",")
-			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
-				return ip
+		// Les adresses sont lues depuis la fin : chaque mandataire ajoute
+		// celle qu'il voit. Les premières sont fournies par le client et ne
+		// prouvent rien. Derrière plusieurs mandataires (Nginx Proxy Manager
+		// puis Traefik), la dernière est celle d'un mandataire : celles de
+		// trusted sont sautées.
+		var chain []string
+		for _, v := range r.Header.Values("X-Forwarded-For") {
+			for _, p := range strings.Split(v, ",") {
+				if p = strings.TrimSpace(p); p != "" {
+					chain = append(chain, p)
+				}
+			}
+		}
+		for i := len(chain) - 1; i >= 0; i-- {
+			if i == 0 || !trustedProxy(chain[i], trusted) {
+				return chain[i]
 			}
 		}
 	}
@@ -953,6 +966,21 @@ func ClientIP(r *http.Request, trustProxy bool) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// trustedProxy dit si l'adresse ip appartient à un mandataire de confiance.
+func trustedProxy(ip string, trusted []netip.Prefix) bool {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	for _, p := range trusted {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }
 
 // allowFormTarget ajoute l'origine de retour du client à « form-action » :

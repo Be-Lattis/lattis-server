@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"runtime"
@@ -106,6 +107,10 @@ type Config struct {
 	Mail Mail
 	// TrustProxy : faire confiance à X-Forwarded-For pour la limitation de débit.
 	TrustProxy bool
+	// TrustedProxies : mandataires de confiance (LATTIS_TRUSTED_PROXIES),
+	// sautés en lisant X-Forwarded-For depuis la fin (plusieurs mandataires
+	// en série). Vide : la dernière adresse de la chaîne.
+	TrustedProxies []netip.Prefix
 	// ExtraRedirects : URI de redirection supplémentaires acceptées pour le
 	// client public lattis-desktop (en plus du bouclage local).
 	ExtraRedirects []string
@@ -335,6 +340,21 @@ func parse(get func(string) string) (*Config, error) {
 		errs = append(errs, fmt.Errorf("LATTIS_TIMEZONE : fuseau inconnu (%v)", err))
 	}
 	c.TrustProxy = def("LATTIS_TRUST_PROXY", "false") == "true"
+	for _, s := range strings.Split(def("LATTIS_TRUSTED_PROXIES", ""), ",") {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			a, aerr := netip.ParseAddr(s)
+			if aerr != nil {
+				errs = append(errs, fmt.Errorf("LATTIS_TRUSTED_PROXIES : %q n'est ni une adresse ni une plage CIDR", s))
+				continue
+			}
+			p = netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen())
+		}
+		c.TrustedProxies = append(c.TrustedProxies, p.Masked())
+	}
 	if n, err := strconv.Atoi(def("LATTIS_RATE_LIMIT", "120")); err == nil && n > 0 {
 		c.RateLimit = n
 	} else {

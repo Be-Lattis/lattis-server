@@ -46,6 +46,10 @@ lattisd:
   bootstrapOwner: ""   # adresse du premier propriétaire du serveur
   migrate: true        # migrations au démarrage
   trustProxy: true     # derrière un Ingress
+  # Mandataires de confiance (CIDR, séparés par des virgules) quand plusieurs
+  # se suivent devant lattisd (Nginx Proxy Manager puis Traefik) : sautés
+  # en lisant X-Forwarded-For. Vide : la dernière adresse de la chaîne.
+  trustedProxies: ""
   replicaMaxLag: 10s
   extraEnv: []
   resources: {}
