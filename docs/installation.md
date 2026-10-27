@@ -154,8 +154,8 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 | `LATTIS_PUBLIC_URL` | (obligatoire) | URL publique, émetteur des jetons. |
 | `LATTIS_PG_RW_URL` | (obligatoire) | Connexion de service au parent (`lattis_service`), par exemple `postgres://lattis_service:<mdp>@postgres:5432/lattis?sslmode=require`. |
 | `LATTIS_PG_RO_URLS` | vide | Connexions de service aux réplicas, séparées par des virgules : `lattisd` mesure leur retard et ne les annonce que s'ils suivent. Même nombre et même ordre que `LATTIS_PG_PUBLIC_RO`. |
-| `LATTIS_PG_PUBLIC_RW` | (obligatoire) | `hôte:port` du parent annoncé aux postes. |
-| `LATTIS_PG_PUBLIC_RO` | vide | `hôte:port` des réplicas annoncés aux postes. Sans `LATTIS_PG_RO_URLS`, annoncés tels quels (par exemple un répartiteur qui écarte lui-même les retards). |
+| `LATTIS_PG_PUBLIC_RW` | (obligatoire) | `hôte:port` du parent annoncé aux postes : une adresse que **tous** les postes joignent, jamais une IP interne (§5.0). |
+| `LATTIS_PG_PUBLIC_RO` | vide | `hôte:port` des réplicas annoncés aux postes, joignables par tous les postes comme le parent (§5.0). Sans `LATTIS_PG_RO_URLS`, annoncés tels quels (par exemple un répartiteur qui écarte lui-même les retards). |
 | `LATTIS_REPLICA_MAX_LAG` | `10s` | Retard au-delà duquel un réplica est retiré de la découverte. |
 | `LATTIS_PG_DATABASE` | `lattis` | Base annoncée aux postes. |
 | `LATTIS_PG_SSLMODE` | `verify-full` | `sslmode` annoncé aux postes (`require` pour un certificat autosigné d'essai). |
@@ -182,6 +182,16 @@ Toutes les valeurs, commentées : [`deploy/helm/lattis/values.yaml`](../deploy/h
 Lancement : `lattisd --migrate` (applique les migrations puis sert). Autres commandes : `lattisd migrate`, `lattisd keygen FICHIER`, `lattisd public-keys [FICHIER]`, `lattisd init-dev DIR [HÔTE…]`, `lattisd version`.
 
 Image `be-lattis/server` : `POSTGRES_PASSWORD` (superutilisateur, jamais utilisé par `lattisd`), `LATTIS_SERVICE_PASSWORD`, `LATTIS_ISSUER` (= `LATTIS_PUBLIC_URL`), relu à chaque démarrage (parent et réplicas) : changer l'adresse publique (`publicURL`) met à jour `lattis_oauth.issuer` et `pg_hba.conf`, et relance donc PostgreSQL, `LATTIS_REPLICATION_PASSWORD` (crée `lattis_replicator` si présent), fichiers dans `/etc/lattis/tls` et `/etc/lattis/keys/public.pem`. Point d'entrée `lattis-replica` : `LATTIS_PRIMARY_HOST`, `LATTIS_PRIMARY_PORT` (5432), `LATTIS_REPLICATION_PASSWORD`, `LATTIS_REPLICATION_SLOT` (nom, ou `auto` = nom d'hôte).
+
+### 5.0 Adresse PostgreSQL annoncée aux postes
+
+`lattisd` ne relaie pas les données : il donne aux postes, dans sa découverte, l'adresse de PostgreSQL (`LATTIS_PG_PUBLIC_RW`, et `LATTIS_PG_PUBLIC_RO` pour les réplicas ; chart : `postgres.publicReadWrite` et `replicas.publicEndpoints`). Chaque poste s'y connecte ensuite **directement**. Cette adresse doit donc être joignable depuis tous les postes clients, y compris ceux hors du réseau du serveur :
+
+- **Un nom public, pas une IP interne.** Ni l'IP d'un pod ou d'un service Kubernetes (`10.42.x.x`, `10.43.x.x`, `*.svc.cluster.local`), ni une IP privée du réseau local (`192.168.x.x`) si des postes viennent d'ailleurs. Par exemple `pg.acme.fr:5432`, qui pointe vers l'IP publique.
+- **Le port ouvert jusqu'au nœud.** Le port annoncé doit traverser le pare-feu et la box ou le routeur (redirection de port), jusqu'au service PostgreSQL : `postgres.service.type: LoadBalancer` (sur k3s, ServiceLB l'expose sur le nœud) ou `NodePort`, et un port par réplica annoncé.
+- **TLS exigé.** PostgreSQL n'accepte que des connexions TLS. Avec `LATTIS_PG_SSLMODE=verify-full` (défaut), le certificat doit être signé par une autorité connue des postes et couvrir le nom annoncé ; `require` seulement pour un essai avec un certificat autosigné. Un mandataire HTTP (Nginx Proxy Manager, Traefik en HTTP) ne convient pas : il faut un passage TCP direct, ou un routage TCP qui laisse passer le TLS de PostgreSQL.
+
+**Symptôme d'une adresse mal annoncée** : depuis le réseau du serveur, tout marche ; depuis l'extérieur, l'ajout du serveur dans Lattis échoue et le message d'erreur cite l'adresse interne (par exemple `10.43.12.7:5432`). Corriger `LATTIS_PG_PUBLIC_RW` (ou `postgres.publicReadWrite`), puis redémarrer `lattisd`. Vérifier depuis un poste extérieur : `psql "host=pg.acme.fr port=5432 dbname=lattis sslmode=verify-full"` doit répondre par une erreur d’authentification (faute de jeton), pas par un délai dépassé ni une erreur de certificat.
 
 ### 5.1 Application web : quatre cas
 
