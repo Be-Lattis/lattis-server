@@ -8,7 +8,7 @@ Un poste parle directement à PostgreSQL, sous son propre rôle, et à `lattisd`
 
 | Ressource | Par poste | Goulet | Ce qu'on règle |
 |---|---|---|---|
-| Connexions au PostgreSQL parent | 1 ouverte en permanence (synchronisation), parfois 2 | `max_connections` (400 dans l'image) : environ 300 postes simultanés | `LATTIS_PG_MAX_CONNECTIONS`, mémoire de PostgreSQL ; au-delà de quelques centaines de postes, jalon 8 de la spécification (§21) |
+| Connexions au PostgreSQL parent | 1 ouverte en permanence (synchronisation), parfois 2 | `max_connections` (400 dans l'image) : environ 290 postes simultanés, en comptant `lattisd`, ses réplicas, les moteurs web et une marge. Dimensionner `max_connections` ≥ postes × 1,2 + 50 (mesuré : 300 postes par le relais, environ 320 connexions) ; sinon `lattisd` peut perdre son écoute et le relais répond 503 | `LATTIS_PG_MAX_CONNECTIONS`, mémoire de PostgreSQL ; au-delà de quelques centaines de postes, jalon 8 de la spécification (§21) |
 | Lectures lourdes (tableaux croisés, requêtes) | ponctuel | processeur et disque du parent | réplicas en lecture (`replicas.count`) : les postes y lisent tant qu'ils suivent (`LATTIS_REPLICA_MAX_LAG`) |
 | Relais des changements (`/api/events`) | 1 flux HTTP ouvert | presque rien : une seule écoute PostgreSQL par `lattisd`, quel que soit le nombre de postes | plusieurs `lattisd` (`lattisd.replicaCount`) |
 | `lattisd` | quelques requêtes par heure (jetons) | négligeable | 2 `lattisd` par défaut, pour les mises à jour sans interruption |

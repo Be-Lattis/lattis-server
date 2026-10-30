@@ -26,7 +26,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Be-Lattis/lattis-server/internal/store"
-	"github.com/Be-Lattis/lattis-server/internal/userdb"
 )
 
 // DataChannel : canal des données du Data Lake (toujours écouté).
@@ -62,14 +61,17 @@ type sub struct {
 	user     store.User
 	channels map[string]string // canal → classeur
 	data     bool
-	ch       chan Event
-	closed   bool
+	// lsn : le poste veut la position WAL avec chaque changement (lsn=1),
+	// pour lire ensuite sur un réplica.
+	lsn    bool
+	ch     chan Event
+	closed bool
 }
 
-// Hub écoute PostgreSQL et distribue les notifications.
+// Hub écoute PostgreSQL et distribue les notifications. Pool : connexion
+// de service (écoute et vérification des droits).
 type Hub struct {
-	Pool  *pgxpool.Pool
-	Users userdb.Runner
+	Pool *pgxpool.Pool
 
 	mu        sync.Mutex
 	subs      map[string]map[*sub]struct{} // canal → abonnés
@@ -139,10 +141,11 @@ func (h *Hub) poke() {
 	}
 }
 
-// Run écoute jusqu'à la fin de ctx. Quand l'ensemble des canaux change, une
-// nouvelle connexion LISTEN est ouverte avant de fermer l'ancienne (un
-// changement peut alors arriver deux fois, jamais se perdre) ; après une
-// coupure, les abonnés reçoivent « reset » et resynchronisent.
+// Run écoute jusqu'à la fin de ctx. Quand l'ensemble des canaux change, la
+// même connexion écoute les nouveaux canaux (LISTEN) puis cesse d'écouter
+// ceux qui ne servent plus (UNLISTEN) : aucun changement perdu, et pas de
+// reconnexion qui réécoute tout ; après une coupure, les abonnés reçoivent
+// « reset » et resynchronisent.
 func (h *Hub) Run(ctx context.Context) {
 	h.init()
 	var cur *listener
@@ -150,7 +153,10 @@ func (h *Hub) Run(ctx context.Context) {
 	defer tick.Stop()
 	for {
 		want := h.wanted()
-		if cur == nil || !cur.covers(want) || cur.broken() {
+		if cur != nil && !cur.broken() && !cur.covers(want) {
+			cur.update(want)
+		}
+		if cur == nil || cur.broken() {
 			next, err := h.listen(ctx, want)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -183,13 +189,22 @@ func (h *Hub) Run(ctx context.Context) {
 
 // listener : une connexion LISTEN et sa boucle de lecture.
 type listener struct {
-	channels map[string]bool
-	cancel   context.CancelFunc
-	done     chan struct{}
-	err      error
+	cancel context.CancelFunc
+	done   chan struct{}
+	err    error
+
+	mu       sync.Mutex
+	channels map[string]bool // canaux écoutés
+	pending  []string        // canaux voulus, à appliquer par la boucle
+	wake     context.CancelFunc
 }
 
 func (l *listener) covers(want []string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.pending != nil {
+		return sameSet(want, l.pending)
+	}
 	if len(want) != len(l.channels) {
 		return false
 	}
@@ -199,6 +214,33 @@ func (l *listener) covers(want []string) bool {
 		}
 	}
 	return true
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := map[string]bool{}
+	for _, c := range b {
+		m[c] = true
+	}
+	for _, c := range a {
+		if !m[c] {
+			return false
+		}
+	}
+	return true
+}
+
+// update demande à la boucle d'écouter want : l'attente d'une notification
+// est interrompue (sans fermer la connexion) pour envoyer LISTEN et UNLISTEN.
+func (l *listener) update(want []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pending = want
+	if l.wake != nil {
+		l.wake()
+	}
 }
 
 func (l *listener) broken() bool {
@@ -217,6 +259,8 @@ func (l *listener) stop() {
 
 func (h *Hub) listen(ctx context.Context, channels []string) (*listener, error) {
 	cfg := h.Pool.Config().ConnConfig.Copy()
+	// Repérable dans pg_stat_activity.
+	cfg.RuntimeParams["application_name"] = "lattisd-relais"
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -236,18 +280,39 @@ func (h *Hub) listen(ctx context.Context, channels []string) (*listener, error) 
 	}
 	lctx, cancel := context.WithCancel(ctx)
 	l.cancel = cancel
-	h.mu.Lock()
-	h.listening = l.channels
-	h.mu.Unlock()
+	h.setListening(l.channels)
 	go func() {
 		defer close(l.done)
 		defer conn.Close(context.Background())
 		for {
-			n, err := conn.WaitForNotification(lctx)
-			if err != nil {
-				if lctx.Err() == nil {
-					l.err = err
+			l.mu.Lock()
+			if want := l.pending; want != nil {
+				l.pending = nil
+				l.mu.Unlock()
+				if err := h.relisten(lctx, conn, l, want); err != nil {
+					if lctx.Err() == nil {
+						l.err = err
+					}
+					return
 				}
+				continue
+			}
+			wctx, wake := context.WithCancel(lctx)
+			l.wake = wake
+			l.mu.Unlock()
+			n, err := conn.WaitForNotification(wctx)
+			l.mu.Lock()
+			l.wake = nil
+			l.mu.Unlock()
+			wake()
+			if err != nil {
+				if lctx.Err() != nil {
+					return
+				}
+				if wctx.Err() != nil {
+					continue // réveillée par update : la connexion reste ouverte
+				}
+				l.err = err
 				return
 			}
 			h.dispatch(lctx, conn, n)
@@ -256,29 +321,80 @@ func (h *Hub) listen(ctx context.Context, channels []string) (*listener, error) 
 	return l, nil
 }
 
-// dispatch envoie une notification à ses abonnés, avec la position WAL du
-// parent (le changement est validé : la notification part au COMMIT).
+// setListening publie les canaux écoutés (covered).
+func (h *Hub) setListening(channels map[string]bool) {
+	cp := make(map[string]bool, len(channels))
+	for c := range channels {
+		cp[c] = true
+	}
+	h.mu.Lock()
+	h.listening = cp
+	h.mu.Unlock()
+}
+
+// relisten passe la connexion de l'écoute actuelle à want, en un
+// aller-retour : LISTEN des nouveaux canaux d'abord, puis UNLISTEN des
+// anciens. Les notifications reçues pendant ce temps sont gardées par pgx et
+// lues ensuite.
+func (h *Hub) relisten(ctx context.Context, conn *pgx.Conn, l *listener, want []string) error {
+	l.mu.Lock()
+	next := map[string]bool{}
+	var sql strings.Builder
+	for _, c := range want {
+		next[c] = true
+		if !l.channels[c] {
+			sql.WriteString("LISTEN " + pgx.Identifier{c}.Sanitize() + ";")
+		}
+	}
+	for c := range l.channels {
+		if !next[c] {
+			sql.WriteString("UNLISTEN " + pgx.Identifier{c}.Sanitize() + ";")
+		}
+	}
+	l.mu.Unlock()
+	if sql.Len() > 0 {
+		if _, err := conn.PgConn().Exec(ctx, sql.String()).ReadAll(); err != nil {
+			return err
+		}
+	}
+	l.mu.Lock()
+	l.channels = next
+	l.mu.Unlock()
+	h.setListening(next)
+	return nil
+}
+
+// dispatch envoie une notification à ses abonnés. La position WAL du
+// parent (le changement est validé : la notification part au COMMIT) n'est
+// lue que si un abonné la demande (lsn=1) : un aller-retour de moins par
+// notification sinon.
 func (h *Hub) dispatch(ctx context.Context, conn *pgx.Conn, n *pgconn.Notification) {
-	var lsn string
-	_ = conn.QueryRow(ctx, `SELECT pg_current_wal_lsn()::text`).Scan(&lsn)
 	h.mu.Lock()
 	var targets []*sub
-	var ev Event
+	wantLSN := false
 	if n.Channel == DataChannel {
-		ev = Event{Kind: "data", Payload: n.Payload, LSN: lsn}
 		for s := range h.dataSubs {
 			targets = append(targets, s)
+			wantLSN = wantLSN || s.lsn
 		}
 	} else {
 		for s := range h.subs[n.Channel] {
 			targets = append(targets, s)
+			wantLSN = wantLSN || s.lsn
 		}
 	}
 	h.mu.Unlock()
+	var lsn string
+	if wantLSN {
+		_ = conn.QueryRow(ctx, `SELECT pg_current_wal_lsn()::text`).Scan(&lsn)
+	}
 	for _, s := range targets {
-		e := ev
+		e := Event{Kind: "data", Payload: n.Payload}
 		if n.Channel != DataChannel {
-			e = Event{Kind: "change", Workbook: s.channels[n.Channel], Payload: n.Payload, LSN: lsn}
+			e = Event{Kind: "change", Workbook: s.channels[n.Channel], Payload: n.Payload}
+		}
+		if s.lsn {
+			e.LSN = lsn
 		}
 		h.send(s, e)
 	}
@@ -328,29 +444,26 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 // ErrForbidden : un classeur demandé est inconnu ou interdit.
 var ErrForbidden = errors.New("classeur inconnu ou interdit")
 
-// channelOf vérifie l'accès de l'utilisateur au classeur (sous son identité)
-// et rend le canal du classeur.
+// channelOf vérifie l'accès de l'utilisateur au classeur et rend le canal
+// du classeur. La vérification (lattis.can_follow, même règle que
+// lattis.my_capabilities) passe par la connexion de service : pas de
+// connexion PostgreSQL par utilisateur pour suivre un classeur.
 func (h *Hub) channelOf(ctx context.Context, u store.User, workbook string) (string, error) {
-	var ch string
-	err := h.Users.As(ctx, u, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `SELECT lattis.my_capabilities($1::uuid)`, workbook)
-		return err
-	})
-	if err == nil {
-		// Canal du classeur : lu par la connexion de service (la table des
-		// classeurs n'est pas lisible par les utilisateurs).
-		err = h.Pool.QueryRow(ctx, `SELECT 'wb_' || slug FROM lattis.workbooks WHERE id = $1::uuid`, workbook).Scan(&ch)
-	}
+	var ch *string
+	err := h.Pool.QueryRow(ctx, `SELECT lattis.can_follow($1::uuid, $2::uuid)`, u.ID, workbook).Scan(&ch)
 	var pe *pgconn.PgError
-	if errors.As(err, &pe) && (pe.Code == "42501" || pe.Code == "P0002" || pe.Code == "22P02") || errors.Is(err, pgx.ErrNoRows) {
+	if errors.As(err, &pe) && pe.Code == "22P02" || err == nil && ch == nil {
 		return "", ErrForbidden
 	}
-	return ch, err
+	if err != nil {
+		return "", err
+	}
+	return *ch, nil
 }
 
-func (h *Hub) subscribe(ctx context.Context, u store.User, workbooks []string, data bool) (*sub, error) {
+func (h *Hub) subscribe(ctx context.Context, u store.User, workbooks []string, data, lsn bool) (*sub, error) {
 	h.init()
-	s := &sub{user: u, channels: map[string]string{}, data: data, ch: make(chan Event, bufferSize)}
+	s := &sub{user: u, channels: map[string]string{}, data: data, lsn: lsn, ch: make(chan Event, bufferSize)}
 	for _, wb := range workbooks {
 		ch, err := h.channelOf(ctx, u, wb)
 		if err != nil {
@@ -494,7 +607,7 @@ func (h *Hub) covered(s *sub) bool {
 
 // --- Flux SSE ------------------------------------------------------------------------
 
-// Handler sert GET /api/events?workbooks=<id>,<id>&data=1 (jeton d'accès en
+// Handler sert GET /api/events?workbooks=<id>,<id>&data=1&lsn=1 (jeton d'accès en
 // Bearer, le même que pour PostgreSQL). bearer rend aussi l'expiration du
 // jeton : le flux se ferme alors (événement « expired »), le poste se
 // réabonne avec un jeton neuf ; un compte désactivé entre-temps est refusé.
@@ -529,7 +642,7 @@ func (h *Hub) Handler(bearer func(*http.Request) (store.User, time.Time, error))
 			return
 		default:
 		}
-		s, err := h.subscribe(r.Context(), u, wbs, data)
+		s, err := h.subscribe(r.Context(), u, wbs, data, r.URL.Query().Get("lsn") == "1")
 		if errors.Is(err, ErrForbidden) {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return

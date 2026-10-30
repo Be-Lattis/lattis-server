@@ -15,7 +15,6 @@ import (
 	"github.com/Be-Lattis/lattis-server/internal/events"
 	"github.com/Be-Lattis/lattis-server/internal/store"
 	"github.com/Be-Lattis/lattis-server/internal/testpg"
-	"github.com/Be-Lattis/lattis-server/internal/userdb"
 )
 
 type ev struct {
@@ -116,12 +115,17 @@ func TestRelay(t *testing.T) {
 	must(as(owner, `SELECT lattis.my_capabilities($1::uuid) ->> 'schema'`, &schema, wb))
 	must(as(owner, `SELECT lattis.finish_publish($1::uuid)`, new(int), wb))
 	must(as(owner, `SELECT lattis.invite($1, $2::uuid, ARRAY['reader'])`, nil, reader.Email, wb))
+	var wb2, tid2, schema2 string
+	must(as(owner, `SELECT lattis.create_workbook('Achats', 'collaborative')::text`, &wb2))
+	must(as(owner, `SELECT lattis.create_table($1::uuid, 'Lignes', '[{"name":"Article","type":"text"}]')::text`, &tid2, wb2))
+	must(as(owner, `SELECT lattis.my_capabilities($1::uuid) ->> 'schema'`, &schema2, wb2))
+	must(as(owner, `SELECT lattis.finish_publish($1::uuid)`, new(int), wb2))
 
-	hub := &events.Hub{Pool: db.Store.DB, Users: userdb.SessionAuth{Pool: db.Super}}
+	hub := &events.Hub{Pool: db.Store.DB}
 	rctx, stop := context.WithCancel(ctx)
 	defer stop()
 	go hub.Run(rctx)
-	who := map[string]store.Enrollment{"reader": reader, "outsider": outsider}
+	who := map[string]store.Enrollment{"reader": reader, "outsider": outsider, "owner": owner}
 	srv := httptest.NewServer(hub.Handler(func(r *http.Request) (store.User, time.Time, error) {
 		u, err := db.Store.User(r.Context(), who[r.URL.Query().Get("u")].UserID)
 		var exp time.Time
@@ -146,7 +150,7 @@ func TestRelay(t *testing.T) {
 	}
 	cancel()
 
-	c, cancel = stream(t, srv.URL+"?u=reader&data=1&workbooks="+wb)
+	c, cancel = stream(t, srv.URL+"?u=reader&data=1&lsn=1&workbooks="+wb)
 	defer cancel()
 	next(t, c, "ready")
 	// Présence : les membres qui suivent le classeur (ici le lecteur seul).
@@ -157,6 +161,22 @@ func TestRelay(t *testing.T) {
 	e := next(t, c, "change")
 	if e.data["workbook"] != wb || e.data["payload"] != tid || e.data["lsn"] == nil {
 		t.Fatalf("changement : %+v", e.data)
+	}
+	// Un second classeur suivi : écouté sur la même connexion (LISTEN
+	// ajouté), sans position WAL faute de lsn=1.
+	c3, cancel3 := stream(t, srv.URL+"?u=owner&workbooks="+wb2)
+	defer cancel3()
+	next(t, c3, "ready")
+	must(as(owner, `INSERT INTO `+pgx.Identifier{schema2, "Lignes"}.Sanitize()+` (lattis_id, "Article") VALUES (gen_random_uuid(), 'Clou')`, nil))
+	if e := next(t, c3, "change"); e.data["workbook"] != wb2 || e.data["payload"] != tid2 || e.data["lsn"] != nil {
+		t.Fatalf("second classeur : %+v", e.data)
+	}
+	must(as(owner, `INSERT INTO `+pgx.Identifier{schema, "Lignes"}.Sanitize()+` (lattis_id, "Article") VALUES (gen_random_uuid(), 'Écrou')`, nil))
+	next(t, c, "change")
+	var listeners int
+	must(db.Super.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name = 'lattisd-relais'`).Scan(&listeners))
+	if listeners != 1 {
+		t.Fatalf("connexions d'écoute : %d", listeners)
 	}
 	_, err := db.Super.Exec(ctx, `SELECT pg_notify('lattis_data', '*catalog')`)
 	must(err)
@@ -170,7 +190,7 @@ func TestRelay(t *testing.T) {
 	if e := next(t, c, "revoked"); e.data["workbook"] != wb {
 		t.Fatalf("retrait : %+v", e.data)
 	}
-	if hub.Subscribers() != 1 {
+	if hub.Subscribers() != 2 { // le lecteur (Data Lake) et l'auteur (second classeur)
 		t.Fatalf("abonnés : %d", hub.Subscribers())
 	}
 	// Arrêt de lattisd : le flux se ferme avec « restart » (le poste se

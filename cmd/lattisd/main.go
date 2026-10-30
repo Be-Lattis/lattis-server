@@ -359,7 +359,7 @@ func serve(doMigrate bool) error {
 	authSvc.MailEnabled = mailer != nil
 	srv.Forms = &forms.Handler{Store: st, Users: users, Keys: keys, Session: adminSvc.Session}
 	// Relais des changements : une écoute PostgreSQL pour tous les postes.
-	srv.Events = &events.Hub{Pool: st.DB, Users: users}
+	srv.Events = &events.Hub{Pool: st.DB}
 	go srv.Events.Run(ctx)
 	go runner.Run(ctx)
 	// Routeur construit une fois srv complet : Handler n'enregistre que les
