@@ -417,6 +417,7 @@ Seul l'amorçage est hors base (variables d'environnement ou fichier `lattisd.ya
    - la file hors ligne de l'application, rejouée par cette API ;
    - le pouvoir de `lattisd` d'agir au nom de chacun : déjà implicite, puisqu'il émet les jetons, mais il devient direct. Le reste des droits de `lattis_service` ne change pas ;
    - les limites : taille des lots, débit par personne, délai par transaction.
+10. **Changements lus une fois par `lattisd`** (décidé par Louis le 30/10/2026, après la v1) : aujourd'hui, chaque modification coûte environ une transaction par poste qui la relit. `lattisd` lirait le changement une seule fois et le pousserait dans l'événement du relais. Serveur et application, 3 à 5 jours (audit collaboration du 30/10/2026, P1).
 
 Possibilités futures, **non confirmées** (rien de prévu tant que Louis ne les a pas validées) :
 - Variante du chart Helm sur l'opérateur **CloudNativePG** : bascule automatique sur un réplica, sauvegardes gérées (§17).
