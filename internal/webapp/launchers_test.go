@@ -1,18 +1,21 @@
 package webapp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Be-Lattis/lattis-server/internal/config"
+	"github.com/Be-Lattis/lattis-server/internal/store"
 )
 
 // listener : un faux moteur qui accepte les connexions.
@@ -329,4 +332,56 @@ func TestPool(t *testing.T) {
 		t.Fatalf("moteurs démarrés : %d", n)
 	}
 	p.StopAll()
+}
+
+// addrLauncher : moteur fictif joignable à une adresse.
+type addrLauncher struct{ addr string }
+
+type addrInst struct {
+	fakeInst
+	addr string
+}
+
+func (a *addrInst) Addr() string { return a.addr }
+
+func (l *addrLauncher) Start(_ context.Context, s Spec) (Instance, error) {
+	return &addrInst{fakeInst: fakeInst{user: s.UserID, done: make(chan struct{})}, addr: l.addr}, nil
+}
+
+// Relais du WebSocket : la négociation de permessage-deflate va jusqu'au
+// moteur et en revient (le relais ne termine pas la connexion).
+func TestWebSocketExtensionsRelayed(t *testing.T) {
+	var got string
+	engineSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Sec-WebSocket-Extensions")
+		c, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: x\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n")
+		_ = rw.Flush()
+	}))
+	defer engineSrv.Close()
+	pub, _ := url.Parse("http://l.example")
+	m := &Manager{Config: &config.Config{PublicURL: pub, WebMaxEngines: 2, WebIdle: time.Minute},
+		Launcher: &addrLauncher{addr: strings.TrimPrefix(engineSrv.URL, "http://")},
+		Session:  func(*http.Request) (store.User, error) { return store.User{ID: "u"}, nil }}
+	srv := httptest.NewServer(http.HandlerFunc(m.app))
+	defer srv.Close()
+	c, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_, _ = c.Write([]byte("GET /app/ws HTTP/1.1\r\nHost: l.example\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: a\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n"))
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols || resp.Header.Get("Sec-WebSocket-Extensions") != "permessage-deflate" || !strings.Contains(got, "permessage-deflate") {
+		t.Fatalf("négociation : %d %q, reçu par le moteur %q", resp.StatusCode, resp.Header.Get("Sec-WebSocket-Extensions"), got)
+	}
 }
