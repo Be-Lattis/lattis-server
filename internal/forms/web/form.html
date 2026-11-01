@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{if .Title}}{{.Title}}{{else}}{{index .T "not_found_title"}}{{end}}</title>
-<link rel="icon" href="/logo">
+<link rel="icon" href="{{if .Favicon}}{{.Favicon}}{{else}}/logo{{end}}">
+{{if .Favicon}}<link rel="apple-touch-icon" href="{{.Favicon}}">{{end}}
+{{if .Manifest}}<link rel="manifest" href="{{.Manifest}}" crossorigin="use-credentials"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">{{end}}
+{{if .Theme}}<meta name="theme-color" content="{{.Theme}}">{{end}}
 <link rel="stylesheet" href="/form-static/form.css">
 <script src="/form-static/form.js" defer></script>
 </head>
@@ -17,7 +20,7 @@
 
 {{define "bottom"}}
 </main>
-<footer class="foot">{{if .Server}}{{.Server}} · {{end}}{{index .T "powered"}}</footer>
+<footer class="foot">{{if .Server}}{{.Server}} · {{end}}{{index .T "powered"}}{{if .Manifest}}<button type="button" class="install" hidden>{{index .T "install"}}</button>{{end}}</footer>
 </body>
 </html>{{end}}
 

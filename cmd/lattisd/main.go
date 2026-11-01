@@ -357,7 +357,7 @@ func serve(doMigrate bool) error {
 	}
 	adminSvc.Mailer = mailer
 	authSvc.MailEnabled = mailer != nil
-	srv.Forms = &forms.Handler{Store: st, Users: users, Keys: keys, Session: adminSvc.Session}
+	srv.Forms = &forms.Handler{Store: st, Users: users, Keys: keys, Session: adminSvc.Session, DefaultIcon: httpserver.DefaultLogo()}
 	// Relais des changements : une écoute PostgreSQL pour tous les postes.
 	srv.Events = &events.Hub{Pool: st.DB}
 	go srv.Events.Run(ctx)

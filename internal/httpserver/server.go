@@ -195,6 +195,9 @@ func (s *Server) jwks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.Keys.JWKS())
 }
 
+// DefaultLogo : icône Lattis (PNG), pour un serveur ou un formulaire sans logo.
+func DefaultLogo() []byte { return defaultLogo }
+
 // defaultLogo : icône Lattis, logo d'un serveur qui n'en a pas.
 //
 //go:embed web/lattis-logo.png
@@ -271,7 +274,7 @@ func securityHeaders(https bool, next http.HandlerFunc) http.Handler {
 			// styles de composants, WebSocket vers la même origine.
 			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'")
 		} else {
-			h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+			h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		}
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")

@@ -56,5 +56,7 @@ button[type=submit] { width: 100%; }
 .trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .done { padding: 20px 0; } .thanks { font-size: 18px; }
 .foot { max-width: 680px; margin: 0 auto; padding: 12px 20px 28px; color: var(--muted); font-size: 13px; text-align: center; }
+.foot .install { display: block; margin: 8px auto 0; padding: 0; width: auto; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+.foot .install[hidden] { display: none; }
 [hidden] { display: none !important; }
 .unit { display: flex; align-items: center; gap: 8px; } .unit span { color: var(--muted); flex: none; }

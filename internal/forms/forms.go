@@ -62,7 +62,9 @@ type Handler struct {
 	Bearer func(*http.Request) (store.User, error)
 	// TrustProxy : adresse du client lue dans X-Forwarded-For.
 	ClientIP func(*http.Request) string
-	Now      func() time.Time
+	// DefaultIcon : icône Lattis (PNG), pour un formulaire et un serveur sans logo.
+	DefaultIcon []byte
+	Now         func() time.Time
 
 	mu   sync.Mutex
 	hits map[string][]time.Time
@@ -81,6 +83,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /f/{code}", h.submit)
 	mux.HandleFunc("GET /f/{code}/merci", h.thanks)
 	mux.HandleFunc("GET /f/{code}/img/{id}", h.image)
+	mux.HandleFunc("GET /f/{code}/icon/{id}/{size}", h.icon)
+	mux.HandleFunc("GET /f/{code}/manifest.webmanifest", h.manifest)
 	mux.HandleFunc("GET /form-static/{file}", h.static)
 	mux.HandleFunc("POST /api/forms/{id}/images", h.upload)
 }
@@ -262,6 +266,8 @@ type view struct {
 	Preview, PreviewDone                                     bool
 	Another                                                  string
 	Server                                                   string
+	// Favicon, Manifest, Theme : icône et application installable.
+	Favicon, Manifest, Theme string
 }
 
 func (h *Handler) render(w http.ResponseWriter, status int, name string, v view) {
@@ -286,6 +292,7 @@ func (h *Handler) message(w http.ResponseWriter, status int, p *Page, key string
 			v.Message = ""
 		}
 		v.Logo, v.Banner = h.imageURL(p, "logo"), h.imageURL(p, "banner")
+		appHead(p, &v)
 	}
 	if v.Lang == "" {
 		v.Lang = "fr"
@@ -311,6 +318,7 @@ func (h *Handler) form(p *Page, r *http.Request, user *store.User, values url.Va
 	v := view{Lang: p.Definition.Lang, T: t, Title: a.Title, Accent: a.Accent, Intro: a.Intro, Privacy: a.Privacy,
 		Submit: a.SubmitLabel, Token: h.pageToken(p.Code, uid), Action: r.URL.RequestURI(), Preview: p.Preview,
 		Server: p.ServerName, Errors: len(errs) > 0, Logo: h.imageURL(p, "logo"), Banner: h.imageURL(p, "banner")}
+	appHead(p, &v)
 	if v.Lang == "" {
 		v.Lang = "fr"
 	}
@@ -682,6 +690,7 @@ func (h *Handler) thanks(w http.ResponseWriter, r *http.Request) {
 	t := lang(p.Definition.Lang)
 	v := view{Lang: p.Definition.Lang, T: t, Title: p.Definition.Appearance.Title, Accent: p.Definition.Appearance.Accent,
 		Thanks: p.Definition.Appearance.Thanks, Server: p.ServerName, Logo: h.imageURL(p, "logo")}
+	appHead(p, &v)
 	if r.URL.Query().Get("autre") == "1" && p.Definition.Appearance.Another {
 		v.Another = "/f/" + p.Code
 		if l := r.URL.Query().Get("lien"); l != "" {

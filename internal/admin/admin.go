@@ -267,6 +267,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 
 // --- Connexion -------------------------------------------------------------------
 
+// nextTTL : durée du lien d'origine gardé (celle d'un lien de mot de passe).
+const nextTTL = 7 * 24 * time.Hour
+
 type loginData struct {
 	Verifier string `json:"v"`
 	State    string `json:"s"`
@@ -284,6 +287,11 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setCookie(w, loginCookie, signed, "/admin/callback", loginTTL, http.SameSiteLaxMode)
+	// Lien d'origine (formulaire, classeur) : retrouvé aussi après un mot de
+	// passe choisi par un lien reçu par e-mail.
+	if ld.Next != "" && !strings.HasPrefix(ld.Next, "/admin/") {
+		s.setCookie(w, auth.NextCookie, url.QueryEscape(ld.Next), "/", nextTTL, http.SameSiteLaxMode)
+	}
 	sum := sha256.Sum256([]byte(ld.Verifier))
 	q := url.Values{
 		"client_id": {auth.AdminClientID}, "redirect_uri": {s.Config.URL("/admin/callback")},
@@ -341,6 +349,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setCookie(w, sessionCookie, signed, "/", sessionTTL, http.SameSiteLaxMode)
 	s.clearCookie(w, sessionCookie, "/admin") // session d'avant le 18/10, sous /admin
+	s.clearCookie(w, auth.NextCookie, "/")
 	next := ld.Next
 	if next == "" {
 		next = "/admin/"
@@ -680,13 +689,8 @@ func (s *Service) takeFlash(w http.ResponseWriter, r *http.Request) flash {
 	return f
 }
 
-// safeBack n'accepte qu'un chemin local de l'administration.
-func safeBack(p string) string {
-	if !(strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/w/") || strings.HasPrefix(p, "/app/")) || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") {
-		return ""
-	}
-	return p
-}
+// safeBack n'accepte qu'un chemin local connu du site.
+func safeBack(p string) string { return auth.SafeNext(p) }
 
 func randomString() string {
 	b := make([]byte, 32)

@@ -20,7 +20,7 @@ var texts = map[string]tr{
 		"too_fast": "Envoi trop rapide : patientez quelques secondes puis renvoyez.", "expired": "La page a expiré : vérifiez vos réponses et renvoyez.",
 		"rate": "Trop d'envois : réessayez dans une minute.", "preview": "Aperçu : les réponses ne sont pas enregistrées.",
 		"preview_done": "Aperçu : la réponse est valide, mais elle n'a pas été enregistrée.", "offline": "Pas de réseau : votre réponse est gardée sur ce téléphone.",
-		"retry": "Réessayer", "error": "Le serveur n'a pas pu enregistrer la réponse : réessayez.", "powered": "Formulaire Lattis",
+		"retry": "Réessayer", "error": "Le serveur n'a pas pu enregistrer la réponse : réessayez.", "powered": "Formulaire Lattis", "install": "Installer comme application",
 		"locked": "Valeur fixée par le lien.",
 	},
 	"en": {
@@ -39,7 +39,7 @@ var texts = map[string]tr{
 		"too_fast": "Sent too quickly: wait a few seconds and submit again.", "expired": "The page has expired: check your answers and submit again.",
 		"rate": "Too many submissions: try again in a minute.", "preview": "Preview: responses are not recorded.",
 		"preview_done": "Preview: the response is valid but was not recorded.", "offline": "No network: your response is kept on this device.",
-		"retry": "Retry", "error": "The server could not record the response: please try again.", "powered": "Lattis form",
+		"retry": "Retry", "error": "The server could not record the response: please try again.", "powered": "Lattis form", "install": "Install as an app",
 		"locked": "Value set by the link.",
 	},
 }

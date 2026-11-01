@@ -202,6 +202,28 @@ func TestFormPage(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || m == nil {
 		t.Fatalf("envoi du logo : %d %s", resp.StatusCode, b)
 	}
+	// Favicon et application installable : icône carrée, manifeste du formulaire.
+	_, page, _ = do("GET", preview, nil)
+	if !strings.Contains(page, `rel="icon" href="/f/`+code+`/icon/`+m[1]+`/192"`) || strings.Contains(page, `rel="manifest"`) {
+		t.Fatalf("en-tête de l'aperçu : %.600s", page)
+	}
+	c, icon, ih := do("GET", "/f/"+code+"/icon/"+m[1]+"/512", nil)
+	if cfg, err := png.DecodeConfig(strings.NewReader(icon)); c != http.StatusOK || err != nil || cfg.Width != 512 || cfg.Height != 512 || ih.Get("Content-Type") != "image/png" {
+		t.Fatalf("icône : %d %v %+v", c, err, cfg)
+	}
+	if c, _, _ := do("GET", "/f/"+code+"/icon/"+m[1]+"/7", nil); c != http.StatusNotFound {
+		t.Fatalf("taille d'icône inconnue : %d", c)
+	}
+	who = "owner"
+	c, mf, _ := do("GET", "/f/"+code+"/manifest.webmanifest", nil)
+	if c != http.StatusOK || !strings.Contains(mf, `"start_url":"/f/`+code+`"`) || !strings.Contains(mf, `"display":"standalone"`) || !strings.Contains(mf, `"512x512"`) {
+		t.Fatalf("manifeste : %d %s", c, mf)
+	}
+	who = "outsider"
+	if c, _, _ := do("GET", "/f/"+code+"/manifest.webmanifest", nil); c != http.StatusNotFound {
+		t.Fatalf("manifeste d'un formulaire interdit : %d", c)
+	}
+	who = "owner"
 	c, body, hdr := do("GET", "/f/"+code+"/img/"+m[1], nil)
 	if c != http.StatusOK || hdr.Get("Content-Type") != "image/png" {
 		t.Fatalf("logo servi : %d %s", c, hdr.Get("Content-Type"))

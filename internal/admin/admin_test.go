@@ -319,6 +319,14 @@ func TestAdminConsole(t *testing.T) {
 	if resp, body := ob.login(other, pw, "/admin/users"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "réservée aux propriétaires") {
 		t.Fatalf("non-propriétaire : %d", resp.StatusCode)
 	}
+	// Lien d'un formulaire ou d'un classeur : gardé par la connexion. Un
+	// autre site n'est jamais suivi.
+	if resp, _ := e.browser().login(other, pw, "/admin/login?next="+url.QueryEscape("/f/abcdefghjk?commune=Brest")); resp.Request.URL.RequestURI() != "/f/abcdefghjk?commune=Brest" {
+		t.Fatalf("retour au formulaire : %s", resp.Request.URL)
+	}
+	if resp, _ := e.browser().login(other, pw, "/admin/login?next="+url.QueryEscape("https://ailleurs.example/f/x")); resp.Request.URL.Host != strings.TrimPrefix(e.srv.URL, "http://") {
+		t.Fatalf("redirection ouverte : %s", resp.Request.URL)
+	}
 	// Compte prêt (inscription par un fournisseur) : ouvert à tout utilisateur.
 	if resp, body := ob.get("/admin/bienvenue"); resp.StatusCode != http.StatusOK || !strings.Contains(body, other+" est prêt") {
 		t.Fatalf("bienvenue : %d", resp.StatusCode)

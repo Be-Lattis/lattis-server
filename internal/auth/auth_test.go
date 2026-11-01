@@ -347,6 +347,18 @@ func TestUpstreamOIDCFlow(t *testing.T) {
 		!strings.Contains(body, "/admin/login?next=%2Fadmin%2Fbienvenue") {
 		t.Fatal("inscription par fournisseur non proposée")
 	}
+	// Lien d'origine gardé à la connexion : l'inscription y ramène. Un autre
+	// site n'est pas repris.
+	pub, _ := url.Parse(e.srv.URL)
+	e.c.Jar.SetCookies(pub, []*http.Cookie{{Name: auth.NextCookie, Value: url.QueryEscape("/f/abcdefghjk"), Path: "/"}})
+	if _, body := e.get(e.srv.URL + "/setup?token=" + token); !strings.Contains(body, "/admin/login?next=%2Ff%2Fabcdefghjk") {
+		t.Fatal("lien d'origine perdu à l'inscription")
+	}
+	e.c.Jar.SetCookies(pub, []*http.Cookie{{Name: auth.NextCookie, Value: url.QueryEscape("https://ailleurs.example/"), Path: "/"}})
+	if _, body := e.get(e.srv.URL + "/setup?token=" + token); strings.Contains(body, "ailleurs") {
+		t.Fatal("lien d'un autre site repris")
+	}
+	e.c.Jar.SetCookies(pub, []*http.Cookie{{Name: auth.NextCookie, Value: "", Path: "/", MaxAge: -1}})
 	email := testpg.Email("kc")
 	idp.claims = tokens.Claims{Subject: "kc-42", Email: email, Name: "Agent Keycloak"}
 

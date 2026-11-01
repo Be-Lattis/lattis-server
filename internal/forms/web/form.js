@@ -1,6 +1,24 @@
 // Formulaire Lattis : tout marche sans ce script ; il ajoute la position,
 // le brouillon gardé sur l'appareil et « Réessayer » sans réseau.
 "use strict";
+// Installer le formulaire comme application, quand le navigateur le propose.
+(function () {
+  const button = document.querySelector(".foot .install");
+  if (!button) return;
+  let prompt = null;
+  addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    prompt = e;
+    button.hidden = false;
+  });
+  button.addEventListener("click", () => {
+    if (!prompt) return;
+    prompt.prompt();
+    prompt = null;
+    button.hidden = true;
+  });
+  addEventListener("appinstalled", () => { button.hidden = true; });
+})();
 (function () {
   const form = document.querySelector("form[data-draft]");
   if (!form) return;

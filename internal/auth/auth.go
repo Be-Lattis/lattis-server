@@ -55,7 +55,11 @@ const (
 	// freshCookie : mot de passe choisi à l'instant sur /setup ; la connexion
 	// suivante à l'administration ne le redemande pas.
 	freshCookie = "lattis_fresh"
-	audFresh    = "lattisd:fresh-login"
+	// NextCookie : lien d'origine (formulaire, classeur) d'une personne partie
+	// se connecter, retrouvé après une inscription ou un mot de passe choisi
+	// par un lien reçu par e-mail.
+	NextCookie = "lattis_next"
+	audFresh   = "lattisd:fresh-login"
 )
 
 //go:embed web/*.html web/lattis.css
@@ -599,9 +603,37 @@ func (s *Service) setupForm(w http.ResponseWriter, r *http.Request) {
 		CSRF: s.csrf(w, r), MinLength: password.MinLength, Links: s.providerSignup(r)})
 }
 
+// SafeNext n'accepte qu'un chemin local connu où revenir après la connexion
+// (administration, classeur, application, formulaire) : pas de redirection
+// vers un autre site.
+func SafeNext(p string) string {
+	ok := false
+	for _, prefix := range []string{"/admin/", "/w/", "/app/", "/f/"} {
+		ok = ok || strings.HasPrefix(p, prefix)
+	}
+	if !ok || strings.ContainsAny(p, "\\\r\n") {
+		return ""
+	}
+	return p
+}
+
+// nextLink : lien d'origine gardé à la connexion, s'il y en a un.
+func nextLink(r *http.Request) string {
+	if c, err := r.Cookie(NextCookie); err == nil {
+		if v, err := url.QueryUnescape(c.Value); err == nil {
+			return SafeNext(v)
+		}
+	}
+	return ""
+}
+
 // providerSignup : s'inscrire sans mot de passe, par un fournisseur de
 // connexion (Google, Microsoft…) : le compte de l'adresse s'y relie.
 func (s *Service) providerSignup(r *http.Request) []providerLink {
+	next := nextLink(r)
+	if next == "" {
+		next = "/admin/bienvenue"
+	}
 	ps, err := s.Store.Providers(r.Context())
 	if err != nil {
 		return nil
@@ -609,7 +641,7 @@ func (s *Service) providerSignup(r *http.Request) []providerLink {
 	var out []providerLink
 	for _, p := range ps {
 		if p.Kind != "password" && p.Kind != "proxy" {
-			out = append(out, providerLink{Label: "Continuer avec " + p.Label, URL: "/admin/login?next=" + url.QueryEscape("/admin/bienvenue")})
+			out = append(out, providerLink{Label: "Continuer avec " + p.Label, URL: "/admin/login?next=" + url.QueryEscape(next)})
 			break
 		}
 	}
@@ -689,15 +721,23 @@ func (s *Service) setupSubmit(w http.ResponseWriter, r *http.Request) {
 				Subject: uid, IssuedAt: now.Unix(), ExpiresAt: now.Add(requestTTL).Unix()})
 			if err == nil {
 				s.setCookie(w, freshCookie, fresh, "/oauth/authorize", requestTTL)
+				if next := nextLink(r); next != "" {
+					http.Redirect(w, r, "/admin/login?next="+url.QueryEscape(next), http.StatusSeeOther)
+					return
+				}
 				http.Redirect(w, r, s.AdminURL, http.StatusSeeOther)
 				return
 			}
 			slog.Error("connexion après choix du mot de passe", "err", err)
 		}
 	}
+	links := s.welcomeLinks()
+	if next := nextLink(r); next != "" {
+		links = append([]providerLink{{Label: "Continuer vers votre lien", URL: "/admin/login?next=" + url.QueryEscape(next)}}, links...)
+	}
 	s.render(w, r, http.StatusOK, "message", view{Title: "Mot de passe enregistré",
 		Message: "Vous pouvez maintenant vous connecter à ce serveur avec " + email + ".",
-		Address: s.Config.Issuer(), Links: s.welcomeLinks()})
+		Address: s.Config.Issuer(), Links: links})
 }
 
 // --- Point de jeton --------------------------------------------------------------
