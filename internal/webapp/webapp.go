@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Be-Lattis/lattis-server/internal/config"
@@ -96,6 +97,9 @@ type engine struct {
 	// memory : mémoire allouée (réglage web_engine_memory_mb), 0 : défaut.
 	memory int64
 	inst   Instance
+	// tabs : onglets connectés (WebSocket relayés) ; lastTab : dernier départ.
+	tabs    atomic.Int64
+	lastTab atomic.Int64
 	proxy  *httputil.ReverseProxy
 	// started se ferme une fois le démarrage fini (startErr dit comment).
 	started  chan struct{}
@@ -211,7 +215,44 @@ func (m *Manager) app(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetWriteDeadline(time.Time{})
 	// Le cookie de session n'a rien à faire chez le moteur.
 	r.Header.Del("Cookie")
+	if isWebSocket(r) {
+		e.tabs.Add(1)
+		defer func() {
+			e.lastTab.Store(m.now().UnixNano())
+			e.tabs.Add(-1)
+		}()
+	}
 	e.proxy.ServeHTTP(w, r)
+}
+
+// tabTick : fréquence du contrôle d'inactivité d'un moteur de la réserve.
+var tabTick = 15 * time.Second
+
+// watchTabs arrête après LATTIS_WEB_IDLE sans onglet un moteur venu de la
+// réserve (son propre délai est trop long pour cela, voir poolIdle). Le
+// délai court depuis l'attribution : le navigateur va se connecter.
+func (m *Manager) watchTabs(e *engine) {
+	e.lastTab.Store(m.now().UnixNano())
+	t := time.NewTicker(min(tabTick, m.Config.WebIdle))
+	defer t.Stop()
+	for {
+		select {
+		case <-e.inst.Done():
+			return
+		case <-t.C:
+		}
+		if e.tabs.Load() > 0 || m.now().Sub(time.Unix(0, e.lastTab.Load())) < m.Config.WebIdle {
+			continue
+		}
+		slog.Info("moteur web : aucun onglet, arrêt", "user", e.userID, "idle", m.Config.WebIdle)
+		e.inst.Stop()
+		select {
+		case <-e.inst.Done():
+		case <-time.After(30 * time.Second):
+			e.inst.Kill()
+		}
+		return
+	}
 }
 
 func (m *Manager) sameOrigin(origin string) bool {
@@ -314,6 +355,9 @@ func (m *Manager) start(l Launcher, e *engine) error {
 		return err
 	}
 	e.inst = inst
+	if _, ok := inst.(interface{ IdleByManager() }); ok && m.Config.WebIdle > 0 {
+		go m.watchTabs(e)
+	}
 	// Moteur de la réserve : il présente son propre secret.
 	if ps, ok := inst.(interface{ Secret() string }); ok && ps.Secret() != e.secret {
 		m.mu.Lock()

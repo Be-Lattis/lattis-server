@@ -261,5 +261,13 @@ func (k *KubeLauncher) Start(ctx context.Context, s Spec) (Instance, error) {
 		}
 		return st.Status.Phase == "Running" || st.Status.Phase == "Pending", nil
 	}, inst.done, inst.stop)
+	// Moteur arrêté (inactivité, panne) : son pod terminé ne reste pas dans
+	// le cluster jusqu'à la disparition de lattisd.
+	go func() {
+		<-inst.done
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = k.call(ctx, http.MethodDelete, pod, nil, nil)
+	}()
 	return inst, nil
 }

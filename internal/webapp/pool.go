@@ -14,6 +14,16 @@ import (
 // leur répertoire de travail est éphémère, effacé avec eux.
 const PoolPrefix = "pool-"
 
+// poolIdle : inactivité donnée à un moteur de la réserve. Le délai du moteur
+// court dès son démarrage : avec LATTIS_WEB_IDLE, un moteur prêt jamais
+// attribué s'arrêterait et serait remplacé sans fin. Une fois le moteur
+// attribué, lattisd applique lui-même LATTIS_WEB_IDLE (Manager.watchTabs) ;
+// ce délai ne borne plus qu'un moteur que lattisd aurait perdu.
+const poolIdle = 7 * 24 * time.Hour
+
+// poolRetry : nouvel essai de remplir la réserve après une erreur du lanceur.
+var poolRetry = 30 * time.Second
+
 // Pool garde Spare moteurs démarrés d'avance, prêts à recevoir un
 // utilisateur, devant un autre lanceur. Un moteur attribué sert une seule
 // personne puis disparaît (inactivité, arrêt) : il n'est jamais rendu à la
@@ -51,6 +61,9 @@ type poolInstance struct {
 
 // Secret : secret que le moteur présente à /engine/token.
 func (p *poolInstance) Secret() string { return p.secret }
+
+// IdleByManager : l'inactivité de ce moteur est surveillée par lattisd.
+func (p *poolInstance) IdleByManager() {}
 
 func (p *Pool) init() {
 	p.once.Do(func() {
@@ -150,6 +163,7 @@ func (p *Pool) launch(ctx context.Context) (*poolInstance, error) {
 	spec := p.Template
 	spec.UserID = PoolPrefix + hex.EncodeToString(b)
 	spec.Secret = randomSecret()
+	spec.Idle = poolIdle
 	p.mu.Lock()
 	spec.Memory = p.memory
 	p.mu.Unlock()
@@ -184,8 +198,9 @@ func (p *Pool) refillLoop() {
 			stopped := p.stopped
 			p.mu.Unlock()
 			if err != nil {
-				slog.Warn("réserve de moteurs web", "err", err)
-				time.Sleep(5 * time.Second) // lanceur en panne : pas de boucle serrée
+				// Lanceur en panne : nouvel essai plus tard, sans boucle serrée.
+				slog.Warn("réserve de moteurs web", "err", err, "retry", poolRetry)
+				time.AfterFunc(poolRetry, p.kick)
 				break
 			}
 			if stopped {

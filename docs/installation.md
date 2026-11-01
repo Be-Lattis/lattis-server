@@ -303,6 +303,7 @@ Le chart crée le compte de service, ses droits et deux NetworkPolicy : seul `la
 
 Par défaut, un moteur démarre à la connexion de l'utilisateur. Avec `LATTIS_WEB_POOL_SPARE=N` (chart : `web.spare`), le serveur garde en plus N moteurs démarrés d'avance, prêts à recevoir quelqu'un : avec 15 personnes connectées et N = 2, 17 moteurs tournent. À la connexion, l'utilisateur reçoit un moteur prêt, sans attente, et un neuf démarre pour reformer la réserve.
 
+- **Un moteur prêt n'expire pas** : `LATTIS_WEB_IDLE` ne compte qu'à partir de l'attribution, et c'est alors `lattisd` qui l'applique. Si le lanceur échoue, la réserve réessaie toutes les 30 secondes. Sur Kubernetes, le pod d'un moteur arrêté est supprimé.
 - **Un moteur ne sert qu'une fois** : attribué à une personne, il disparaît à la fin de sa session (inactivité `LATTIS_WEB_IDLE`, arrêt) et n'est jamais rendu à la réserve. Rien ne passe d'un utilisateur à l'autre.
 - **Plafond** : moteurs attribués et moteurs prêts restent ensemble sous `LATTIS_WEB_MAX_ENGINES` (chart : `web.maxEngines`). Quand il est atteint, la réserve ne se reforme plus, et une nouvelle connexion reçoit la page « Plus de ressources disponibles » (503), qui invite à réessayer ou à utiliser l'application de bureau. `LATTIS_WEB_POOL_SPARE` doit rester inférieur au plafond.
 - **Cache** : un moteur prêt ne sait pas encore pour qui il travaillera ; son répertoire de travail est éphémère, effacé avec lui. Sans réserve, chaque utilisateur garde son cache d'une session à l'autre ; avec, il le recharge depuis le serveur à chaque session.

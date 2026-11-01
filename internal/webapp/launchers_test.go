@@ -3,6 +3,7 @@ package webapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -155,6 +156,111 @@ func TestKubeLauncher(t *testing.T) {
 	if !strings.HasPrefix(last, "DELETE /api/v1/namespaces/lattis/pods/lattis-engine-") {
 		t.Fatalf("suppression du pod : %v", calls)
 	}
+	waitDone(t, inst)
+}
+
+// Pod terminé tout seul (inactivité) : supprimé, pas laissé « Completed ».
+func TestKubeDeletesFinishedPod(t *testing.T) {
+	watchPeriod = 20 * time.Millisecond
+	ln := listener(t)
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	var mu sync.Mutex
+	phase, deleted := "Running", false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"status":{"phase":"` + phase + `","podIP":"127.0.0.1"}}`))
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/pods/"):
+			deleted = true
+			_, _ = w.Write([]byte("{}"))
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+		}
+	}))
+	defer srv.Close()
+	k := &KubeLauncher{API: srv.URL, HTTP: srv.Client(), Port: port, Cfg: config.K8sEngines{Image: "m:1", Namespace: "l", CPU: "1", Memory: "1Gi", OwnerPod: "o"}}
+	inst, err := k.Start(context.Background(), Spec{UserID: "pool-1", Idle: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	phase = "Succeeded"
+	mu.Unlock()
+	waitDone(t, inst)
+	for i := 0; i < 200; i++ {
+		mu.Lock()
+		d := deleted
+		mu.Unlock()
+		if d {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("pod terminé non supprimé")
+}
+
+// Réserve : long délai d'inactivité pour un moteur prêt, et nouvel essai
+// après une erreur du lanceur.
+func TestPoolIdleAndRetry(t *testing.T) {
+	old := poolRetry
+	poolRetry = 20 * time.Millisecond
+	defer func() { poolRetry = old }()
+	f := &flakyLauncher{fails: 2}
+	p := &Pool{Inner: f, Spare: 1, Max: 3, Template: Spec{Idle: 5 * time.Minute}}
+	p.Warm()
+	defer p.StopAll()
+	for i := 0; i < 300 && p.Ready() < 1; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if p.Ready() != 1 {
+		t.Fatal("réserve non refaite après une erreur")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.idle != poolIdle {
+		t.Fatalf("inactivité d'un moteur prêt : %s", f.idle)
+	}
+}
+
+type flakyLauncher struct {
+	mu    sync.Mutex
+	fails int
+	idle  time.Duration
+}
+
+func (f *flakyLauncher) Start(_ context.Context, s Spec) (Instance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fails > 0 {
+		f.fails--
+		return nil, errors.New("le pod du moteur n'a pas démarré à temps")
+	}
+	f.idle = s.Idle
+	return &fakeInst{user: s.UserID, done: make(chan struct{})}, nil
+}
+
+// Moteur attribué par la réserve : arrêté par lattisd après LATTIS_WEB_IDLE
+// sans onglet, gardé tant qu'un onglet est connecté.
+func TestWatchTabs(t *testing.T) {
+	oldTick := tabTick
+	tabTick = 5 * time.Millisecond
+	defer func() { tabTick = oldTick }()
+	m := &Manager{Config: &config.Config{WebIdle: 50 * time.Millisecond}}
+	inst := &fakeInst{user: "u", done: make(chan struct{})}
+	e := &engine{userID: "u", inst: inst}
+	e.tabs.Add(1)
+	go m.watchTabs(e)
+	time.Sleep(150 * time.Millisecond)
+	select {
+	case <-inst.done:
+		t.Fatal("arrêté avec un onglet connecté")
+	default:
+	}
+	e.lastTab.Store(time.Now().UnixNano())
+	e.tabs.Add(-1)
 	waitDone(t, inst)
 }
 
