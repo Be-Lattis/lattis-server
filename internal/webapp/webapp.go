@@ -100,7 +100,7 @@ type engine struct {
 	// tabs : onglets connectés (WebSocket relayés) ; lastTab : dernier départ.
 	tabs    atomic.Int64
 	lastTab atomic.Int64
-	proxy  *httputil.ReverseProxy
+	proxy   *httputil.ReverseProxy
 	// started se ferme une fois le démarrage fini (startErr dit comment).
 	started  chan struct{}
 	startErr error
