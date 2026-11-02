@@ -121,6 +121,8 @@ var settingGroups = []settingGroup{
 			Help: "Démo publique (/demo) : sessions sans compte en même temps, sous le plafond de l'installation (LATTIS_WEB_MAX_ENGINES)."},
 		{Key: "web_engine_memory_mb", Label: "Mémoire par session web", Kind: "limit", Unit: "Mo",
 			Help: "Édition web : mémoire allouée au moteur de chaque personne, pour les sessions ouvertes ensuite. Kubernetes et Docker : limite stricte ; mode processus : limite souple (GOMEMLIMIT)."},
+		{Key: "draft_quota_mb", Label: "Brouillons de session par personne", Kind: "limit", Unit: "Mo",
+			Help: "Édition web : place sur le serveur pour les sessions enregistrées en continu, tous brouillons d'une personne confondus (256 Mo par défaut). Au-delà, l'application le signale et l'enregistrement s'arrête."},
 	}},
 	{Title: "Connexion et sécurité", Help: "Durée des sessions et protection des comptes à mot de passe.", Settings: []setting{
 		{Key: "refresh_token_ttl", Label: "Durée d'une session de l'application", Kind: "duration", Unit: "jours", Scale: day,

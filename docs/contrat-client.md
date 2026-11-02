@@ -243,3 +243,16 @@ Fonctions SQL appelées sur la connexion du poste, sous l'identité de l'utilisa
 - **Inviter dans une équipe** : `lattis.invite_to_team(email text, team_id uuid)`, même réponse (`link_path : "/"`), réservée aux gestionnaires de l'équipe.
 - **À l'inscription**, les droits préenregistrés s'appliquent d'eux-mêmes : à la première connexion avec l'adresse vérifiée, ou avec le lien reçu. Une invitation expire après `invitation_ttl` (14 jours par défaut).
 - **En attente** : `lattis.workbook_invitations(workbook_id uuid)` → `[{"id", "email", "roles", "invited_by", "created_at", "expires_at"}]` (propriétaires du classeur) ; `lattis.team_invitations(team_id uuid)` (gestionnaires de l'équipe). Annulation : `lattis.revoke_invitation(id uuid)`.
+
+## 13. Brouillons de session (édition web)
+
+La session de l'application web s'enregistre en continu sur le serveur, sans volume par utilisateur. Le moteur appelle ces fonctions sous le rôle de la personne, sur le parent (`rw`) : chacun ne voit que ses brouillons, et la table n'est pas lisible directement. La démo publique n'y a pas accès, faute de connexion à PostgreSQL.
+
+- `lattis.draft_save(p_id uuid, p_title text, p_data bytea) → timestamptz` : crée ou remplace le brouillon `p_id` de la personne, rend l'heure d'enregistrement. `p_data` : archive `.lattis` déjà compressée (PostgreSQL ne la recompresse pas). Titre coupé à 500 caractères.
+- `lattis.draft_list() → (id uuid, title text, size bigint, updated_at timestamptz)` : du plus récent au plus ancien, sans le contenu.
+- `lattis.draft_read(p_id uuid) → bytea` : `P0002` (`no_data_found`) si le brouillon n'existe pas.
+- `lattis.draft_delete(p_id uuid)` : sans erreur si le brouillon n'existe plus.
+
+**Limite** : `draft_quota_mb` (Administration › Serveur › Limites, 256 Mo par défaut, 0 : sans limite), tous brouillons d'une personne confondus. Au-delà, `draft_save` échoue avec le SQLSTATE `LT001`, un message qui donne les chiffres, et le brouillon précédent reste intact.
+
+**Cadence** : chaque enregistrement réécrit l'archive entière dans le WAL, donc vers les réplicas et l'archivage. Le moteur attend la fin d'un enregistrement avant le suivant, saute ceux qui prennent du retard et n'enregistre pas sans changement.
