@@ -33,6 +33,7 @@ type env struct {
 	db    *testpg.DB
 	srv   *httptest.Server
 	vault *vault.Vault
+	cfg   *config.Config
 }
 
 func setup(t *testing.T) *env {
@@ -57,7 +58,7 @@ func setup(t *testing.T) *env {
 	ad := &admin.Service{Config: cfg, Store: db.Store, Keys: keys, Users: userdb.SessionAuth{Pool: db.Super}, Version: "test",
 		Vault: &vault.Vault{Pool: db.Store.DB, Keys: keys}}
 	h = (&httpserver.Server{Config: cfg, Store: db.Store, Keys: keys, Auth: a, Admin: ad}).Handler()
-	return &env{t: t, db: db, srv: srv, vault: ad.Vault}
+	return &env{t: t, db: db, srv: srv, vault: ad.Vault, cfg: cfg}
 }
 
 // browser est un navigateur avec ses propres cookies.
@@ -327,6 +328,18 @@ func TestAdminConsole(t *testing.T) {
 	if resp, _ := e.browser().login(other, pw, "/admin/login?next="+url.QueryEscape("https://ailleurs.example/f/x")); resp.Request.URL.Host != strings.TrimPrefix(e.srv.URL, "http://") {
 		t.Fatalf("redirection ouverte : %s", resp.Request.URL)
 	}
+	// Édition web : sans lien d'origine, on arrive sur ses classeurs ;
+	// l'administration n'y est proposée qu'à qui y a droit.
+	e.cfg.Edition = config.EditionWeb
+	if resp, body := e.browser().login(other, pw, "/admin/login"); resp.Request.URL.Path != "/classeurs" ||
+		!strings.Contains(body, "Mes classeurs") || strings.Contains(body, "Aller dans l'administration") || !strings.Contains(body, "/app/") {
+		t.Fatalf("arrivée d'un utilisateur : %s %.400s", resp.Request.URL, body)
+	}
+	if resp, body := e.browser().login(ownerEmail, pw, "/admin/login"); resp.Request.URL.Path != "/classeurs" ||
+		!strings.Contains(body, "Aller dans l'administration") {
+		t.Fatalf("arrivée d'un propriétaire : %s", resp.Request.URL)
+	}
+	e.cfg.Edition = config.EditionAdmin
 	// Compte prêt (inscription par un fournisseur) : ouvert à tout utilisateur.
 	if resp, body := ob.get("/admin/bienvenue"); resp.StatusCode != http.StatusOK || !strings.Contains(body, other+" est prêt") {
 		t.Fatalf("bienvenue : %d", resp.StatusCode)

@@ -611,6 +611,7 @@ func SafeNext(p string) string {
 	for _, prefix := range []string{"/admin/", "/w/", "/app/", "/f/"} {
 		ok = ok || strings.HasPrefix(p, prefix)
 	}
+	ok = ok || p == "/classeurs"
 	if !ok || strings.ContainsAny(p, "\\\r\n") {
 		return ""
 	}
@@ -1050,7 +1051,8 @@ func (s *Service) restartLinks() []providerLink {
 func (s *Service) welcomeLinks() []providerLink {
 	var out []providerLink
 	if s.Config.Edition == config.EditionWeb {
-		out = append(out, providerLink{Label: "Ouvrir Lattis dans le navigateur", URL: "/app/"})
+		out = append(out, providerLink{Label: "Mes classeurs", URL: "/classeurs"},
+			providerLink{Label: "Ouvrir Lattis dans le navigateur", URL: "/app/"})
 	}
 	if s.Config.DownloadURL != "" {
 		out = append(out, providerLink{Label: "Télécharger l'application Lattis", URL: s.Config.DownloadURL})

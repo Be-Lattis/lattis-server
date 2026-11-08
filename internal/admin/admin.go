@@ -187,7 +187,7 @@ func trimFloat(f float64) string {
 }
 
 func init() {
-	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "data", "pipelines", "forms", "monitor"} {
+	for _, name := range []string{"server", "providers", "users", "teams", "workbooks", "workbook", "audit", "status", "message", "link", "classeurs", "data", "pipelines", "forms", "monitor"} {
 		pages[name] = template.Must(template.New("").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+name+".html"))
 	}
 }
@@ -228,6 +228,7 @@ func (s *Service) now() time.Time {
 // Routes enregistre les points d'accès.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/{$}", s.home)
+	mux.HandleFunc("GET /classeurs", s.myWorkbooks)
 	mux.HandleFunc("GET /admin/login", s.login)
 	mux.HandleFunc("GET /admin/callback", s.callback)
 	mux.HandleFunc("POST /admin/logout", s.logout)
@@ -352,7 +353,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 	s.clearCookie(w, auth.NextCookie, "/")
 	next := ld.Next
 	if next == "" {
-		next = "/admin/"
+		next = s.defaultLanding()
 	}
 	http.Redirect(w, r, next, http.StatusFound)
 }

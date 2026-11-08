@@ -1,0 +1,16 @@
+{{define "body"}}{{$d := .Data}}
+<section class="panel link">
+{{if $d.Workbooks}}
+<div class="choices">
+{{range $d.Workbooks}}<a class="choice" href="{{if $d.Web}}/app/?workbook={{.ID}}{{else}}/w/{{.ID}}{{end}}"><strong>{{.Title}}</strong><span>{{.Role}}{{if eq .State "draft"}} · brouillon, pas encore publié{{end}}</span></a>
+{{end}}</div>
+{{else}}
+<p>Aucun classeur partagé avec <strong>{{$d.Email}}</strong> pour l'instant.</p>
+<p class="muted">Demandez à un propriétaire de classeur de vous inviter avec cette adresse.</p>
+{{end}}
+{{if $d.Web}}<p><a class="button" href="/app/">Ouvrir Lattis dans le navigateur</a></p>{{end}}
+{{if $d.Admin}}<p><a href="/admin/">Aller dans l'administration</a></p>{{end}}
+{{if $d.Download}}<p class="muted">Lattis existe aussi en application de bureau : <a href="{{$d.Download}}">la télécharger</a>.</p>{{end}}
+<form method="post" action="/logout" class="muted"><input type="hidden" name="next" value="/classeurs">Connecté en {{$d.Email}}. <button>Changer de compte</button></form>
+</section>
+{{end}}
